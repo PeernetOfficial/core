@@ -30,8 +30,8 @@ import (
 	"lukechampine.com/blake3"
 )
 
-// packetRaw is a decrypted P2P message
-type packetRaw struct {
+// PacketRaw is a decrypted P2P message
+type PacketRaw struct {
 	Protocol uint8  // Protocol version = 0
 	Command  uint8  // 0 = Announcement
 	Payload  []byte // Payload
@@ -42,8 +42,8 @@ const packetLengthMin = 8 + signatureSize
 const signatureSize = 65
 const maxRandomGarbage = 20
 
-// packetDecrypt decrypts the packet, verifies its signature and returns a high-level version of the packet.
-func packetDecrypt(raw []byte, receiverPublicKey *btcec.PublicKey) (packet *packetRaw, senderPublicKey *btcec.PublicKey, err error) {
+// PacketDecrypt decrypts the packet, verifies its signature and returns a high-level version of the packet.
+func PacketDecrypt(raw []byte, receiverPublicKey *btcec.PublicKey) (packet *PacketRaw, senderPublicKey *btcec.PublicKey, err error) {
 	// Packet is assumed to be already checked for minimum length.
 
 	// Prepare Salsa20 nonce and key. Nonce = 2x first 4 bytes. For size reasons, only 4 bytes (instead of 8 bytes) is supplied in the packet.
@@ -68,7 +68,7 @@ func packetDecrypt(raw []byte, receiverPublicKey *btcec.PublicKey) (packet *pack
 	salsa20.XORKeyStream(bufferDecrypted[:], raw[4:len(raw)-signatureSize], nonce, keySalsa)
 
 	// copy all fields
-	packet = &packetRaw{Protocol: bufferDecrypted[0], Command: bufferDecrypted[1]}
+	packet = &PacketRaw{Protocol: bufferDecrypted[0], Command: bufferDecrypted[1]}
 
 	sizePayload := binary.LittleEndian.Uint16(bufferDecrypted[2:4])
 	if int(sizePayload) > len(bufferDecrypted)-4 { // invalid length?
@@ -82,8 +82,8 @@ func packetDecrypt(raw []byte, receiverPublicKey *btcec.PublicKey) (packet *pack
 	return packet, senderPublicKey, nil
 }
 
-// packetEncrypt encrypts a packet using the provided senders private key and receivers compressed public key.
-func packetEncrypt(senderPrivateKey *btcec.PrivateKey, receiverPublicKey *btcec.PublicKey, packet *packetRaw) (raw []byte, err error) {
+// PacketEncrypt encrypts a packet using the provided senders private key and receivers compressed public key.
+func PacketEncrypt(senderPrivateKey *btcec.PrivateKey, receiverPublicKey *btcec.PublicKey, packet *PacketRaw) (raw []byte, err error) {
 	garbage := packetGarbage(packetLengthMin + len(packet.Payload))
 	raw = make([]byte, packetLengthMin+len(packet.Payload)+len(garbage))
 

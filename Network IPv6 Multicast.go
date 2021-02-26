@@ -131,7 +131,7 @@ func (network *Network) MulticastIPv6Listen() {
 
 // MulticastIPv6Send sends out a single multicast messages to discover peers at the same site
 func (network *Network) MulticastIPv6Send() (err error) {
-	raw, err := packetEncrypt(peerPrivateKey, ipv6MulticastPublicKey, &packetRaw{Protocol: 0, Command: 0})
+	raw, err := PacketEncrypt(peerPrivateKey, ipv6MulticastPublicKey, &PacketRaw{Protocol: 0, Command: 0})
 	if err != nil {
 		return err
 	}

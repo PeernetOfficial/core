@@ -113,7 +113,7 @@ func (network *Network) Listen() {
 // packetWorker handles incoming packets.
 func packetWorker(packets <-chan networkWire) {
 	for packet := range packets {
-		decoded, senderPublicKey, err := packetDecrypt(packet.raw, packet.receiverPublicKey)
+		decoded, senderPublicKey, err := PacketDecrypt(packet.raw, packet.receiverPublicKey)
 		if err != nil {
 			log.Printf("packetWorker Error decrypting packet from '%s': %s\n", packet.sender.String(), err.Error())
 			continue
@@ -137,7 +137,7 @@ func packetWorker(packets <-chan networkWire) {
 		}
 
 		// process the packet
-		message := &packet2{SenderPublicKey: senderPublicKey, packetRaw: *decoded, network: packet.network, address: packet.sender}
+		message := &packet2{SenderPublicKey: senderPublicKey, PacketRaw: *decoded, network: packet.network, address: packet.sender}
 
 		switch decoded.Command {
 		case 0: // Announce

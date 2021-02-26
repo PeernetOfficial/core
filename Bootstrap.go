@@ -92,7 +92,7 @@ func parseAddress(Address string) (remote *net.UDPAddr, err error) {
 // contact tries to contact the root peer on all networks
 func (peer *rootPeer) contact() {
 	for _, address := range peer.addresses {
-		sendAllNetworks(peer.publicKey, &packetRaw{Command: 0}, address)
+		sendAllNetworks(peer.publicKey, &PacketRaw{Command: 0}, address)
 	}
 }
 

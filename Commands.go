@@ -15,7 +15,7 @@ import (
 
 // packet2 is a high-level message between peers
 type packet2 struct {
-	packetRaw
+	PacketRaw
 	SenderPublicKey *btcec.PublicKey // Sender Public Key, ECDSA (secp256k1) 257-bit
 	network         *Network         // network which received the packet
 	address         *net.UDPAddr     // address of the sender or receiver
@@ -29,7 +29,7 @@ func (peer *PeerInfo) announcement(msg *packet2) {
 
 		// send the Response
 		if added {
-			peer.send(&packetRaw{Command: 1})
+			peer.send(&PacketRaw{Command: 1})
 		}
 
 		return
@@ -37,7 +37,7 @@ func (peer *PeerInfo) announcement(msg *packet2) {
 	fmt.Printf("Incoming secondary announcement from %s\n", msg.address.String())
 
 	// Announcement from existing peer means the peer most likely restarted
-	peer.send(&packetRaw{Command: 1})
+	peer.send(&PacketRaw{Command: 1})
 }
 
 // response handles the response to the announcement
@@ -54,7 +54,7 @@ func (peer *PeerInfo) response(msg *packet2) {
 
 // chat handles a chat message [debug]
 func (peer *PeerInfo) chat(msg *packet2) {
-	fmt.Printf("Chat from '%s': %s\n", msg.address.String(), string(msg.packetRaw.Payload))
+	fmt.Printf("Chat from '%s': %s\n", msg.address.String(), string(msg.PacketRaw.Payload))
 }
 
 // autoPingAll automatically pings all peers. This has multiple important reasons:
@@ -68,6 +68,6 @@ func autoPingAll() {
 // SendChatAll sends a text message to all peers
 func SendChatAll(text string) {
 	for _, peer := range PeerlistGet() {
-		peer.send(&packetRaw{Command: 10, Payload: []byte(text)})
+		peer.send(&PacketRaw{Command: 10, Payload: []byte(text)})
 	}
 }

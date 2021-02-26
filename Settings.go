@@ -16,8 +16,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const configFile = "Settings.yaml"
+// Version is the current core library version
 const Version = "0.1"
+
+const configFile = "Settings.yaml"
 
 var config struct {
 	LogFile string `yaml:"LogFile"` // Log file

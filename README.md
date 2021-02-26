@@ -15,9 +15,9 @@ Current version: 0.1 (pre-alpha)
 Before compiling, make sure to download and update all 3rd party packages:
 
 ```
-go get -u github.com/gofrs/uuid
 go get -u github.com/btcsuite/btcd/btcec
 go get -u github.com/libp2p/go-reuseport
+go get -u lukechampine.com/blake3
 ```
 
 ## Configuration

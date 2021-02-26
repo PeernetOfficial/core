@@ -151,14 +151,14 @@ func publicKey2Compressed(publicKey *btcec.PublicKey) [btcec.PubKeyBytesLenCompr
 }
 
 // send sends a raw packet to the peer
-func (peer *PeerInfo) send(packet *packetRaw) (err error) {
+func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 	if len(peer.Connections) == 0 {
 		return errors.New("no valid connection to peer")
 	}
 
 	packet.Protocol = 0
 
-	raw, err := packetEncrypt(peerPrivateKey, peer.PublicKey, packet)
+	raw, err := PacketEncrypt(peerPrivateKey, peer.PublicKey, packet)
 	if err != nil {
 		return err
 	}
@@ -199,9 +199,9 @@ func (peer *PeerInfo) sendFailover(failed *Connection, raw []byte) (err error) {
 }
 
 // sendAllNetworks sends a raw packet via all networks
-func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *packetRaw, remote *net.UDPAddr) (err error) {
+func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remote *net.UDPAddr) (err error) {
 	packet.Protocol = 0
-	raw, err := packetEncrypt(peerPrivateKey, receiverPublicKey, packet)
+	raw, err := PacketEncrypt(peerPrivateKey, receiverPublicKey, packet)
 	if err != nil {
 		return err
 	}

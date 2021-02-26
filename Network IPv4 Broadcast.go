@@ -33,7 +33,7 @@ func initBroadcastIPv4() {
 	}
 }
 
-// BroadcastIPv4Join prepares sending Broadcasts
+// BroadcastIPv4 prepares sending Broadcasts
 func (network *Network) BroadcastIPv4() (err error) {
 	if ipv4BroadcastPrivateKey == nil || ipv4BroadcastPublicKey == nil {
 		return
@@ -85,7 +85,7 @@ func (network *Network) BroadcastIPv4Listen() {
 
 // BroadcastIPv4Send sends out a single broadcast messages to discover peers
 func (network *Network) BroadcastIPv4Send() (err error) {
-	raw, err := packetEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &packetRaw{Protocol: 0, Command: 0})
+	raw, err := PacketEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &PacketRaw{Protocol: 0, Command: 0})
 	if err != nil {
 		return err
 	}
