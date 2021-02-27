@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -43,20 +42,20 @@ type peerSeed struct {
 // loadConfig reads the YAML configuration file
 func loadConfig() {
 	cfg, err := ioutil.ReadFile(configFile)
-	if err != nil && strings.Contains(err.Error(), "system cannot find the file specified") {
-		// Does not exist. Use default values.
-		config.LogFile = "Log.txt"
+	if err != nil {
+		// Something went wrong reading config file
+		fmt.Printf("Error loading config '%s': %v\n", configFile, err.Error() )
+		fmt.Println("Falling back to built-in default settings")
 
-	} else if err != nil {
-		fmt.Printf("Configuration file '%s' could not be read. Error: %s\n", configFile, err.Error())
+		// Fallback to the built-in parameters
+		config.LogFile = "Log.txt"
+	}
+
+	// parse config
+	err = yaml.Unmarshal(cfg, &config)
+	if err != nil {
+		fmt.Printf("Configuration file '%s' could not be read. Please make sure it contains valid YAML data. Error: %v\n", configFile, err.Error())
 		os.Exit(1)
-	} else {
-		// read existing config
-		err = yaml.Unmarshal(cfg, &config)
-		if err != nil {
-			fmt.Printf("Configuration file '%s' could not be read. Please make sure it contains valid YAML data. Error: %v\n", configFile, err.Error())
-			os.Exit(1)
-		}
 	}
 
 	// redirect all output to the log file
