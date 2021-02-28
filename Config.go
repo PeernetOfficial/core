@@ -7,19 +7,16 @@ Author:     Peter Kleissner
 package core
 
 import (
-	"fmt"
+	_ "embed" // Required for embedding default Config file
 	"io/ioutil"
 	"log"
 	"os"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Version is the current core library version
 const Version = "0.1"
-
-const configFile = "Settings.yaml"
 
 var config struct {
 	LogFile string `yaml:"LogFile"` // Log file
@@ -40,34 +37,35 @@ type peerSeed struct {
 	Address   []string `yaml:"Address"`   // IP:Port
 }
 
-// loadConfig reads the YAML configuration file
-func loadConfig() {
-	cfg, err := ioutil.ReadFile(configFile)
-	if err != nil && strings.Contains(err.Error(), "system cannot find the file specified") {
-		// Does not exist. Use default values.
-		config.LogFile = "Log.txt"
+var configFile string
 
+//go:embed "Config Default.yaml"
+var defaultConfig []byte
+
+// LoadConfig reads the YAML configuration file
+// If an error is returned, the application shall exit.
+// Status: 0 = Unknown error checking config file, 1 = Error reading config file, 2 = Error parsing config file, 3 = Success
+func LoadConfig(filename string) (status int, err error) {
+	var configData []byte
+	configFile = filename
+
+	// check if the file is non existent or empty
+	stats, err := os.Stat(filename)
+	if err != nil && os.IsNotExist(err) || err == nil && stats.Size() == 0 {
+		configData = defaultConfig
 	} else if err != nil {
-		fmt.Printf("Configuration file '%s' could not be read. Error: %s\n", configFile, err.Error())
-		os.Exit(1)
-	} else {
-		// read existing config
-		err = yaml.Unmarshal(cfg, &config)
-		if err != nil {
-			fmt.Printf("Configuration file '%s' could not be read. Please make sure it contains valid YAML data. Error: %v\n", configFile, err.Error())
-			os.Exit(1)
-		}
+		return 0, err
+	} else if configData, err = ioutil.ReadFile(filename); err != nil {
+		return 1, err
 	}
 
-	// redirect all output to the log file
-	logFile, err := os.OpenFile(config.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	// parse the config
+	err = yaml.Unmarshal(configData, &config)
 	if err != nil {
-		fmt.Printf("Error creating log file '%s': %v\n", config.LogFile, err)
+		return 2, err
 	}
-	//	defer logFile.Close()	// has to remain open until program closes
 
-	log.SetOutput(logFile)
-	log.Printf("---- Peernet Command-Line Client " + Version + " ----\n")
+	return 3, nil
 }
 
 func saveConfig() {
@@ -82,4 +80,18 @@ func saveConfig() {
 		log.Printf("saveConfig Error writing config '%s': %v\n", configFile, err.Error())
 		return
 	}
+}
+
+// InitLog redirects subsequent log messages into the default log file specified in the configuration
+func InitLog() (err error) {
+	logFile, err := os.OpenFile(config.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+	//defer logFile.Close()	// has to remain open until program closes
+
+	log.SetOutput(logFile)
+	log.Printf("---- Peernet Command-Line Client " + Version + " ----\n")
+
+	return nil
 }

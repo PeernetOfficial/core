@@ -6,8 +6,8 @@ Author:     Peter Kleissner
 
 package core
 
-func init() {
-	loadConfig()
+// Init initializes the client. The config must be loaded first!
+func Init() {
 	initPeerID()
 	initMulticastIPv6()
 	initBroadcastIPv4()
