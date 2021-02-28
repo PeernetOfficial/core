@@ -19,4 +19,5 @@ func Init() {
 func Connect() {
 	go bootstrap()
 	go autoMulticastBroadcast()
+	go autoPingAll()
 }

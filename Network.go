@@ -129,25 +129,35 @@ func packetWorker(packets <-chan networkWire) {
 			continue
 		}
 
+		connection := &Connection{Network: packet.network, Address: packet.sender}
+
 		peer := PeerlistLookup(senderPublicKey)
 		if peer != nil {
 			// Existing peers: Update statistics and network address if new
 			atomic.AddUint64(&peer.StatsPacketReceived, 1)
-			peer.registerConnection(packet.sender, packet.network)
+			connection = peer.registerConnection(connection)
 		}
 
+		connection.LastPacketIn = time.Now()
+
 		// process the packet
-		message := &packet2{SenderPublicKey: senderPublicKey, PacketRaw: *decoded, network: packet.network, address: packet.sender}
+		message := &packet2{SenderPublicKey: senderPublicKey, PacketRaw: *decoded, connection: connection}
 
 		switch decoded.Command {
-		case 0: // Announce
-			peer.announcement(message)
+		case CommandAnnouncement: // Announce
+			peer.cmdAnouncement(message)
 
-		case 1: // Response
-			peer.response(message)
+		case CommandResponse: // Response
+			peer.cmdResponse(message)
 
-		case 10: // Chat [debug]
-			peer.chat(message)
+		case CommandPing: // Ping
+			peer.cmdPing(message)
+
+		case CommandPong: // Ping
+			peer.cmdPong(message)
+
+		case CommandChat: // Chat [debug]
+			peer.cmdChat(message)
 
 		default: // Unknown command
 
@@ -170,4 +180,12 @@ func GetNetworks(networkType int) (networks []*Network) {
 // GetListen returns connectivity information
 func (network *Network) GetListen() (listen *net.UDPAddr, multicastIPv6 net.IP, broadcastIPv4 []net.IP) {
 	return network.address, network.multicastIP, network.broadcastIPv4
+}
+
+// GetAdapterName returns the adapter name, if available
+func (network *Network) GetAdapterName() string {
+	if network.iface != nil {
+		return network.iface.Name
+	}
+	return "[unknown adapter]"
 }
