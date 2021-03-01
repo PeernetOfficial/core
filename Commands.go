@@ -88,7 +88,7 @@ func (peer *PeerInfo) cmdChat(msg *packet2) {
 const pingTime = 10
 
 // connectionInvalidate is the threshold in seconds to invalidate formerly active connections that no longer receive incoming packets.
-const connectionInvalidate = 20
+const connectionInvalidate = 22
 
 // connectionRemove is the threshold in seconds to remove inactive connections in case there is at least one active connection known.
 const connectionRemove = 2 * 60
@@ -97,24 +97,29 @@ const connectionRemove = 2 * 60
 func autoPingAll() {
 	for {
 		time.Sleep(time.Second)
-		thresholdInvalidate := time.Now().Add(-connectionInvalidate * time.Second)
-		thresholdPingOut := time.Now().Add(-pingTime * time.Second)
+		thresholdInvalidate1 := time.Now().Add(-connectionInvalidate * time.Second)
+		thresholdInvalidate2 := time.Now().Add(-connectionInvalidate * time.Second * 4)
+		thresholdPingOut1 := time.Now().Add(-pingTime * time.Second)
+		thresholdPingOut2 := time.Now().Add(-pingTime * time.Second * 4)
 
 		for _, peer := range PeerlistGet() {
 			// first handle active connections
 			for _, connection := range peer.GetConnections(true) {
-				// Check if no incoming packet for the last X seconds. Regularly sent pings should result in incoming packets.
-				if connection.LastPacketIn.Before(thresholdInvalidate) {
+				thresholdPing := thresholdPingOut1
+				thresholdInv := thresholdInvalidate1
+
+				if connection.Status == ConnectionRedundant {
+					thresholdPing = thresholdPingOut2
+					thresholdInv = thresholdInvalidate2
+				}
+
+				if connection.LastPacketIn.Before(thresholdInv) {
 					peer.invalidateActiveConnection(connection)
 					continue
 				}
 
-				// Send ping if none was sent recently and no incoming packet was received recently.
-				if connection.LastPacketIn.Before(thresholdPingOut) && connection.LastPingOut.Before(thresholdPingOut) {
-					if err := peer.sendConnection(&PacketRaw{Command: CommandPing}, connection); IsNetworkErrorFatal(err) {
-						peer.invalidateActiveConnection(connection)
-					}
-					connection.LastPingOut = time.Now()
+				if connection.LastPacketIn.Before(thresholdPing) && connection.LastPingOut.Before(thresholdPing) {
+					peer.sendPing(connection)
 					continue
 				}
 			}
@@ -128,12 +133,21 @@ func autoPingAll() {
 				}
 
 				// if no ping was sent recently, send one now
-				if connection.LastPingOut.Before(thresholdPingOut) {
-					peer.sendConnection(&PacketRaw{Command: CommandPing}, connection)
-					connection.LastPingOut = time.Now()
+				if connection.LastPingOut.Before(thresholdPingOut1) {
+					peer.sendPing(connection)
 				}
 			}
 		}
+	}
+}
+
+// sendPing sends a ping to the target peer
+func (peer *PeerInfo) sendPing(connection *Connection) {
+	err := peer.sendConnection(&PacketRaw{Command: CommandPing}, connection)
+	connection.LastPingOut = time.Now()
+
+	if (connection.Status == ConnectionActive || connection.Status == ConnectionRedundant) && IsNetworkErrorFatal(err) {
+		peer.invalidateActiveConnection(connection)
 	}
 }
 

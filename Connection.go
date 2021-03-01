@@ -24,7 +24,7 @@ type Connection struct {
 	LastPacketOut time.Time    // Last time an outgoing packet was attempted to send.
 	LastPingOut   time.Time    // Last ping out.
 	Expires       time.Time    // Inactive connections only: Expiry date. If it does not become active by that date, it will be considered expired and removed.
-	Status        int          // 0 = Active established connection, 1 = Inactive, 2 = Removed
+	Status        int          // 0 = Active established connection, 1 = Inactive, 2 = Removed, 3 = Redundant
 }
 
 // Connection status
@@ -32,6 +32,7 @@ const (
 	ConnectionActive = iota
 	ConnectionInactive
 	ConnectionRemoved
+	ConnectionRedundant // Same as active. Incoming packets are accepted. Outgoing use only for redundancy. Reduces ping overhead.
 )
 
 // Equal checks if the connection was established other the same network adapter using the same IP address. Port is intentionally not checked.
@@ -64,7 +65,8 @@ func (peer *PeerInfo) registerConnection(incoming *Connection) (result *Connecti
 				connection.Address.Port = incoming.Address.Port
 			}
 
-			peer.connectionLatest = connection
+			connection.Status = ConnectionActive
+			peer.setConnectionLatest(connection)
 			return connection
 		}
 	}
@@ -78,8 +80,8 @@ func (peer *PeerInfo) registerConnection(incoming *Connection) (result *Connecti
 
 			// elevate by adding to active and mark as latest active
 			connection.Status = ConnectionActive
-			peer.connectionLatest = connection
 			peer.connectionActive = append(peer.connectionActive, connection)
+			peer.setConnectionLatest(connection)
 
 			// remove from inactive
 			inactiveNew := peer.connectionInactive[:n]
@@ -94,9 +96,25 @@ func (peer *PeerInfo) registerConnection(incoming *Connection) (result *Connecti
 
 	// otherwise it is a new connection!
 	peer.connectionActive = append(peer.connectionActive, incoming)
-	peer.connectionLatest = incoming
+	peer.setConnectionLatest(incoming)
 
 	return incoming
+}
+
+// setConnectionLatest updates the latest valid connection to use for sending. All other connections will be changed to redundant, which reduces ping overhead.
+func (peer *PeerInfo) setConnectionLatest(latest *Connection) {
+	if peer.connectionLatest == latest {
+		return
+	}
+
+	peer.connectionLatest = latest
+
+	for _, connection := range peer.connectionActive {
+		if connection == latest {
+			continue
+		}
+		connection.Status = ConnectionRedundant
+	}
 }
 
 // invalidateActiveConnection invalidates an active connection
