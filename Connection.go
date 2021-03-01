@@ -23,6 +23,7 @@ type Connection struct {
 	LastPacketIn  time.Time    // Last time an incoming packet was received.
 	LastPacketOut time.Time    // Last time an outgoing packet was attempted to send.
 	LastPingOut   time.Time    // Last ping out.
+	Expires       time.Time    // Inactive connections only: Expiry date. If it does not become active by that date, it will be considered expired and removed.
 }
 
 // Equal checks if the connection was established other the same network adapter using the same IP address. Port is intentionally not checked.
@@ -94,6 +95,9 @@ func (peer *PeerInfo) invalidateActiveConnection(input *Connection) {
 	peer.Lock()
 	defer peer.Unlock()
 
+	// Change the status to inactive and start the expiration. If the connection does not become valid by that date, it will be removed.
+	input.Expires = time.Now().Add(connectionRemove * time.Second)
+
 	// remove from connectionLatest if selected so it won't be used by standard send function
 	if peer.connectionLatest == input {
 		peer.connectionLatest = nil
@@ -111,7 +115,7 @@ func (peer *PeerInfo) invalidateActiveConnection(input *Connection) {
 			}
 			peer.connectionActive = activeNew
 
-			return
+			break
 		}
 	}
 }
@@ -166,7 +170,9 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 
 		// Invalid connection, immediately invalidate. Fallback to broadcast to all other active ones.
 		// Windows: A common error when the network adapter is disabled is "wsasendto: The requested address is not valid in its context".
-		peer.invalidateActiveConnection(c)
+		if IsNetworkErrorFatal(err) {
+			peer.invalidateActiveConnection(c)
+		}
 	}
 
 	// If no latest connection available, broadcast on all available connections.

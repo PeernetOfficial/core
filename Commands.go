@@ -98,7 +98,6 @@ func autoPingAll() {
 	for {
 		time.Sleep(time.Second)
 		thresholdInvalidate := time.Now().Add(-connectionInvalidate * time.Second)
-		thresholdRemove := time.Now().Add(-(connectionRemove + connectionInvalidate) * time.Second)
 		thresholdPingOut := time.Now().Add(-pingTime * time.Second)
 
 		for _, peer := range PeerlistGet() {
@@ -107,19 +106,23 @@ func autoPingAll() {
 				// Check if no incoming packet for the last X seconds. Regularly sent pings should result in incoming packets.
 				if connection.LastPacketIn.Before(thresholdInvalidate) {
 					peer.invalidateActiveConnection(connection)
+					continue
 				}
 
 				// Send ping if none was sent recently and no incoming packet was received recently.
 				if connection.LastPacketIn.Before(thresholdPingOut) && connection.LastPingOut.Before(thresholdPingOut) {
-					peer.sendConnection(&PacketRaw{Command: CommandPing}, connection)
+					if err := peer.sendConnection(&PacketRaw{Command: CommandPing}, connection); IsNetworkErrorFatal(err) {
+						peer.invalidateActiveConnection(connection)
+					}
 					connection.LastPingOut = time.Now()
+					continue
 				}
 			}
 
 			// handle inactive connections
 			for _, connection := range peer.GetConnections(false) {
-				// Remove connections that have been inactive for a long time; only if there is at least an active connection, or at least two other inactive ones.
-				if connection.LastPacketIn.Before(thresholdRemove) && (len(peer.connectionActive) >= 1 || len(peer.connectionInactive) > 2) {
+				// If the inactive connection is expired, remove it; although only if there is at least one active connection, or two other inactive ones.
+				if (len(peer.connectionActive) >= 1 || len(peer.connectionInactive) > 2) && connection.Expires.Before(time.Now()) {
 					peer.removeInactiveConnection(connection)
 					continue
 				}
