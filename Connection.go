@@ -24,7 +24,15 @@ type Connection struct {
 	LastPacketOut time.Time    // Last time an outgoing packet was attempted to send.
 	LastPingOut   time.Time    // Last ping out.
 	Expires       time.Time    // Inactive connections only: Expiry date. If it does not become active by that date, it will be considered expired and removed.
+	Status        int          // 0 = Active established connection, 1 = Inactive, 2 = Removed
 }
+
+// Connection status
+const (
+	ConnectionActive = iota
+	ConnectionInactive
+	ConnectionRemoved
+)
 
 // Equal checks if the connection was established other the same network adapter using the same IP address. Port is intentionally not checked.
 func (c *Connection) Equal(other *Connection) bool {
@@ -69,6 +77,7 @@ func (peer *PeerInfo) registerConnection(incoming *Connection) (result *Connecti
 			}
 
 			// elevate by adding to active and mark as latest active
+			connection.Status = ConnectionActive
 			peer.connectionLatest = connection
 			peer.connectionActive = append(peer.connectionActive, connection)
 
@@ -96,6 +105,7 @@ func (peer *PeerInfo) invalidateActiveConnection(input *Connection) {
 	defer peer.Unlock()
 
 	// Change the status to inactive and start the expiration. If the connection does not become valid by that date, it will be removed.
+	input.Status = ConnectionInactive
 	input.Expires = time.Now().Add(connectionRemove * time.Second)
 
 	// remove from connectionLatest if selected so it won't be used by standard send function
@@ -124,6 +134,8 @@ func (peer *PeerInfo) invalidateActiveConnection(input *Connection) {
 func (peer *PeerInfo) removeInactiveConnection(input *Connection) {
 	peer.Lock()
 	defer peer.Unlock()
+
+	input.Status = ConnectionRemoved
 
 	for n, connection := range peer.connectionInactive {
 		if connection == input {

@@ -129,7 +129,7 @@ func packetWorker(packets <-chan networkWire) {
 			continue
 		}
 
-		connection := &Connection{Network: packet.network, Address: packet.sender}
+		connection := &Connection{Network: packet.network, Address: packet.sender, Status: ConnectionActive}
 
 		peer := PeerlistLookup(senderPublicKey)
 		if peer != nil {
