@@ -79,7 +79,7 @@ func (network *Network) BroadcastIPv4Listen() {
 		}
 
 		// send the packet to a channel which is processed by multiple workers.
-		rawPacketsIncoming <- networkWire{network: network, sender: sender.(*net.UDPAddr), raw: buffer[:length], receiverPublicKey: ipv4BroadcastPublicKey}
+		rawPacketsIncoming <- networkWire{network: network, sender: sender.(*net.UDPAddr), raw: buffer[:length], receiverPublicKey: ipv4BroadcastPublicKey, unicast: false}
 	}
 }
 

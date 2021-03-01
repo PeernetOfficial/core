@@ -27,6 +27,7 @@ type networkWire struct {
 	sender            *net.UDPAddr     // sender of the packet
 	receiverPublicKey *btcec.PublicKey // public key associated with the receiver
 	raw               []byte           // buffer
+	unicast           bool             // True if the message was sent via unicast. False if sent via IPv4 broadcast or IPv6 multicast.
 }
 
 var (

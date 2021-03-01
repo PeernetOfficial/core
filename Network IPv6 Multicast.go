@@ -125,7 +125,7 @@ func (network *Network) MulticastIPv6Listen() {
 		}
 
 		// send the packet to a channel which is processed by multiple workers.
-		rawPacketsIncoming <- networkWire{network: network, sender: sender.(*net.UDPAddr), raw: buffer[:length], receiverPublicKey: ipv6MulticastPublicKey}
+		rawPacketsIncoming <- networkWire{network: network, sender: sender.(*net.UDPAddr), raw: buffer[:length], receiverPublicKey: ipv6MulticastPublicKey, unicast: false}
 	}
 }
 
