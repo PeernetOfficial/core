@@ -117,6 +117,11 @@ func (network *Network) MulticastIPv6Listen() {
 			continue
 		}
 
+		// For good network practice (and reducing amount of parallel connections), do not allow link-local to talk to non-link-local addresses.
+		if sender.(*net.UDPAddr).IP.IsLinkLocalUnicast() != network.address.IP.IsLinkLocalUnicast() {
+			continue
+		}
+
 		//fmt.Printf("MulticastIPv6Listen from %s at network %s\n", sender.String(), network.address.String())
 
 		if length < packetLengthMin {

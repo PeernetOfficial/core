@@ -71,6 +71,11 @@ func (network *Network) BroadcastIPv4Listen() {
 			continue
 		}
 
+		// For good network practice (and reducing amount of parallel connections), do not allow link-local to talk to non-link-local addresses.
+		if sender.(*net.UDPAddr).IP.IsLinkLocalUnicast() != network.address.IP.IsLinkLocalUnicast() {
+			continue
+		}
+
 		//fmt.Printf("BroadcastIPv4Listen from %s at network %s\n", sender.String(), network.address.String())
 
 		if length < packetLengthMin {
