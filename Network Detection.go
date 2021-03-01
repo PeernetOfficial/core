@@ -7,8 +7,11 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"fmt"
+	"log"
 	"net"
 	"strings"
+	"time"
 )
 
 // FindInterfaceByIP finds an interface based on the IP. The IP must be available at the interface.
@@ -86,4 +89,112 @@ func IsNetworkErrorFatal(err error) bool {
 	}
 
 	return false
+}
+
+// changeMonitorFrequency is the frequency in seconds to check for a network change
+const changeMonitorFrequency = 10
+
+// networkChangeMonitor() monitors for network changes to act accordingly
+func networkChangeMonitor() {
+	// If manual IPs are entered, no need for monitoring for any network changes.
+	if len(config.Listen) > 0 {
+		return
+	}
+
+	for {
+		time.Sleep(time.Second * changeMonitorFrequency)
+
+		interfaceList, err := net.Interfaces()
+		if err != nil {
+			log.Printf("networkChangeMonitor enumerating network adapters failed: %s\n", err.Error())
+			continue
+		}
+
+		ifacesNew := make(map[string][]net.Addr)
+
+		for _, iface := range interfaceList {
+			addressesNew, err := iface.Addrs()
+			if err != nil {
+				log.Printf("initNetwork error enumerating IPs for network adapter '%s': %s\n", iface.Name, err.Error())
+				continue
+			}
+			ifacesNew[iface.Name] = addressesNew
+
+			// was the interface added?
+			addressesExist, ok := ifacesExist[iface.Name]
+			if !ok {
+				networkChangeInterfaceNew(iface, addressesNew)
+			} else {
+				// new IPs added for this interface?
+				for _, addr := range addressesNew {
+					exists := false
+					for _, exist := range addressesExist {
+						if exist.String() == addr.String() {
+							exists = true
+							break
+						}
+					}
+
+					if !exists {
+						networkChangeIPNew(iface, addr)
+					}
+				}
+
+				// were IPs removed from this interface
+				for _, exist := range addressesExist {
+					removed := true
+					for _, addr := range addressesNew {
+						if exist.String() == addr.String() {
+							removed = false
+							break
+						}
+					}
+
+					if removed {
+						networkChangeIPRemove(iface, exist)
+					}
+				}
+			}
+		}
+
+		// was an existing interface removed?
+		for ifaceExist, addressesExist := range ifacesExist {
+			if _, ok := ifacesNew[ifaceExist]; !ok {
+				networkChangeInterfaceRemove(ifaceExist, addressesExist)
+			}
+		}
+
+		ifacesExist = ifacesNew
+	}
+}
+
+// networkChangeInterfaceNew is called when a new interface is detected
+func networkChangeInterfaceNew(iface net.Interface, addresses []net.Addr) {
+	fmt.Printf("Interface new: %s\n", iface.Name)
+
+	for _, addr := range addresses {
+		fmt.Printf("  IP: %s\n", addr.String())
+	}
+}
+
+// networkChangeInterfaceRemove is called when an existing interface is removed
+func networkChangeInterfaceRemove(iface string, addresses []net.Addr) {
+	//networksMutex.RLock()
+	//defer networksMutex.RUnlock()
+
+	fmt.Printf("Interface removed: %s\n", iface)
+
+	for _, addr := range addresses {
+		fmt.Printf("  IP: %s\n", addr.String())
+	}
+}
+
+// networkChangeIPNew is called when an existing interface lists a new IP
+func networkChangeIPNew(iface net.Interface, address net.Addr) {
+	fmt.Printf("IP new on iface: %s address %s\n", iface.Name, address.String())
+}
+
+// networkChangeIPRemove is called when an existing interface removes an IP
+func networkChangeIPRemove(iface net.Interface, address net.Addr) {
+	fmt.Printf("IP removed on iface: %s address %s\n", iface.Name, address.String())
 }

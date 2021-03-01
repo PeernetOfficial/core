@@ -241,6 +241,9 @@ func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remo
 
 	successCount := 0
 
+	networksMutex.RLock()
+	defer networksMutex.RUnlock()
+
 	if IsIPv6(remote.IP.To16()) {
 		for _, network := range networks6 {
 			// Do not mix link-local unicast targets with non link-local networks (only when iface is known, i.e. not catch all local)

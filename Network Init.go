@@ -31,14 +31,16 @@ type networkWire struct {
 }
 
 var (
-	rawPacketsIncoming chan networkWire    // channel for processing incoming decoded packets by workers
-	ipsListen          map[string]struct{} // list of IPs currently listening on
+	rawPacketsIncoming chan networkWire      // channel for processing incoming decoded packets by workers
+	ipsListen          map[string]struct{}   // list of IPs currently listening on
+	ifacesExist        map[string][]net.Addr // list of currently known interfaces with list of IP addresses
 )
 
 // initNetwork sets up the network configuration and starts listening.
 func initNetwork() {
 	rawPacketsIncoming = make(chan networkWire, 1000) // buffer up to 1000 UDP packets before they get buffered by the OS network stack and eventually dropped
 	ipsListen = make(map[string]struct{})
+	ifacesExist = make(map[string][]net.Addr)
 	rand.Seed(time.Now().UnixNano()) // we are not using "crypto/rand" for speed tradeoff
 
 	if config.ListenWorkers == 0 {
@@ -95,6 +97,8 @@ func initNetwork() {
 			log.Printf("initNetwork error enumerating IPs for network adapter '%s': %s\n", iface.Name, err.Error())
 			continue
 		}
+
+		ifacesExist[iface.Name] = addresses
 
 		for _, address := range addresses {
 			net1 := address.(*net.IPNet)

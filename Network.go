@@ -10,6 +10,7 @@ import (
 	"errors"
 	"log"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -29,6 +30,9 @@ type Network struct {
 
 // networks is a list of all connected networks
 var networks4, networks6 []*Network
+
+// single mutex for both network lists. Higher granularity currently not needed.
+var networksMutex sync.RWMutex
 
 // Default ports to use. This may be randomized in the future to prevent fingerprinting (and subsequent blocking) by corporate and ISP firewalls.
 const defaultPort = 'p' // 112
@@ -115,7 +119,7 @@ func packetWorker(packets <-chan networkWire) {
 	for packet := range packets {
 		decoded, senderPublicKey, err := PacketDecrypt(packet.raw, packet.receiverPublicKey)
 		if err != nil {
-			log.Printf("packetWorker Error decrypting packet from '%s': %s\n", packet.sender.String(), err.Error())
+			//log.Printf("packetWorker Error decrypting packet from '%s': %s\n", packet.sender.String(), err.Error())
 			continue
 		}
 

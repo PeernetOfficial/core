@@ -20,4 +20,5 @@ func Connect() {
 	go bootstrap()
 	go autoMulticastBroadcast()
 	go autoPingAll()
+	go networkChangeMonitor()
 }

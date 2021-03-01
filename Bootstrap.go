@@ -152,6 +152,9 @@ func bootstrap() {
 
 func autoMulticastBroadcast() {
 	sendMulticastBroadcast := func() {
+		networksMutex.RLock()
+		defer networksMutex.RUnlock()
+
 		for _, network := range networks6 {
 			if err := network.MulticastIPv6Send(); err != nil {
 				log.Printf("bootstrap error multicast from network address '%s': %v", network.address.IP.String(), err.Error())

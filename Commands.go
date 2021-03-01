@@ -70,6 +70,11 @@ func (peer *PeerInfo) cmdResponse(msg *packet2) {
 
 // cmdPing handles an incoming ping message
 func (peer *PeerInfo) cmdPing(msg *packet2) {
+	if peer == nil {
+		// Unexpected incoming ping, reply with announce message
+		// TODO
+		return
+	}
 	peer.send(&PacketRaw{Command: CommandPong})
 	//fmt.Printf("Incoming ping from %s on %s\n", msg.connection.Address.String(), msg.connection.Address.String())
 }
