@@ -159,12 +159,16 @@ func networkPrepareListen(ipA string, port int) (network *Network, err error) {
 		return nil, err
 	}
 
+	networksMutex.Lock()
+
 	// Success - port is open. Add to the list and start accepting incoming messages.
 	if IsIPv4(ip) {
 		networks4 = append(networks4, network)
+		networksMutex.Unlock()
 		network.BroadcastIPv4()
 	} else {
 		networks6 = append(networks6, network)
+		networksMutex.Unlock()
 		network.MulticastIPv6Join()
 	}
 

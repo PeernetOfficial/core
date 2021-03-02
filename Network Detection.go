@@ -7,7 +7,6 @@ Author:     Peter Kleissner
 package core
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -211,10 +210,41 @@ func networkChangeInterfaceRemove(iface string, addresses []net.Addr) {
 
 // networkChangeIPNew is called when an existing interface lists a new IP
 func networkChangeIPNew(iface net.Interface, address net.Addr) {
-	fmt.Printf("IP new on iface: %s address %s\n", iface.Name, address.String())
+	log.Printf("networkChangeIPNew new interface '%s' IP %s\n", iface.Name, address.String())
+
+	networkStart(iface, []net.Addr{address})
 }
 
 // networkChangeIPRemove is called when an existing interface removes an IP
 func networkChangeIPRemove(iface net.Interface, address net.Addr) {
-	fmt.Printf("IP removed on iface: %s address %s\n", iface.Name, address.String())
+	networksMutex.RLock()
+	defer networksMutex.RUnlock()
+
+	log.Printf("networkChangeIPRemove remove interface '%s' IP %s\n", iface.Name, address.String())
+
+	for n, network := range networks6 {
+		if network.address.IP.Equal(address.(*net.IPNet).IP) {
+			network.Terminate()
+
+			// remove from list
+			networksNew := networks6[:n]
+			if n < len(networks6)-1 {
+				networksNew = append(networksNew, networks6[n+1:]...)
+			}
+			networks6 = networksNew
+		}
+	}
+
+	for n, network := range networks4 {
+		if network.address.IP.Equal(address.(*net.IPNet).IP) {
+			network.Terminate()
+
+			// remove from list
+			networksNew := networks4[:n]
+			if n < len(networks4)-1 {
+				networksNew = append(networksNew, networks4[n+1:]...)
+			}
+			networks4 = networksNew
+		}
+	}
 }
