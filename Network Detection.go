@@ -172,6 +172,7 @@ func networkChangeMonitor() {
 func networkChangeInterfaceNew(iface net.Interface, addresses []net.Addr) {
 	log.Printf("networkChangeInterfaceNew new interface '%s' (%d IPs)\n", iface.Name, len(addresses))
 
+	networkStart(iface, addresses)
 }
 
 // networkChangeInterfaceRemove is called when an existing interface is removed

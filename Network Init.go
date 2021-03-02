@@ -16,6 +16,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -33,6 +34,7 @@ type networkWire struct {
 var (
 	rawPacketsIncoming chan networkWire      // channel for processing incoming decoded packets by workers
 	ipsListen          map[string]struct{}   // list of IPs currently listening on
+	ipsListenMutex     sync.RWMutex          // Mutext for ipsListen
 	ifacesExist        map[string][]net.Addr // list of currently known interfaces with list of IP addresses
 )
 
@@ -100,32 +102,37 @@ func initNetwork() {
 
 		ifacesExist[iface.Name] = addresses
 
-		for _, address := range addresses {
-			net1 := address.(*net.IPNet)
+		networkStart(iface, addresses)
+	}
+}
 
-			// Do not listen on lookpback IPs. They are not even needed for discovery of machine-local peers (they will be discovered via regular multicast/broadcast).
-			if net1.IP.IsLoopback() {
-				continue
-			}
+// networkStart will start the listeners on all the IP addresses for the network
+func networkStart(iface net.Interface, addresses []net.Addr) {
+	for _, address := range addresses {
+		net1 := address.(*net.IPNet)
 
-			netw, err := networkPrepareListen(net1.IP.String(), 0)
-
-			if err != nil {
-				// Do not log common errors:
-				// * "listen udp4 169.254.X.X:X: bind: The requested address is not valid in its context."
-				// Windows reports link-local addresses for inactive network adapters.
-				if net1.IP.IsLinkLocalUnicast() {
-					continue
-				}
-
-				log.Printf("initNetwork error listening on network adapter '%s' IPv4 '%s': %s\n", iface.Name, net1.IP.String(), err.Error())
-				continue
-			}
-
-			addListenAddress(netw.address)
-
-			log.Printf("Listen on UDP %s\n", netw.address.String())
+		// Do not listen on lookpback IPs. They are not even needed for discovery of machine-local peers (they will be discovered via regular multicast/broadcast).
+		if net1.IP.IsLoopback() {
+			continue
 		}
+
+		netw, err := networkPrepareListen(net1.IP.String(), 0)
+
+		if err != nil {
+			// Do not log common errors:
+			// * "listen udp4 169.254.X.X:X: bind: The requested address is not valid in its context."
+			// Windows reports link-local addresses for inactive network adapters.
+			if net1.IP.IsLinkLocalUnicast() {
+				continue
+			}
+
+			log.Printf("initNetwork error listening on network adapter '%s' IPv4 '%s': %s\n", iface.Name, net1.IP.String(), err.Error())
+			continue
+		}
+
+		addListenAddress(netw.address)
+
+		log.Printf("Listen on network '%s' UDP %s\n", iface.Name, netw.address.String())
 	}
 }
 
@@ -166,8 +173,18 @@ func networkPrepareListen(ipA string, port int) (network *Network, err error) {
 	return network, nil
 }
 
+// addListenAddress adds a listening IP:Port to the list.
 func addListenAddress(addr *net.UDPAddr) {
+	ipsListenMutex.Lock()
 	ipsListen[net.JoinHostPort(addr.IP.String(), strconv.Itoa(addr.Port))] = struct{}{}
+	ipsListenMutex.Unlock()
+}
+
+// removeListenAddress removes a listening address from the list
+func removeListenAddress(addr *net.UDPAddr) {
+	ipsListenMutex.Lock()
+	delete(ipsListen, net.JoinHostPort(addr.IP.String(), strconv.Itoa(addr.Port)))
+	ipsListenMutex.Unlock()
 }
 
 // IsAddressSelf checks if the senders address is actually listening address. This prevents loopback packets from being considered.
@@ -178,6 +195,8 @@ func IsAddressSelf(addr *net.UDPAddr) bool {
 	}
 
 	// do not use addr.String() since it addds the Zone for IPv6 which may be ambiguous (can be adapter name or address literal).
+	ipsListenMutex.RLock()
 	_, ok := ipsListen[net.JoinHostPort(addr.IP.String(), strconv.Itoa(addr.Port))]
+	ipsListenMutex.RUnlock()
 	return ok
 }

@@ -215,4 +215,6 @@ func (network *Network) Terminate() {
 	network.isTerminated = true
 	close(network.terminateSignal) // safety guaranteed via lock
 	network.socket.Close()         // Will stop the listener from blocking on network.socket.ReadFromUDP
+
+	removeListenAddress(network.address)
 }
