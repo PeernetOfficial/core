@@ -18,14 +18,17 @@ import (
 // Network is a connection adapter through one network interface (adapter).
 // Note that for each IP on the same adapter separate network entries are created.
 type Network struct {
-	iface           *net.Interface // Network interface belonging to the IP. May not be set.
-	ipnet           *net.IPNet     // IP network the listening address belongs to. May not be set.
-	address         *net.UDPAddr   // IP:Port where the server listens
-	socket          *net.UDPConn   // active socket for send/receive
-	multicastIP     net.IP         // Multicast IP, IPv6 only.
-	multicastSocket net.PacketConn // Multicast socket, IPv6 only.
-	broadcastSocket net.PacketConn // Broadcast socket, IPv4 only.
-	broadcastIPv4   []net.IP       // Broadcast IPs, IPv4 only.
+	iface           *net.Interface   // Network interface belonging to the IP. May not be set.
+	ipnet           *net.IPNet       // IP network the listening address belongs to. May not be set.
+	address         *net.UDPAddr     // IP:Port where the server listens
+	socket          *net.UDPConn     // active socket for send/receive
+	multicastIP     net.IP           // Multicast IP, IPv6 only.
+	multicastSocket net.PacketConn   // Multicast socket, IPv6 only.
+	broadcastSocket net.PacketConn   // Broadcast socket, IPv4 only.
+	broadcastIPv4   []net.IP         // Broadcast IPs, IPv4 only.
+	isTerminated    bool             // If true, the network was signaled for termination
+	terminateSignal chan interface{} // gets closed on termination signal, can be used in select via "case _ = <- network.terminateSignal:"
+	sync.RWMutex                     // for sychronized closing
 }
 
 // networks is a list of all connected networks
@@ -92,13 +95,18 @@ const maxPacketSize = 4096
 
 // Listen starts listening for incoming packets on the given UDP connection
 func (network *Network) Listen() {
-	for {
+	for !network.isTerminated {
 		// Buffer: Must be created for each packet as it is passed as pointer.
 		// If the buffer is too small, ReadFromUDP only reads until its length and returns this error: "wsarecvfrom: A message sent on a datagram socket was larger than the internal message buffer or some other network limit, or the buffer used to receive a datagram into was smaller than the datagram itself."
 		buffer := make([]byte, maxPacketSize)
 		length, sender, err := network.socket.ReadFromUDP(buffer)
 
 		if err != nil {
+			// Exit on closed socket. Error will be "use of closed network connection".
+			if network.isTerminated {
+				return
+			}
+
 			log.Printf("Listen Error receiving UDP message: %v\n", err) // Only log for debug purposes.
 			time.Sleep(time.Millisecond * 50)                           // In case of endless errors, prevent ddos of CPU.
 			continue
@@ -192,4 +200,19 @@ func (network *Network) GetAdapterName() string {
 		return network.iface.Name
 	}
 	return "[unknown adapter]"
+}
+
+// Terminate sends the termination signal to all workers. It is safe to call Terminate multiple times.
+func (network *Network) Terminate() {
+	network.Lock()
+	defer network.Unlock()
+
+	if network.isTerminated {
+		return
+	}
+
+	// set the termination signal
+	network.isTerminated = true
+	close(network.terminateSignal) // safety guaranteed via lock
+	network.socket.Close()         // Will stop the listener from blocking on network.socket.ReadFromUDP
 }

@@ -137,6 +137,7 @@ func networkPrepareListen(ipA string, port int) (network *Network, err error) {
 	}
 
 	network = new(Network)
+	network.terminateSignal = make(chan interface{})
 
 	// get the network interface that belongs to the IP
 	if ipA != "0.0.0.0" && ipA != "::" {

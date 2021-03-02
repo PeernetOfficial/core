@@ -170,22 +170,41 @@ func networkChangeMonitor() {
 
 // networkChangeInterfaceNew is called when a new interface is detected
 func networkChangeInterfaceNew(iface net.Interface, addresses []net.Addr) {
-	fmt.Printf("Interface new: %s\n", iface.Name)
+	log.Printf("networkChangeInterfaceNew new interface '%s' (%d IPs)\n", iface.Name, len(addresses))
 
-	for _, addr := range addresses {
-		fmt.Printf("  IP: %s\n", addr.String())
-	}
 }
 
 // networkChangeInterfaceRemove is called when an existing interface is removed
 func networkChangeInterfaceRemove(iface string, addresses []net.Addr) {
-	//networksMutex.RLock()
-	//defer networksMutex.RUnlock()
+	networksMutex.RLock()
+	defer networksMutex.RUnlock()
 
-	fmt.Printf("Interface removed: %s\n", iface)
+	log.Printf("networkChangeInterfaceRemove removing interface '%s' (%d IPs)\n", iface, len(addresses))
 
-	for _, addr := range addresses {
-		fmt.Printf("  IP: %s\n", addr.String())
+	for n, network := range networks6 {
+		if network.iface != nil && network.iface.Name == iface {
+			network.Terminate()
+
+			// remove from list
+			networksNew := networks6[:n]
+			if n < len(networks6)-1 {
+				networksNew = append(networksNew, networks6[n+1:]...)
+			}
+			networks6 = networksNew
+		}
+	}
+
+	for n, network := range networks4 {
+		if network.iface != nil && network.iface.Name == iface {
+			network.Terminate()
+
+			// remove from list
+			networksNew := networks4[:n]
+			if n < len(networks4)-1 {
+				networksNew = append(networksNew, networks4[n+1:]...)
+			}
+			networks4 = networksNew
+		}
 	}
 }
 
