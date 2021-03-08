@@ -21,14 +21,22 @@ type Node struct {
 	LastSeen time.Time
 }
 
-// nodeList is used in order to sort a list of arbitrary nodes against a
-// comparator. These nodes are sorted by xor distance
+// shortList is used in order to sort a list of arbitrary nodes against a comparator. These nodes are sorted by xor distance
 type shortList struct {
 	// Nodes are a list of nodes to be compared
-	Nodes []Node
+	Nodes []*Node
 
 	// Comparator is the ID to compare to
 	Comparator []byte
+
+	// Contacted is a list of nodes that are considered contacted
+	Contacted map[string]bool
+}
+
+func newShortList() *shortList {
+	return &shortList{
+		Contacted: make(map[string]bool),
+	}
 }
 
 func areNodesEqual(n1 *Node, n2 *Node, allowNilID bool) bool {
@@ -46,30 +54,16 @@ func areNodesEqual(n1 *Node, n2 *Node, allowNilID bool) bool {
 	return true
 }
 
-func (n *shortList) RemoveNode(node Node) {
+func (n *shortList) RemoveNode(ID []byte) {
 	for i := 0; i < n.Len(); i++ {
-		if bytes.Compare(n.Nodes[i].ID, node.ID) == 0 {
+		if bytes.Compare(n.Nodes[i].ID, ID) == 0 {
 			n.Nodes = append(n.Nodes[:i], n.Nodes[i+1:]...)
 			return
 		}
 	}
 }
 
-func (n *shortList) AppendUniqueNodes(nodes ...Node) {
-	for _, vv := range nodes {
-		exists := false
-		for _, v := range n.Nodes {
-			if bytes.Compare(v.ID, vv.ID) == 0 {
-				exists = true
-			}
-		}
-		if !exists {
-			n.Nodes = append(n.Nodes, vv)
-		}
-	}
-}
-
-func (n *shortList) AppendUnique(nodes ...Node) {
+func (n *shortList) AppendUniqueNodes(nodes ...*Node) {
 	for _, vv := range nodes {
 		exists := false
 		for _, v := range n.Nodes {
@@ -107,4 +101,25 @@ func getDistance(id1 []byte, id2 []byte) *big.Int {
 	buf2 := new(big.Int).SetBytes(id2)
 	result := new(big.Int).Xor(buf1, buf2)
 	return result
+}
+
+// GetUncontacted returns a list of uncontacted nodes. Each returned node will be marked as contacted.
+func (n *shortList) GetUncontacted(count int, useCount bool) (Nodes []*Node) {
+	for _, node := range n.Nodes {
+		if useCount && count <= 0 {
+			break
+		}
+
+		// Don't contact nodes already contacted
+		if n.Contacted[string(node.ID)] == true {
+			continue
+		}
+
+		n.Contacted[string(node.ID)] = true
+		Nodes = append(Nodes, node)
+
+		count--
+	}
+
+	return Nodes
 }

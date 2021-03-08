@@ -8,7 +8,6 @@ package dht
 
 import (
 	"bytes"
-	"errors"
 	"math"
 	"math/big"
 	"math/rand"
@@ -34,7 +33,7 @@ type hashTable struct {
 	// [ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]
 	//  ^                                                           ^
 	//  └ Least recently seen                    Most recently seen ┘
-	RoutingTable [][]Node // bBits x bSize
+	RoutingTable [][]*Node // bBits x bSize
 
 	mutex *sync.Mutex
 }
@@ -47,25 +46,26 @@ func newHashTable(n Node, bits, bucketSize int) *hashTable {
 		Self:  n,
 	}
 
-	ht.RoutingTable = make([][]Node, ht.bBits)
+	ht.RoutingTable = make([][]*Node, ht.bBits)
 	return ht
 }
 
-func (ht *hashTable) markNodeAsSeen(node []byte) {
+func (ht *hashTable) markNodeAsSeen(ID []byte) {
 	ht.mutex.Lock()
 	defer ht.mutex.Unlock()
-	index := getBucketIndexFromDifferingBit(ht.bBits, ht.Self.ID, node)
+	index := ht.getBucketIndexFromDifferingBit(ID)
 	bucket := ht.RoutingTable[index]
 	nodeIndex := -1
 	for i, v := range bucket {
-		if bytes.Compare(v.ID, node) == 0 {
+		if bytes.Compare(v.ID, ID) == 0 {
 			nodeIndex = i
 			break
 		}
 	}
 
 	if nodeIndex == -1 {
-		panic(errors.New("Tried to mark nonexistent node as seen"))
+		//errors.New("Tried to mark nonexistent node as seen")
+		return
 	}
 
 	n := bucket[nodeIndex]
@@ -90,9 +90,8 @@ func (ht *hashTable) doesNodeExistInBucket(bucket int, node []byte) bool {
 func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes ...Node) *shortList {
 	ht.mutex.Lock()
 	defer ht.mutex.Unlock()
-	// First we need to build the list of adjacent indices to our target
-	// in order
-	index := getBucketIndexFromDifferingBit(ht.bBits, ht.Self.ID, target)
+	// First we need to build the list of adjacent indices to our target in order
+	index := ht.getBucketIndexFromDifferingBit(target)
 	indexList := []int{index}
 	for i, j := index-1, index+1; len(indexList) < ht.bBits; i, j = i-1, j+1 {
 		if j < ht.bBits {
@@ -103,7 +102,7 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes ...
 		}
 	}
 
-	sl := &shortList{}
+	sl := newShortList()
 
 	leftToAdd := num
 
@@ -119,7 +118,7 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes ...
 				}
 			}
 			if !ignored {
-				sl.AppendUnique(ht.RoutingTable[index][i])
+				sl.AppendUniqueNodes(ht.RoutingTable[index][i])
 				leftToAdd--
 				if leftToAdd == 0 {
 					break
@@ -133,11 +132,10 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes ...
 	return sl
 }
 
-func (ht *hashTable) insertNode(node Node, pinger func(Node) error) {
-	index := getBucketIndexFromDifferingBit(ht.bBits, ht.Self.ID, node.ID)
+func (ht *hashTable) insertNode(node *Node, shouldEvict func(*Node) bool) {
+	index := ht.getBucketIndexFromDifferingBit(node.ID)
 
-	// Make sure node doesn't already exist
-	// If it does, mark it as seen
+	// If the node already exist, mark it as seen
 	if ht.doesNodeExistInBucket(index, node.ID) {
 		ht.markNodeAsSeen(node.ID)
 		return
@@ -151,7 +149,7 @@ func (ht *hashTable) insertNode(node Node, pinger func(Node) error) {
 	bucket := ht.RoutingTable[index]
 
 	if len(bucket) == ht.bSize {
-		if pinger(bucket[0]) != nil {
+		if shouldEvict(bucket[0]) {
 			bucket = append(bucket, node)
 			bucket = bucket[1:]
 		}
@@ -166,7 +164,7 @@ func (ht *hashTable) removeNode(ID []byte) {
 	ht.mutex.Lock()
 	defer ht.mutex.Unlock()
 
-	index := getBucketIndexFromDifferingBit(ht.bBits, ht.Self.ID, ID)
+	index := ht.getBucketIndexFromDifferingBit(ID)
 	bucket := ht.RoutingTable[index]
 
 	for i, v := range bucket {
@@ -250,10 +248,10 @@ func (ht *hashTable) getRandomIDFromBucket(bucket int) []byte {
 	return id
 }
 
-func (ht *hashTable) lastSeenBefore(cutoff time.Time) (nodes []Node) {
+func (ht *hashTable) lastSeenBefore(cutoff time.Time) (nodes []*Node) {
 	ht.mutex.Lock()
 	defer ht.mutex.Unlock()
-	nodes = make([]Node, 0, ht.bSize)
+	nodes = make([]*Node, 0, ht.bSize)
 	for _, v := range ht.RoutingTable {
 		for _, n := range v {
 			if n.LastSeen.Before(cutoff) {
@@ -267,18 +265,18 @@ func (ht *hashTable) lastSeenBefore(cutoff time.Time) (nodes []Node) {
 	return nodes
 }
 
-func getBucketIndexFromDifferingBit(b int, id1 []byte, id2 []byte) int {
+func (ht *hashTable) getBucketIndexFromDifferingBit(id1 []byte) int {
 	// Look at each byte from left to right
 	for j := 0; j < len(id1); j++ {
 		// xor the byte
-		xor := id1[j] ^ id2[j]
+		xor := id1[j] ^ ht.Self.ID[j]
 
 		// check each bit on the xored result from left to right in order
 		for i := 0; i < 8; i++ {
 			if hasBit(xor, uint(i)) {
 				byteIndex := j * 8
 				bitIndex := i
-				return b - (byteIndex + bitIndex) - 1
+				return ht.bBits - (byteIndex + bitIndex) - 1
 			}
 		}
 	}
@@ -298,10 +296,10 @@ func (ht *hashTable) totalNodes() int {
 	return total
 }
 
-func (ht *hashTable) Nodes() (nodes []Node) {
+func (ht *hashTable) Nodes() (nodes []*Node) {
 	ht.mutex.Lock()
 	defer ht.mutex.Unlock()
-	nodes = make([]Node, 0, ht.bSize)
+	nodes = make([]*Node, 0, ht.bSize)
 	for _, v := range ht.RoutingTable {
 		nodes = append(nodes, v...)
 	}

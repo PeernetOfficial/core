@@ -32,7 +32,7 @@ type Store interface {
 }
 
 // NewMemoryStore create a properly initialized memory store.
-func NewMemoryStore(dht *DHT) *MemoryStore {
+func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		data:         make(map[string][]byte),
 		mutex:        &sync.Mutex{},
