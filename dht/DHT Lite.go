@@ -40,15 +40,14 @@ type DHT struct {
 
 	// SendRequest sends an information request to the remote node. I.e. requesting information.
 	// The returned results channel will be closed when no more results are to be expected.
-	SendRequest func(request *InformationRequest, nodes []*Node) (results chan *message2)
+	SendRequest func(request *InformationRequest, nodes []*Node)
 
 	// The maximum time to wait for a response to any message
 	TMsgTimeout time.Duration
 }
 
 // NewDHT initializes a new DHT node with default values.
-// Store must be set by the caller.
-func NewDHT(store Store, self Node, bits, bucketSize int) *DHT {
+func NewDHT(self *Node, bits, bucketSize int) *DHT {
 	return &DHT{
 		ht:          newHashTable(self, bits, bucketSize),
 		alpha:       3,
@@ -112,10 +111,10 @@ func (dht *DHT) FindNode(key []byte) (value []byte, found bool, err error) {
 //     IterateStore - Used to store new information in the network.
 //     IterateFindNode - Used to bootstrap the network.
 //     IterateFindValue - Used to find a value among the network given a key.
-func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closest []*Node, err error) {
+func (dht *DHT) iterate(action int, target []byte, data []byte) (value []byte, closest []*Node, err error) {
 	if len(target) != dht.ht.bBits {
 		return nil, nil, errors.New("invalid key")
-	} else if t < IterateStore || t > IterateFindValue {
+	} else if action < IterateStore || action > IterateFindValue {
 		return nil, nil, errors.New("unknown iterate type")
 	}
 
@@ -133,15 +132,16 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 	closestNode := sl.Nodes[0]
 
 	for {
-		resultsChan := dht.SendRequest(&InformationRequest{Action: t, Key: target}, sl.GetUncontacted(dht.alpha, !queryRest))
-		results := infoCollectResults(resultsChan, dht.TMsgTimeout)
+		info := NewInformationRequest(action, target)
+		dht.SendRequest(info, sl.GetUncontacted(dht.alpha, !queryRest))
+		results := info.CollectResults(dht.TMsgTimeout)
 
 		for _, result := range results {
 			if result.Error != nil {
 				sl.RemoveNode(result.SenderID)
 				continue
 			}
-			switch t {
+			switch action {
 			case IterateFindNode:
 				sl.AppendUniqueNodes(result.Closest...)
 				// TODO: Accept contact info?
@@ -161,7 +161,7 @@ func (dht *DHT) iterate(t int, target []byte, data []byte) (value []byte, closes
 		// If closestNode is unchanged then we are done
 		if bytes.Compare(sl.Nodes[0].ID, closestNode.ID) == 0 || queryRest {
 			// We are done
-			switch t {
+			switch action {
 			case IterateFindNode:
 				if !queryRest {
 					queryRest = true

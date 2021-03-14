@@ -19,7 +19,7 @@ import (
 // hashTable represents the hashtable state
 type hashTable struct {
 	// The ID of the local node
-	Self Node
+	Self *Node
 
 	// the size in bits of the keys used to identify nodes and store and
 	// retrieve data; in basic Kademlia this is 160, the length of a SHA1
@@ -38,12 +38,12 @@ type hashTable struct {
 	mutex *sync.Mutex
 }
 
-func newHashTable(n Node, bits, bucketSize int) *hashTable {
+func newHashTable(self *Node, bits, bucketSize int) *hashTable {
 	ht := &hashTable{
 		bBits: bits,
 		bSize: bucketSize,
 		mutex: &sync.Mutex{},
-		Self:  n,
+		Self:  self,
 	}
 
 	ht.RoutingTable = make([][]*Node, ht.bBits)

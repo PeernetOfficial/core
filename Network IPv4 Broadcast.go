@@ -1,6 +1,6 @@
 /*
 File Name:  Network IPv4 Broadcast.go
-Copyright:  2021 Peernet Foundation s.r.o.
+Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
 IPv4 Multicast just sucks (can't use socket bound to 0.0.0.0:PortMain and send to 224.0.0.1:PortMulticast), so we rely on Broadcast instead.
@@ -90,7 +90,7 @@ func (network *Network) BroadcastIPv4Listen() {
 
 // BroadcastIPv4Send sends out a single broadcast messages to discover peers
 func (network *Network) BroadcastIPv4Send() (err error) {
-	raw, err := PacketEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &PacketRaw{Protocol: 0, Command: 0})
+	raw, err := PacketEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &PacketRaw{Protocol: ProtocolVersion, Command: 0})
 	if err != nil {
 		return err
 	}

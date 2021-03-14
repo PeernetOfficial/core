@@ -1,6 +1,6 @@
 /*
 File Name:  Bootstrap.go
-Copyright:  2021 Peernet Foundation s.r.o.
+Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
 Strategy for sending our IPv6 Multicast and IPv4 Broadcast messages:

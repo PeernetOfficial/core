@@ -1,6 +1,6 @@
 /*
 File Name:  Packet Encoding.go
-Copyright:  2021 Peernet Foundation s.r.o.
+Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
 Basic packet structure of ALL packets:

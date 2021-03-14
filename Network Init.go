@@ -1,6 +1,6 @@
 /*
 File Name:  Network Init.go
-Copyright:  2021 Peernet Foundation s.r.o.
+Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
 Magic 🪄 to start the network configuration with 0 manual input. Users may specify the list of IPs (and optional ports) to listen; otherwise it listens on all.

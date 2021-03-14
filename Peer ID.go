@@ -1,6 +1,6 @@
 /*
 File Name:  Peer ID.go
-Copyright:  2021 Peernet Foundation s.r.o.
+Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */
 
@@ -18,6 +18,7 @@ import (
 // peerID is the current peers ID. It is a ECDSA (secp256k1) 257-bit public key.
 var peerPrivateKey *btcec.PrivateKey
 var peerPublicKey *btcec.PublicKey
+var nodeID []byte
 
 func initPeerID() {
 	peerList = make(map[[btcec.PubKeyBytesLenCompressed]byte]*PeerInfo)
@@ -27,6 +28,7 @@ func initPeerID() {
 		configPK, err := hex.DecodeString(config.PrivateKey)
 		if err == nil {
 			peerPrivateKey, peerPublicKey = btcec.PrivKeyFromBytes(btcec.S256(), configPK)
+			nodeID = publicKey2NodeID(peerPublicKey)
 			return
 		}
 
@@ -41,6 +43,7 @@ func initPeerID() {
 		log.Printf("Error generating public-private key pairs: %s\n", err.Error())
 		os.Exit(1)
 	}
+	nodeID = publicKey2NodeID(peerPublicKey)
 
 	// save the newly generated private key into the config
 	config.PrivateKey = hex.EncodeToString(peerPublicKey.SerializeCompressed())
@@ -66,6 +69,7 @@ func ExportPrivateKey() (privateKey *btcec.PrivateKey, publicKey *btcec.PublicKe
 // PeerInfo stores information about a single remote peer
 type PeerInfo struct {
 	PublicKey          *btcec.PublicKey // Public key
+	NodeID             []byte           // Node ID in Kademlia network = blake3(Public Key).
 	connectionActive   []*Connection    // List of active established connections to the peer.
 	connectionInactive []*Connection    // List of former connections that are no longer valid. They may be removed after a while.
 	connectionLatest   *Connection      // Latest valid connection.
@@ -93,7 +97,7 @@ func PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*Connection) (peer *
 		return peer, false
 	}
 
-	peer = &PeerInfo{PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0]}
+	peer = &PeerInfo{PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], NodeID: publicKey2NodeID(PublicKey)}
 	peerList[publicKey2Compressed(peer.PublicKey)] = peer
 
 	return peer, true
@@ -140,4 +144,10 @@ func publicKey2Compressed(publicKey *btcec.PublicKey) [btcec.PubKeyBytesLenCompr
 	var key [btcec.PubKeyBytesLenCompressed]byte
 	copy(key[:], publicKey.SerializeCompressed())
 	return key
+}
+
+// publicKey2NodeID translates the Public Key into the node ID used in the Kademlia network.
+// This is very important for lookup of data in the DHT.
+func publicKey2NodeID(publicKey *btcec.PublicKey) (nodeID []byte) {
+	return hashData(peerPublicKey.SerializeCompressed())
 }

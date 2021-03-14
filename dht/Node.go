@@ -123,3 +123,11 @@ func (n *shortList) GetUncontacted(count int, useCount bool) (Nodes []*Node) {
 
 	return Nodes
 }
+
+// NodeMessage is a message sent by a node
+type NodeMessage struct {
+	SenderID []byte // Sender of this message
+	Data     []byte
+	Closest  []*Node
+	Error    error
+}

@@ -8,7 +8,7 @@ Current version: 0.1 (pre-alpha)
 
 * Salsa20 is used for encrypting the packets.
 * secp256k1 is used to generate the peer IDs (public keys).
-* blake3 is used for hashing the packets when signing.
+* blake3 is used for hashing the packets when signing and as hashing algorithm for the DHT.
 
 ## Dependencies
 
@@ -38,6 +38,6 @@ The Private Key is required to make any changes to the user's blockchain, includ
 
 ## Contributing
 
-Please note that by contributing code, documentation, ideas, snippets, or any other intellectual property you agree that you have all the necessary rights and you agree that we, the Peernet Foundation, may use it for any purpose.
+Please note that by contributing code, documentation, ideas, snippets, or any other intellectual property you agree that you have all the necessary rights and you agree that we, Peernet, may use it for any purpose.
 
-&copy; 2021 Peernet Foundation
+&copy; 2021 Peernet

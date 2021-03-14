@@ -1,6 +1,6 @@
 /*
 File Name:  Network.go
-Copyright:  2021 Peernet Foundation s.r.o.
+Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */
 
@@ -153,23 +153,27 @@ func packetWorker(packets <-chan networkWire) {
 		connection.LastPacketIn = time.Now()
 
 		// process the packet
-		message := &packet2{SenderPublicKey: senderPublicKey, PacketRaw: *decoded, connection: connection}
+		raw := &MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded, connection: connection}
 
 		switch decoded.Command {
 		case CommandAnnouncement: // Announce
-			peer.cmdAnouncement(message)
+			if announce, _ := msgDecodeAnnouncement(raw); announce != nil {
+				peer.cmdAnouncement(announce)
+			}
 
 		case CommandResponse: // Response
-			peer.cmdResponse(message)
+			if response, _ := msgDecodeResponse(raw); response != nil {
+				peer.cmdResponse(response)
+			}
 
 		case CommandPing: // Ping
-			peer.cmdPing(message)
+			peer.cmdPing(raw)
 
 		case CommandPong: // Ping
-			peer.cmdPong(message)
+			peer.cmdPong(raw)
 
 		case CommandChat: // Chat [debug]
-			peer.cmdChat(message)
+			peer.cmdChat(raw)
 
 		default: // Unknown command
 

@@ -1,6 +1,6 @@
 /*
 File Name:  Network IPv6 Multicast.go
-Copyright:  2021 Peernet Foundation s.r.o.
+Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
 IPv6 Multicast implementation to support discovery of peers within the same network (Site-local).
@@ -136,7 +136,7 @@ func (network *Network) MulticastIPv6Listen() {
 
 // MulticastIPv6Send sends out a single multicast messages to discover peers at the same site
 func (network *Network) MulticastIPv6Send() (err error) {
-	raw, err := PacketEncrypt(peerPrivateKey, ipv6MulticastPublicKey, &PacketRaw{Protocol: 0, Command: 0})
+	raw, err := PacketEncrypt(peerPrivateKey, ipv6MulticastPublicKey, &PacketRaw{Protocol: ProtocolVersion, Command: 0})
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,6 @@
 /*
 File Name:  Connection.go
-Copyright:  2021 Peernet Foundation s.r.o.
+Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */
 
@@ -178,7 +178,7 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 		return errors.New("no valid connection to peer")
 	}
 
-	packet.Protocol = 0
+	packet.Protocol = ProtocolVersion
 
 	raw, err := PacketEncrypt(peerPrivateKey, peer.PublicKey, packet)
 	if err != nil {
@@ -219,7 +219,7 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 
 // sendConnection sends a packet to the peer using the specific connection
 func (peer *PeerInfo) sendConnection(packet *PacketRaw, connection *Connection) (err error) {
-	packet.Protocol = 0
+	packet.Protocol = ProtocolVersion
 	raw, err := PacketEncrypt(peerPrivateKey, peer.PublicKey, packet)
 	if err != nil {
 		return err
@@ -233,7 +233,7 @@ func (peer *PeerInfo) sendConnection(packet *PacketRaw, connection *Connection) 
 
 // sendAllNetworks sends a raw packet via all networks
 func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remote *net.UDPAddr) (err error) {
-	packet.Protocol = 0
+	packet.Protocol = ProtocolVersion
 	raw, err := PacketEncrypt(peerPrivateKey, receiverPublicKey, packet)
 	if err != nil {
 		return err
