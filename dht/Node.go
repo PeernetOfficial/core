@@ -19,6 +19,9 @@ type Node struct {
 
 	// LastSeen when was this node last considered seen by the DHT
 	LastSeen time.Time
+
+	// Info is an arbitrary pointer specified by the caller
+	Info interface{}
 }
 
 // shortList is used in order to sort a list of arbitrary nodes against a comparator. These nodes are sorted by xor distance

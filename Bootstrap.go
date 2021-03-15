@@ -91,8 +91,13 @@ func parseAddress(Address string) (remote *net.UDPAddr, err error) {
 
 // contact tries to contact the root peer on all networks
 func (peer *rootPeer) contact() {
+	packets, err := msgEncodeAnnouncement(true, true, nil, nil, nil)
+	if len(packets) == 0 || err != nil {
+		return
+	}
+
 	for _, address := range peer.addresses {
-		sendAllNetworks(peer.publicKey, &PacketRaw{Command: 0}, address)
+		sendAllNetworks(peer.publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0]}, address)
 	}
 }
 
@@ -187,4 +192,13 @@ func autoMulticastBroadcast() {
 		time.Sleep(time.Minute * 10)
 		sendMulticastBroadcast()
 	}
+}
+
+func contactArbitraryPeer(publicKey *btcec.PublicKey, ip net.IP, port uint16) {
+	packets, err := msgEncodeAnnouncement(true, true, nil, nil, nil)
+	if len(packets) == 0 || err != nil {
+		return
+	}
+
+	sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0]}, &net.UDPAddr{IP: ip, Port: int(port)})
 }

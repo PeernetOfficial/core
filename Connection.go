@@ -40,6 +40,11 @@ func (c *Connection) Equal(other *Connection) bool {
 	return c.Address.IP.Equal(other.Address.IP) && c.Network.address.IP.Equal(other.Network.address.IP)
 }
 
+// IsLocal checks if the connection is a local network one (LAN)
+func (c *Connection) IsLocal() bool {
+	return IsIPLocal(c.Address.IP)
+}
+
 // GetConnections returns the list of connections
 func (peer *PeerInfo) GetConnections(active bool) (connections []*Connection) {
 	peer.RLock()
@@ -49,6 +54,25 @@ func (peer *PeerInfo) GetConnections(active bool) (connections []*Connection) {
 		return peer.connectionActive
 	}
 	return peer.connectionInactive
+}
+
+// GetConnection2Share returns a connection to share. Nil if none.
+// allowLocal specifies whether it is OK to return local IPs.
+func (peer *PeerInfo) GetConnection2Share(allowLocal bool) (connections *Connection) {
+	peer.RLock()
+	defer peer.RUnlock()
+
+	if peer.connectionLatest != nil && !(!allowLocal && peer.connectionLatest.IsLocal()) {
+		return peer.connectionLatest
+	}
+
+	for _, connection := range peer.connectionActive {
+		if !(!allowLocal && connection.IsLocal()) {
+			return connection
+		}
+	}
+
+	return nil
 }
 
 // registerConnection registers an incoming connection for an existing peer. If new, it will add to the list. If previously inactive, it will elevate.

@@ -83,7 +83,7 @@ func (dht *DHT) RemoveNode(ID []byte) {
 }
 
 // GetClosestContacts returns the closes contacts in the hash table
-func (dht *DHT) GetClosestContacts(count int, target []byte, ignoredNodes ...Node) []*Node {
+func (dht *DHT) GetClosestContacts(count int, target []byte, ignoredNodes ...[]byte) []*Node {
 	closest := dht.ht.getClosestContacts(count, target, ignoredNodes...)
 	return closest.Nodes
 }

@@ -7,39 +7,94 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"bytes"
 	"fmt"
 	"time"
 )
 
+// respondClosesContactsCount is the number of closest contact to respond.
+// Each peer record will take 55 bytes. Overhead is 73 + 15 payload header + UA length + 6 + 34 = 128 bytes without UA.
+// It makes sense to stay below 508 bytes (no fragmentation). Reporting back 5 contacts for FIND_SELF requests should do the magic.
+const respondClosesContactsCount = 5
+
 // cmdAnouncement handles an incoming announcement
 func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
+	added := false
 	if peer == nil {
-		peer, added := PeerlistAdd(msg.SenderPublicKey, msg.connection)
-		fmt.Printf("Incoming initial announcement from %s\n", msg.connection.Address.String())
-
-		// send the Response
-		if added {
-			peer.send(&PacketRaw{Command: CommandResponse})
+		// The added check is required due to potential race condition; initially the client may receive multiple incoming announcement from the same peer via different connections.
+		if peer, added = PeerlistAdd(msg.SenderPublicKey, msg.connection); !added {
+			return
 		}
 
-		return
+		fmt.Printf("Incoming initial announcement from %s\n", msg.connection.Address.String())
+	} else {
+		fmt.Printf("Incoming secondary announcement from %s\n", msg.connection.Address.String())
 	}
-	fmt.Printf("Incoming secondary announcement from %s\n", msg.connection.Address.String())
 
-	// Announcement from existing peer means the peer most likely restarted
-	peer.send(&PacketRaw{Command: CommandResponse})
+	var hash2Peers []Hash2Peer
+
+	// Requesting peers close to the sender? FIND_SELF
+	if msg.Actions&(1<<ActionFindSelf) > 0 {
+		for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, peer.NodeID, peer.NodeID) {
+			// do not respond the caller's own peer
+			if info := node.Info.(*PeerInfo).peer2Info(msg.connection.IsLocal()); info != nil {
+				hash2Peers = append(hash2Peers, Hash2Peer{ID: KeyHash{node.ID}, Closest: []InfoPeer{*info}})
+			}
+		}
+	}
+
+	// Find a different peer?
+	if msg.Actions&(1<<ActionFindPeer) > 0 {
+		// TODO
+	}
+
+	// Find a value?
+	if msg.Actions&(1<<ActionFindValue) > 0 {
+		// TODO
+	}
+
+	// Information about files stored by the sender?
+	if msg.Actions&(1<<ActionInfoStore) > 0 {
+		// TODO
+	}
+
+	// Empty announcement from existing peer means the peer most likely restarted. For regular connection upkeep ping should be used.
+	peer.sendResponse(added, hash2Peers, nil, nil)
+}
+
+func (peer *PeerInfo) peer2Info(allowLocal bool) (result *InfoPeer) {
+	if connection := peer.GetConnection2Share(allowLocal); connection != nil {
+		return &InfoPeer{
+			PublicKey: peer.PublicKey,
+			NodeID:    peer.NodeID,
+			IP:        connection.Address.IP,
+			Port:      uint16(connection.Address.Port),
+		}
+	}
+
+	return nil
 }
 
 // cmdResponse handles the response to the announcement
 func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
+	// Future: We should only accept responses from peers that we contacted first for security reasons. This can be easily identified by Peer ID.
+
 	if peer == nil {
 		peer, _ = PeerlistAdd(msg.SenderPublicKey, msg.connection)
 		fmt.Printf("Incoming initial response from %s\n", msg.connection.Address.String())
-
-		return
 	}
 
-	fmt.Printf("Incoming response from %s on %s\n", msg.connection.Address.String(), msg.connection.Address.String())
+	// check if incoming response to FIND_SELF
+	for _, hash2peer := range msg.Hash2Peers {
+		if !bytes.Equal(hash2peer.ID.Hash, nodeID) {
+			for _, closePeer := range hash2peer.Closest {
+				// Initiate contact. Once a response comes back, the peer is actually added to the list.
+				contactArbitraryPeer(closePeer.PublicKey, closePeer.IP, closePeer.Port)
+			}
+		}
+	}
+
+	//fmt.Printf("Incoming response from %s on %s\n", msg.connection.Address.String(), msg.connection.Address.String())
 }
 
 // cmdPing handles an incoming ping message

@@ -50,10 +50,9 @@ func newHashTable(self *Node, bits, bucketSize int) *hashTable {
 	return ht
 }
 
-func (ht *hashTable) markNodeAsSeen(ID []byte) {
+func (ht *hashTable) markNodeAsSeen(index int, ID []byte) {
 	ht.mutex.Lock()
 	defer ht.mutex.Unlock()
-	index := ht.getBucketIndexFromDifferingBit(ID)
 	bucket := ht.RoutingTable[index]
 	nodeIndex := -1
 	for i, v := range bucket {
@@ -87,7 +86,7 @@ func (ht *hashTable) doesNodeExistInBucket(bucket int, node []byte) bool {
 	return false
 }
 
-func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes ...Node) *shortList {
+func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes ...[]byte) *shortList {
 	ht.mutex.Lock()
 	defer ht.mutex.Unlock()
 	// First we need to build the list of adjacent indices to our target in order
@@ -113,7 +112,7 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes ...
 		for i := 0; i < bucketContacts; i++ {
 			ignored := false
 			for j := 0; j < len(ignoredNodes); j++ {
-				if bytes.Compare(ht.RoutingTable[index][i].ID, ignoredNodes[j].ID) == 0 {
+				if bytes.Compare(ht.RoutingTable[index][i].ID, ignoredNodes[j]) == 0 {
 					ignored = true
 				}
 			}
@@ -137,7 +136,7 @@ func (ht *hashTable) insertNode(node *Node, shouldEvict func(*Node) bool) {
 
 	// If the node already exist, mark it as seen
 	if ht.doesNodeExistInBucket(index, node.ID) {
-		ht.markNodeAsSeen(node.ID)
+		ht.markNodeAsSeen(index, node.ID)
 		return
 	}
 

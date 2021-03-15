@@ -12,6 +12,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/PeernetOfficial/core/dht"
 	"github.com/btcsuite/btcd/btcec"
 )
 
@@ -100,6 +101,9 @@ func PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*Connection) (peer *
 	peer = &PeerInfo{PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], NodeID: publicKey2NodeID(PublicKey)}
 	peerList[publicKey2Compressed(peer.PublicKey)] = peer
 
+	// add to Kademlia
+	nodesDHT.AddNode(&dht.Node{ID: peer.NodeID, Info: peer})
+
 	return peer, true
 }
 
@@ -149,5 +153,5 @@ func publicKey2Compressed(publicKey *btcec.PublicKey) [btcec.PubKeyBytesLenCompr
 // publicKey2NodeID translates the Public Key into the node ID used in the Kademlia network.
 // This is very important for lookup of data in the DHT.
 func publicKey2NodeID(publicKey *btcec.PublicKey) (nodeID []byte) {
-	return hashData(peerPublicKey.SerializeCompressed())
+	return hashData(publicKey.SerializeCompressed())
 }

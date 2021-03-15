@@ -9,6 +9,7 @@ Intermediary between low-level packets and high-level interpretation.
 package core
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"net"
@@ -336,7 +337,7 @@ func decodeInfoPeer(data []byte, count int) (hash2Peers []Hash2Peer, read int, v
 
 		hash := make([]byte, hashSize)
 		copy(hash, data[index:index+32])
-		countField := binary.LittleEndian.Uint16(data[index+33 : index+33+2])
+		countField := binary.LittleEndian.Uint16(data[index+32 : index+32+2])
 		index += 34
 
 		hash2Peer := Hash2Peer{ID: KeyHash{hash}}
@@ -350,15 +351,22 @@ func decodeInfoPeer(data []byte, count int) (hash2Peers []Hash2Peer, read int, v
 			peer := InfoPeer{}
 
 			peerIDcompressed := make([]byte, 33)
-			copy(peerIDcompressed[:], data[index:33])
+			copy(peerIDcompressed[:], data[index:index+33])
 
 			ipB := make([]byte, 16)
-			copy(ipB[:], data[index+33:33+16])
+			copy(ipB[:], data[index+33:index+33+16])
 			peer.IP = ipB
 
 			peer.Port = binary.LittleEndian.Uint16(data[index+49 : index+49+2])
 			peer.LastContact = binary.LittleEndian.Uint32(data[index+51 : index+51+4])
-			reason := data[55]
+			reason := data[index+55]
+
+			var err error
+			if peer.PublicKey, err = btcec.ParsePubKey(peerIDcompressed, btcec.S256()); err != nil {
+				return nil, 0, false
+			}
+
+			peer.NodeID = publicKey2NodeID(peer.PublicKey)
 
 			if reason == 0 { // Peer was returned because it is close to the requested hash
 				hash2Peer.Closest = append(hash2Peer.Closest, peer)
@@ -398,7 +406,10 @@ func decodeEmbeddedFile(data []byte, count int) (filesEmbed []EmbeddedFileData, 
 
 		index += sizeField
 
-		// TODO validate hash
+		// validate the hash
+		if !bytes.Equal(hash, hashData(fileData)) {
+			return nil, read, false
+		}
 
 		filesEmbed = append(filesEmbed, EmbeddedFileData{ID: KeyHash{Hash: hash}, Data: fileData})
 	}
@@ -611,7 +622,7 @@ createPacketLoop:
 					copy(raw[index+33:index+33+16], peer.IP)
 					binary.LittleEndian.PutUint16(raw[index+49:index+51], peer.Port)
 					binary.LittleEndian.PutUint32(raw[index+51:index+55], peer.LastContact)
-					raw[index+55] = 0
+					raw[index+55] = 1
 
 					packetSize += 56
 					binary.LittleEndian.PutUint16(raw[count2Index+0:count2Index+2], uint16(m+1))
@@ -633,7 +644,7 @@ createPacketLoop:
 					copy(raw[index+33:index+33+16], peer.IP)
 					binary.LittleEndian.PutUint16(raw[index+49:index+51], peer.Port)
 					binary.LittleEndian.PutUint32(raw[index+51:index+55], peer.LastContact)
-					raw[index+55] = 1
+					raw[index+55] = 0
 
 					packetSize += 56
 					count2++
@@ -719,9 +730,23 @@ func (peer *PeerInfo) Chat(text string) {
 }
 
 // sendAnnouncement sends the announcement message
-func (peer *PeerInfo) sendAnnouncement() {
+func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore) (err error) {
+	packets, err := msgEncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files)
+
+	for _, packet := range packets {
+		peer.send(&PacketRaw{Command: CommandAnnouncement, Payload: packet})
+	}
+
+	return err
 }
 
 // sendResponse sends the response message
-func (peer *PeerInfo) sendResponse() {
+func (peer *PeerInfo) sendResponse(sendUA bool, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte) (err error) {
+	packets, err := msgEncodeResponse(sendUA, hash2Peers, filesEmbed, hashesNotFound)
+
+	for _, packet := range packets {
+		peer.send(&PacketRaw{Command: CommandResponse, Payload: packet})
+	}
+
+	return err
 }
