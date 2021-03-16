@@ -4,6 +4,36 @@ The core library which is needed for any Peernet application. It provides connec
 
 Current version: 0.1 (pre-alpha)
 
+## Use
+
+```go
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/PeernetOfficial/core"
+)
+
+func init() {
+	if status, err := core.LoadConfig("Settings.yaml"); err != nil {
+		fmt.Printf("Error loading config file: %s", err.Error())
+		os.Exit(1)
+	}
+
+    core.InitLog()
+	core.Init()
+	core.UserAgent = "Your application/1.0"
+}
+
+func main() {
+	core.Connect()
+
+    // use functions from core package, for example to find and download files
+}
+```
+
 ## Encryption and Hashing functions
 
 * Salsa20 is used for encrypting the packets.
@@ -37,6 +67,6 @@ The Private Key is required to make any changes to the user's blockchain, includ
 
 ## Contributing
 
-Please note that by contributing code, documentation, ideas, snippets, or any other intellectual property you agree that you have all the necessary rights and you agree that we, Peernet, may use it for any purpose.
+Please note that by contributing code, documentation, ideas, snippets, or any other intellectual property you agree that you have all the necessary rights and you agree that we, the Peernet organization, may use it for any purpose.
 
 &copy; 2021 Peernet
