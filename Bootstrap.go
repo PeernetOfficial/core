@@ -195,6 +195,11 @@ func autoMulticastBroadcast() {
 }
 
 func contactArbitraryPeer(publicKey *btcec.PublicKey, ip net.IP, port uint16) {
+	// check first if peer is already in the list!
+	if peer := PeerlistLookup(publicKey); peer != nil {
+		return
+	}
+
 	packets, err := msgEncodeAnnouncement(true, true, nil, nil, nil)
 	if len(packets) == 0 || err != nil {
 		return

@@ -112,6 +112,9 @@ func PeerlistRemove(peer *PeerInfo) {
 	peerlistMutex.Lock()
 	defer peerlistMutex.Unlock()
 
+	// remove from Kademlia
+	nodesDHT.RemoveNode(peer.NodeID)
+
 	delete(peerList, publicKey2Compressed(peer.PublicKey))
 }
 
