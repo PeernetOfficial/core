@@ -10,25 +10,25 @@ Current version: 0.1 (pre-alpha)
 package main
 
 import (
-	"fmt"
-	"os"
+    "fmt"
+    "os"
 
-	"github.com/PeernetOfficial/core"
+    "github.com/PeernetOfficial/core"
 )
 
 func init() {
-	if status, err := core.LoadConfig("Settings.yaml"); err != nil {
-		fmt.Printf("Error loading config file: %s", err.Error())
-		os.Exit(1)
-	}
+    if status, err := core.LoadConfig("Settings.yaml"); err != nil {
+        fmt.Printf("Error loading config file: %s", err.Error())
+        os.Exit(1)
+    }
 
     core.InitLog()
-	core.Init()
-	core.UserAgent = "Your application/1.0"
+    core.Init()
+    core.UserAgent = "Your application/1.0"
 }
 
 func main() {
-	core.Connect()
+    core.Connect()
 
     // use functions from core package, for example to find and download files
 }
