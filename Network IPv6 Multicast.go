@@ -23,8 +23,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/PeernetOfficial/core/reuseport"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/libp2p/go-reuseport"
 	"golang.org/x/net/ipv6"
 )
 

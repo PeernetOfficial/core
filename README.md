@@ -16,7 +16,6 @@ Go 1.16 or higher is required. Before compiling, make sure to download and updat
 
 ```
 go get -u github.com/btcsuite/btcd/btcec
-go get -u github.com/libp2p/go-reuseport
 go get -u lukechampine.com/blake3
 ```
 
