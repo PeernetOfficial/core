@@ -52,6 +52,10 @@ loopSeedList:
 			continue
 		}
 
+		if peer.publicKey.IsEqual(peerPublicKey) { // skip if self
+			continue
+		}
+
 		// parse all IP addresses
 		for _, addressA := range seed.Address {
 			address, err := parseAddress(addressA)
