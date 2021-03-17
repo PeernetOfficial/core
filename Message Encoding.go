@@ -127,30 +127,32 @@ type MessageResponse struct {
 
 // ---- message decoding ----
 
+// Minimum length of Announcement payload header without User Agent
+const announcementPayloadHeaderSize = 16
+
 // msgDecodeAnnouncement decodes the incoming announcement message. Returns nil if invalid.
 func msgDecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error) {
 	result = &MessageAnnouncement{
 		MessageRaw: msg,
 	}
 
-	// validate minimum payload size: 15 bytes
-	if len(msg.Payload) < 15 {
+	if len(msg.Payload) < announcementPayloadHeaderSize {
 		return nil, errors.New("announcement: invalid minimum length")
 	}
 
 	result.Protocol = msg.Payload[0] & 0x0F // Protocol version support is stored in the first 4 bits
-	result.Features = msg.Payload[0] >> 4   // Feature support, high 4 bits
-	result.Actions = msg.Payload[1]
-	result.BlockchainHeight = binary.LittleEndian.Uint32(msg.Payload[2:6])
-	result.BlockchainVersion = binary.LittleEndian.Uint64(msg.Payload[6:14])
+	result.Features = msg.Payload[1]        // Feature support
+	result.Actions = msg.Payload[2]
+	result.BlockchainHeight = binary.LittleEndian.Uint32(msg.Payload[3:7])
+	result.BlockchainVersion = binary.LittleEndian.Uint64(msg.Payload[7:15])
 
-	userAgentLength := int(msg.Payload[14])
+	userAgentLength := int(msg.Payload[15])
 	if userAgentLength > 0 {
-		if userAgentLength > len(msg.Payload)-15 { // 15 = length of announcement message without user agent
+		if userAgentLength > len(msg.Payload)-announcementPayloadHeaderSize {
 			return nil, errors.New("announcement: user agent overflow")
 		}
 
-		userAgentB := msg.Payload[15 : 15+userAgentLength]
+		userAgentB := msg.Payload[announcementPayloadHeaderSize : announcementPayloadHeaderSize+userAgentLength]
 		if !utf8.Valid(userAgentB) {
 			return nil, errors.New("announcement: user agent invalid encoding")
 		}
@@ -158,7 +160,7 @@ func msgDecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err er
 		result.UserAgent = string(userAgentB)
 	}
 
-	data := msg.Payload[15+userAgentLength:]
+	data := msg.Payload[announcementPayloadHeaderSize+userAgentLength:]
 
 	// FIND_PEER
 	if result.Actions&(1<<ActionFindPeer) > 0 {
@@ -252,26 +254,25 @@ func msgDecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 		MessageRaw: msg,
 	}
 
-	// validate minimum payload size: 15 + 6 bytes
-	if len(msg.Payload) < 15+6 {
+	if len(msg.Payload) < announcementPayloadHeaderSize+6 {
 		return nil, errors.New("response: invalid minimum length")
 	}
 
 	result.Protocol = msg.Payload[0] & 0x0F // Protocol version support is stored in the first 4 bits
-	result.Features = msg.Payload[0] >> 4   // Feature support, high 4 bits
-	result.Actions = msg.Payload[1]
-	result.BlockchainHeight = binary.LittleEndian.Uint32(msg.Payload[2:6])
-	result.BlockchainVersion = binary.LittleEndian.Uint64(msg.Payload[6:14])
+	result.Features = msg.Payload[1]        // Feature support
+	result.Actions = msg.Payload[2]
+	result.BlockchainHeight = binary.LittleEndian.Uint32(msg.Payload[3:7])
+	result.BlockchainVersion = binary.LittleEndian.Uint64(msg.Payload[7:15])
 
-	userAgentLength := int(msg.Payload[14])
-	read := 15
+	userAgentLength := int(msg.Payload[15])
+	read := announcementPayloadHeaderSize
 
 	if userAgentLength > 0 {
-		if userAgentLength > len(msg.Payload)-15 { // 15 = length of announcement message without user agent
+		if userAgentLength > len(msg.Payload)-announcementPayloadHeaderSize {
 			return nil, errors.New("response: user agent overflow")
 		}
 
-		userAgentB := msg.Payload[15 : 15+userAgentLength]
+		userAgentB := msg.Payload[announcementPayloadHeaderSize : announcementPayloadHeaderSize+userAgentLength]
 		if !utf8.Valid(userAgentB) {
 			return nil, errors.New("response: user agent invalid encoding")
 		}
@@ -434,12 +435,13 @@ func msgEncodeAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue 
 createPacketLoop:
 	for {
 		raw := make([]byte, 64*1024) // max UDP packet size
-		packetSize := 15
+		packetSize := announcementPayloadHeaderSize
 
-		raw[0] = byte(ProtocolVersion + FeatureSupport<<4) // Protocol and Features
-		//raw[1] = Actions                                   // Action bit array
-		binary.LittleEndian.PutUint32(raw[2:6], BlockchainHeight)
-		binary.LittleEndian.PutUint64(raw[6:14], BlockchainVersion)
+		raw[0] = byte(ProtocolVersion) // Protocol
+		raw[1] = byte(FeatureSupport)  // Feature support
+		//raw[2] = Actions                                   // Action bit array
+		binary.LittleEndian.PutUint32(raw[3:7], BlockchainHeight)
+		binary.LittleEndian.PutUint64(raw[7:15], BlockchainVersion)
 
 		// only on initial announcement the User Agent must be provided according to the protocol spec
 		if sendUA {
@@ -448,14 +450,14 @@ createPacketLoop:
 			}
 			userAgentB := []byte(UserAgent)
 
-			raw[14] = byte(len(userAgentB))
-			copy(raw[15:15+len(userAgentB)], userAgentB)
+			raw[15] = byte(len(userAgentB))
+			copy(raw[announcementPayloadHeaderSize:announcementPayloadHeaderSize+len(userAgentB)], userAgentB)
 			packetSize += len(userAgentB)
 		}
 
 		// FIND_SELF
 		if findSelf {
-			raw[1] |= 1 << ActionFindSelf
+			raw[2] |= 1 << ActionFindSelf
 		}
 
 		// FIND_PEER
@@ -466,7 +468,7 @@ createPacketLoop:
 				continue createPacketLoop
 			}
 
-			raw[1] |= 1 << ActionFindPeer
+			raw[2] |= 1 << ActionFindPeer
 			index := packetSize
 			packetSize += 2
 
@@ -494,7 +496,7 @@ createPacketLoop:
 				continue createPacketLoop
 			}
 
-			raw[1] |= 1 << ActionFindValue
+			raw[2] |= 1 << ActionFindValue
 			index := packetSize
 			packetSize += 2
 
@@ -522,7 +524,7 @@ createPacketLoop:
 				continue createPacketLoop
 			}
 
-			raw[1] |= 1 << ActionInfoStore
+			raw[2] |= 1 << ActionInfoStore
 			index := packetSize
 			packetSize += 2
 
@@ -555,7 +557,7 @@ createPacketLoop:
 }
 
 // EmbeddedFileSizeMax is the maximum size of embedded files in response messages. Any file exceeding that must be shared via regular file transfer.
-const EmbeddedFileSizeMax = udpMaxPacketSize - packetLengthMin - 15 - 2 - 35 // 15 = payload header size
+const EmbeddedFileSizeMax = udpMaxPacketSize - packetLengthMin - announcementPayloadHeaderSize - 2 - 35
 
 // msgEncodeResponse encodes a response message
 // hash2Peers will be modified.
@@ -569,12 +571,13 @@ func msgEncodeResponse(sendUA bool, hash2Peers []Hash2Peer, filesEmbed []Embedde
 createPacketLoop:
 	for {
 		raw := make([]byte, 64*1024) // max UDP packet size
-		packetSize := 15
+		packetSize := announcementPayloadHeaderSize
 
-		raw[0] = byte(ProtocolVersion + FeatureSupport<<4) // Protocol and Features
-		//raw[1] = Actions                                   // Action bit array
-		binary.LittleEndian.PutUint32(raw[2:6], BlockchainHeight)
-		binary.LittleEndian.PutUint64(raw[6:14], BlockchainVersion)
+		raw[0] = byte(ProtocolVersion) // Protocol
+		raw[1] = byte(FeatureSupport)  // Feature support
+		//raw[2] = Actions                                   // Action bit array
+		binary.LittleEndian.PutUint32(raw[3:7], BlockchainHeight)
+		binary.LittleEndian.PutUint64(raw[7:15], BlockchainVersion)
 
 		// only on initial response the User Agent must be provided according to the protocol spec
 		if sendUA {
@@ -583,8 +586,8 @@ createPacketLoop:
 			}
 			userAgentB := []byte(UserAgent)
 
-			raw[14] = byte(len(userAgentB))
-			copy(raw[15:15+len(userAgentB)], userAgentB)
+			raw[15] = byte(len(userAgentB))
+			copy(raw[announcementPayloadHeaderSize:announcementPayloadHeaderSize+len(userAgentB)], userAgentB)
 			packetSize += len(userAgentB)
 		}
 
@@ -662,8 +665,6 @@ createPacketLoop:
 				packetsRaw = append(packetsRaw, raw[:packetSize])
 				continue createPacketLoop
 			}
-
-			raw[1] |= 1 << ActionInfoStore
 
 			for n, file := range filesEmbed {
 				if isPacketSizeExceed(packetSize, 34+len(file.Data)) { // check if minimum length is available in packet
