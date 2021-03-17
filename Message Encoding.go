@@ -594,8 +594,6 @@ createPacketLoop:
 
 		// Encode the peer response data for FIND_SELF, FIND_PEER and FIND_VALUE requests.
 		if len(hash2Peers) > 0 {
-			index := packetSize
-
 			for n, hash2Peer := range hash2Peers {
 				if isPacketSizeExceed(packetSize, 34+56) { // check if minimum length is available in packet
 					packetsRaw = append(packetsRaw, raw[:packetSize])
@@ -603,6 +601,7 @@ createPacketLoop:
 					continue createPacketLoop
 				}
 
+				index := packetSize
 				copy(raw[index:index+32], hash2Peer.ID.Hash)
 				count2Index := index + 32
 
