@@ -83,8 +83,8 @@ func (dht *DHT) RemoveNode(ID []byte) {
 }
 
 // GetClosestContacts returns the closes contacts in the hash table
-func (dht *DHT) GetClosestContacts(count int, target []byte, ignoredNodes ...[]byte) []*Node {
-	closest := dht.ht.getClosestContacts(count, target, ignoredNodes...)
+func (dht *DHT) GetClosestContacts(count int, target []byte, filterFunc NodeFilterFunc, ignoredNodes ...[]byte) []*Node {
+	closest := dht.ht.getClosestContacts(count, target, filterFunc, ignoredNodes...)
 	return closest.Nodes
 }
 
@@ -118,7 +118,7 @@ func (dht *DHT) iterate(action int, target []byte, data []byte) (value []byte, c
 		return nil, nil, errors.New("unknown iterate type")
 	}
 
-	sl := dht.ht.getClosestContacts(dht.alpha, target)
+	sl := dht.ht.getClosestContacts(dht.alpha, target, nil)
 
 	// We keep a reference to the closestNode. If after performing a search we do not find a closer node, we stop searching.
 	if len(sl.Nodes) == 0 {

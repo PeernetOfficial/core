@@ -67,16 +67,14 @@ func (n *shortList) RemoveNode(ID []byte) {
 }
 
 func (n *shortList) AppendUniqueNodes(nodes ...*Node) {
+nodesLoop:
 	for _, vv := range nodes {
-		exists := false
 		for _, v := range n.Nodes {
 			if bytes.Compare(v.ID, vv.ID) == 0 {
-				exists = true
+				continue nodesLoop
 			}
 		}
-		if !exists {
-			n.Nodes = append(n.Nodes, vv)
-		}
+		n.Nodes = append(n.Nodes, vv)
 	}
 }
 
@@ -134,3 +132,6 @@ type NodeMessage struct {
 	Closest  []*Node
 	Error    error
 }
+
+// NodeFilterFunc is called to filter nodes based on the callers choice
+type NodeFilterFunc func(node *Node) (accept bool)

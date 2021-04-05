@@ -86,9 +86,11 @@ func (ht *hashTable) doesNodeExistInBucket(bucket int, node []byte) bool {
 	return false
 }
 
-func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes ...[]byte) *shortList {
+// getClosestContacts returns the closest nodes to the target. filterFunc is optional and allows the caller to filter the nodes.
+func (ht *hashTable) getClosestContacts(num int, target []byte, filterFunc NodeFilterFunc, ignoredNodes ...[]byte) *shortList {
 	ht.mutex.Lock()
 	defer ht.mutex.Unlock()
+
 	// First we need to build the list of adjacent indices to our target in order
 	index := ht.getBucketIndexFromDifferingBit(target)
 	indexList := []int{index}
@@ -109,19 +111,23 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, ignoredNodes ...
 	for leftToAdd > 0 && len(indexList) > 0 {
 		index, indexList = indexList[0], indexList[1:]
 		bucketContacts := len(ht.RoutingTable[index])
+	bucketLoop:
 		for i := 0; i < bucketContacts; i++ {
-			ignored := false
 			for j := 0; j < len(ignoredNodes); j++ {
 				if bytes.Compare(ht.RoutingTable[index][i].ID, ignoredNodes[j]) == 0 {
-					ignored = true
+					continue bucketLoop
 				}
 			}
-			if !ignored {
-				sl.AppendUniqueNodes(ht.RoutingTable[index][i])
-				leftToAdd--
-				if leftToAdd == 0 {
-					break
-				}
+
+			// Use the filter function if set. It allows the caller to only accept certain nodes.
+			if filterFunc != nil && !filterFunc(ht.RoutingTable[index][i]) {
+				continue
+			}
+
+			sl.AppendUniqueNodes(ht.RoutingTable[index][i])
+			leftToAdd--
+			if leftToAdd == 0 {
+				break
 			}
 		}
 	}
