@@ -22,9 +22,6 @@ import (
 // ProtocolVersion is the current protocol version
 const ProtocolVersion = 0
 
-// FeatureSupport is for future use
-var FeatureSupport = 0
-
 // UserAgent should be set by the caller
 var UserAgent = "Peernet Core/0.1"
 
@@ -51,6 +48,12 @@ const (
 	ActionFindPeer  = 1 // FIND_PEER Request closest neighbors to target peer
 	ActionFindValue = 2 // FIND_VALUE Request data or closest peers
 	ActionInfoStore = 3 // INFO_STORE Sender indicates storing provided data
+)
+
+// Features are sent as bit array in the Announcement message.
+const (
+	FeatureIPv4Listen = 0 // Sender listens on IPv4
+	FeatureIPv6Listen = 1 // Sender listens on IPv6
 )
 
 // MessageRaw is a high-level message between peers that has not been decoded
@@ -258,8 +261,8 @@ func msgDecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 		return nil, errors.New("response: invalid minimum length")
 	}
 
-	result.Protocol = msg.Payload[0] & 0x0F // Protocol version support is stored in the first 4 bits
-	result.Features = msg.Payload[1]        // Feature support
+	result.Protocol = msg.Payload[0] & 0x0F                // Protocol version support is stored in the first 4 bits
+	result.Features = decodeFeatureSupport(msg.Payload[1]) // Feature support
 	result.Actions = msg.Payload[2]
 	result.BlockchainHeight = binary.LittleEndian.Uint32(msg.Payload[3:7])
 	result.BlockchainVersion = binary.LittleEndian.Uint64(msg.Payload[7:15])
@@ -418,6 +421,15 @@ func decodeEmbeddedFile(data []byte, count int) (filesEmbed []EmbeddedFileData, 
 	return filesEmbed, read, true
 }
 
+func decodeFeatureSupport(feature byte) byte {
+	// Compatibility with Alpha 1: Set both IPv4/IPv6 bits if none is set.
+	if feature&(1<<FeatureIPv4Listen|1<<FeatureIPv6Listen) == 0 {
+		feature = 1<<FeatureIPv4Listen | 1<<FeatureIPv6Listen
+	}
+
+	return feature
+}
+
 // ---- message encoding ----
 
 const udpMaxPacketSize = 65507
@@ -425,6 +437,17 @@ const udpMaxPacketSize = 65507
 // isPacketSizeExceed checks if the max packet size would be exceeded with the payload
 func isPacketSizeExceed(currentSize int, testSize int) bool {
 	return currentSize+testSize > udpMaxPacketSize-packetLengthMin
+}
+
+func selfFeatureSupport() (feature byte) {
+	// networksMutex not needed here
+	if len(networks4) > 0 {
+		feature |= 1 << FeatureIPv4Listen
+	}
+	if len(networks6) > 0 {
+		feature |= 1 << FeatureIPv6Listen
+	}
+	return feature
 }
 
 // msgEncodeAnnouncement encodes an announcement message. It may return multiple messages if the input does not fit into one.
@@ -438,7 +461,7 @@ createPacketLoop:
 		packetSize := announcementPayloadHeaderSize
 
 		raw[0] = byte(ProtocolVersion) // Protocol
-		raw[1] = byte(FeatureSupport)  // Feature support
+		raw[1] = selfFeatureSupport()  // Feature support
 		//raw[2] = Actions                                   // Action bit array
 		binary.LittleEndian.PutUint32(raw[3:7], BlockchainHeight)
 		binary.LittleEndian.PutUint64(raw[7:15], BlockchainVersion)
@@ -574,7 +597,7 @@ createPacketLoop:
 		packetSize := announcementPayloadHeaderSize
 
 		raw[0] = byte(ProtocolVersion) // Protocol
-		raw[1] = byte(FeatureSupport)  // Feature support
+		raw[1] = selfFeatureSupport()  // Feature support
 		//raw[2] = Actions                                   // Action bit array
 		binary.LittleEndian.PutUint32(raw[3:7], BlockchainHeight)
 		binary.LittleEndian.PutUint64(raw[7:15], BlockchainVersion)

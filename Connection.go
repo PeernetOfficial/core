@@ -56,18 +56,36 @@ func (peer *PeerInfo) GetConnections(active bool) (connections []*Connection) {
 	return peer.connectionInactive
 }
 
-// GetConnection2Share returns a connection to share. Nil if none.
-// allowLocal specifies whether it is OK to return local IPs.
-func (peer *PeerInfo) GetConnection2Share(allowLocal bool) (connections *Connection) {
+// IsConnectable checks if the peer is connectable to the given IP parameters.
+func (peer *PeerInfo) IsConnectable(allowLocal, allowIPv4, allowIPv6 bool) bool {
 	peer.RLock()
 	defer peer.RUnlock()
 
-	if peer.connectionLatest != nil && !(!allowLocal && peer.connectionLatest.IsLocal()) {
+	// Only 1 active connection must be allowed for being connectable.
+	for _, connection := range peer.connectionActive {
+		if IsIPv4(connection.Address.IP) && allowIPv4 || IsIPv6(connection.Address.IP) && allowIPv6 {
+			if !(!allowLocal && connection.IsLocal()) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// GetConnection2Share returns a connection to share. Nil if none.
+// allowLocal specifies whether it is OK to return local IPs.
+func (peer *PeerInfo) GetConnection2Share(allowLocal, allowIPv4, allowIPv6 bool) (connections *Connection) {
+	peer.RLock()
+	defer peer.RUnlock()
+
+	if peer.connectionLatest != nil && !(!allowLocal && peer.connectionLatest.IsLocal()) &&
+		(IsIPv4(peer.connectionLatest.Address.IP) && allowIPv4 || IsIPv6(peer.connectionLatest.Address.IP) && allowIPv6) {
 		return peer.connectionLatest
 	}
 
 	for _, connection := range peer.connectionActive {
-		if !(!allowLocal && connection.IsLocal()) {
+		if (IsIPv4(connection.Address.IP) && allowIPv4 || IsIPv6(connection.Address.IP) && allowIPv6) && !(!allowLocal && connection.IsLocal()) {
 			return connection
 		}
 	}

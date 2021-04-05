@@ -10,6 +10,8 @@ import (
 	"bytes"
 	"fmt"
 	"time"
+
+	"github.com/PeernetOfficial/core/dht"
 )
 
 // respondClosesContactsCount is the number of closest contact to respond.
@@ -31,19 +33,29 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 		fmt.Printf("Incoming secondary announcement from %s\n", msg.connection.Address.String())
 	}
 
+	// Filter function to only share peers that are "connectable" to the remote one. It checks IPv4, IPv6, and local connection.
+	filterFunc := func(allowLocal, allowIPv4, allowIPv6 bool) dht.NodeFilterFunc {
+		return func(node *dht.Node) (accept bool) {
+			return node.Info.(*PeerInfo).IsConnectable(allowLocal, allowIPv4, allowIPv6)
+		}
+	}
+
+	allowIPv4 := msg.Features&(1<<FeatureIPv4Listen) > 0
+	allowIPv6 := msg.Features&(1<<FeatureIPv6Listen) > 0
+
 	var hash2Peers []Hash2Peer
 
-	// Requesting peers close to the sender? FIND_SELF
+	// FIND_SELF: Requesting peers close to the sender?
 	if msg.Actions&(1<<ActionFindSelf) > 0 {
-		for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, peer.NodeID, peer.NodeID) {
-			// do not respond the caller's own peer
-			if info := node.Info.(*PeerInfo).peer2Info(msg.connection.IsLocal()); info != nil {
+		// do not respond the caller's own peer (add to ignore list)
+		for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, peer.NodeID, filterFunc(msg.connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
+			if info := node.Info.(*PeerInfo).peer2Info(msg.connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
 				hash2Peers = append(hash2Peers, Hash2Peer{ID: KeyHash{node.ID}, Closest: []InfoPeer{*info}})
 			}
 		}
 	}
 
-	// Find a different peer?
+	// FIND_PEER: Find a different peer? Note that in this case no IPv4/IPv6 connectivity check is performed.
 	if msg.Actions&(1<<ActionFindPeer) > 0 {
 		// TODO
 	}
@@ -62,8 +74,8 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 	peer.sendResponse(added, hash2Peers, nil, nil)
 }
 
-func (peer *PeerInfo) peer2Info(allowLocal bool) (result *InfoPeer) {
-	if connection := peer.GetConnection2Share(allowLocal); connection != nil {
+func (peer *PeerInfo) peer2Info(allowLocal, allowIPv4, allowIPv6 bool) (result *InfoPeer) {
+	if connection := peer.GetConnection2Share(allowLocal, allowIPv4, allowIPv6); connection != nil {
 		return &InfoPeer{
 			PublicKey: peer.PublicKey,
 			NodeID:    peer.NodeID,
