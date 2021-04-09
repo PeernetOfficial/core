@@ -6,7 +6,7 @@ Author:     Peter Kleissner
 Strategy for sending our IPv6 Multicast and IPv4 Broadcast messages:
 * During bootstrap: Immediately at the beginning, then every 10 seconds until there is at least 1 peer.
 * Every 10 minutes during regular operation.
-* Each time a network adapter / IP change is detected. [FUTURE]
+* Each time a network adapter / IP change is detected.
 
 */
 
@@ -180,7 +180,7 @@ func autoMulticastBroadcast() {
 	// Send out multicast/broadcast immediately.
 	sendMulticastBroadcast()
 
-	// Phase 1: Resend every 10 seconds until at least 1 peer in the peer list
+	// Phase 1: Resend every 10 seconds until at least 1 peer in the peer list.
 	for {
 		time.Sleep(time.Second * 10)
 

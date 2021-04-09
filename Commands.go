@@ -7,7 +7,6 @@ Author:     Peter Kleissner
 package core
 
 import (
-	"bytes"
 	"fmt"
 	"time"
 
@@ -47,22 +46,36 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 
 	// FIND_SELF: Requesting peers close to the sender?
 	if msg.Actions&(1<<ActionFindSelf) > 0 {
+		selfD := Hash2Peer{ID: KeyHash{peer.NodeID}}
+
 		// do not respond the caller's own peer (add to ignore list)
 		for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, peer.NodeID, filterFunc(msg.connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
-			if info := node.Info.(*PeerInfo).peer2Info(msg.connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
-				hash2Peers = append(hash2Peers, Hash2Peer{ID: KeyHash{node.ID}, Closest: []InfoPeer{*info}})
+			if info := node.Info.(*PeerInfo).peer2Record(msg.connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
+				selfD.Closest = append(selfD.Closest, *info)
 			}
 		}
+
+		hash2Peers = append(hash2Peers, selfD)
 	}
 
-	// FIND_PEER: Find a different peer? Note that in this case no IPv4/IPv6 connectivity check is performed.
-	if msg.Actions&(1<<ActionFindPeer) > 0 {
-		// TODO
+	// FIND_PEER: Find a different peer?
+	if msg.Actions&(1<<ActionFindPeer) > 0 && len(msg.FindPeerKeys) > 0 {
+		for _, findPeer := range msg.FindPeerKeys {
+			details := Hash2Peer{ID: findPeer}
+
+			for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, findPeer.Hash, filterFunc(msg.connection.IsLocal(), allowIPv4, allowIPv6)) {
+				if info := node.Info.(*PeerInfo).peer2Record(msg.connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
+					details.Closest = append(details.Closest, *info)
+				}
+			}
+
+			hash2Peers = append(hash2Peers, details)
+		}
 	}
 
 	// Find a value?
 	if msg.Actions&(1<<ActionFindValue) > 0 {
-		// TODO
+		// TODO query store
 	}
 
 	// Information about files stored by the sender?
@@ -74,9 +87,9 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 	peer.sendResponse(added, hash2Peers, nil, nil)
 }
 
-func (peer *PeerInfo) peer2Info(allowLocal, allowIPv4, allowIPv6 bool) (result *InfoPeer) {
+func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result *PeerRecord) {
 	if connection := peer.GetConnection2Share(allowLocal, allowIPv4, allowIPv6); connection != nil {
-		return &InfoPeer{
+		return &PeerRecord{
 			PublicKey: peer.PublicKey,
 			NodeID:    peer.NodeID,
 			IP:        connection.Address.IP,
@@ -89,22 +102,55 @@ func (peer *PeerInfo) peer2Info(allowLocal, allowIPv4, allowIPv6 bool) (result *
 
 // cmdResponse handles the response to the announcement
 func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
-	// Future: We should only accept responses from peers that we contacted first for security reasons. This can be easily identified by Peer ID.
-
 	if peer == nil {
 		peer, _ = PeerlistAdd(msg.SenderPublicKey, msg.connection)
 		fmt.Printf("Incoming initial response from %s\n", msg.connection.Address.String())
 	}
 
+	// Each result is checked against the list of information requests. Only 1 response by peer is permitted per query currently.
+	// Response packets could be duplicated, which could happen due to auto broadcast when the remote peer responds and has multiple connections to self but none was active.
+
+	for _, hash := range msg.HashesNotFound {
+		info := nodesDHT.IRLookup(peer.NodeID, hash)
+		if info == nil {
+			continue
+		}
+		info.ActiveNodesSub(1)
+	}
+
+	for _, hash2Peer := range msg.Hash2Peers {
+		info := nodesDHT.IRLookup(peer.NodeID, hash2Peer.ID.Hash)
+		if info == nil {
+			continue
+		}
+
+		info.ResultChan <- &dht.NodeMessage{SenderID: peer.NodeID, Closest: records2Nodes(hash2Peer.Closest, msg.connection.Network), Storing: records2Nodes(hash2Peer.Storing, msg.connection.Network)}
+
+		// Future: a terminate field inform wether the remote peer is done sending. For now terminate after 1 packet.
+		info.ActiveNodesSub(1)
+	}
+
+	for _, file := range msg.FilesEmbed {
+		info := nodesDHT.IRLookup(peer.NodeID, file.ID.Hash)
+		if info == nil {
+			continue
+		}
+
+		info.ResultChan <- &dht.NodeMessage{SenderID: peer.NodeID, Data: file.Data}
+
+		info.ActiveNodesSub(1)
+		info.Terminate() // file was found, terminate the request.
+	}
+
 	// check if incoming response to FIND_SELF
-	for _, hash2peer := range msg.Hash2Peers {
+	/*for _, hash2peer := range msg.Hash2Peers {
 		if !bytes.Equal(hash2peer.ID.Hash, nodeID) {
 			for _, closePeer := range hash2peer.Closest {
 				// Initiate contact. Once a response comes back, the peer is actually added to the list.
 				contactArbitraryPeer(closePeer.PublicKey, closePeer.IP, closePeer.Port)
 			}
 		}
-	}
+	}*/
 
 	//fmt.Printf("Incoming response from %s on %s\n", msg.connection.Address.String(), msg.connection.Address.String())
 }

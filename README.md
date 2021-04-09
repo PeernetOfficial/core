@@ -1,8 +1,10 @@
 # Peernet Core
 
-The core library which is needed for any Peernet application. It provides connectivity to the network and all basic functions.
+The core library which is needed for any Peernet application. It provides connectivity to the network and all basic functions. For details about Peernet see https://peernet.org/.
 
-Current version: 0.1 (pre-alpha)
+Current version: 0.2 (early alpha)
+
+Current development status: Initial connectivity works. DHT functionality is in development.
 
 ## Use
 
@@ -42,11 +44,11 @@ func main() {
 
 ## Dependencies
 
-Go 1.16 or higher is required. Before compiling, make sure to download and update all 3rd party packages:
+Go 1.16 or higher is required. These are the major dependencies:
 
 ```
-go get -u github.com/btcsuite/btcd/btcec
-go get -u lukechampine.com/blake3
+github.com/btcsuite/btcd/btcec
+lukechampine.com/blake3
 ```
 
 ## Configuration
@@ -95,14 +97,10 @@ Above limits are constants and can be adjusted in the code via `pingTime`, `conn
 
 ### Kademlia
 
-TBD
-
-### Ongoing Peerlist Exchange
-
-TBD
+The routing table has a bucket size of 20 and the size of keys 256 bits (blake3 hash). Nodes within buckets are sorted by least recently seen. The number of nodes to contact concurrently in DHT lookups (also known as alpha number) is set to 5.
 
 ## Contributing
 
 Please note that by contributing code, documentation, ideas, snippets, or any other intellectual property you agree that you have all the necessary rights and you agree that we, the Peernet organization, may use it for any purpose.
 
-&copy; 2021 Peernet
+&copy; 2021 Peernet s.r.o.

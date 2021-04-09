@@ -140,7 +140,7 @@ func networkStart(iface net.Interface, addresses []net.Addr) {
 func networkPrepareListen(ipA string, port int) (network *Network, err error) {
 	ip := net.ParseIP(ipA)
 	if ip == nil {
-		return nil, errors.New("Invalid input IP")
+		return nil, errors.New("invalid input IP")
 	}
 
 	network = new(Network)
@@ -150,7 +150,7 @@ func networkPrepareListen(ipA string, port int) (network *Network, err error) {
 	if ipA != "0.0.0.0" && ipA != "::" {
 		network.iface, network.ipnet = FindInterfaceByIP(ip)
 		if network.iface == nil {
-			return nil, errors.New("Error finding the network interface belonging to IP")
+			return nil, errors.New("error finding the network interface belonging to IP")
 		}
 	}
 

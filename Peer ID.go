@@ -9,6 +9,7 @@ package core
 import (
 	"encoding/hex"
 	"log"
+	"net"
 	"os"
 	"sync"
 
@@ -17,6 +18,7 @@ import (
 )
 
 // peerID is the current peers ID. It is a ECDSA (secp256k1) 257-bit public key.
+// The node ID is the blake3 hash of the public key compressed form.
 var peerPrivateKey *btcec.PrivateKey
 var peerPublicKey *btcec.PublicKey
 var nodeID []byte
@@ -157,4 +159,27 @@ func publicKey2Compressed(publicKey *btcec.PublicKey) [btcec.PubKeyBytesLenCompr
 // This is very important for lookup of data in the DHT.
 func publicKey2NodeID(publicKey *btcec.PublicKey) (nodeID []byte) {
 	return hashData(publicKey.SerializeCompressed())
+}
+
+// record2Peer translate a peer record (from a message) into an actual usable PeerInfo structure
+// It requires the network parameter which must be the same as caller/supplier. This ensures that peer details do not "jump" between physical network adapters.
+func record2Peer(record PeerRecord, network *Network) (peerN *PeerInfo) {
+	if peerN = PeerlistLookup(record.PublicKey); peerN != nil {
+		return peerN
+	}
+
+	// Create temporary peer which is not added to the global list and not added to Kademlia.
+	connection := &Connection{Network: network, Address: &net.UDPAddr{IP: record.IP, Port: int(record.Port)}, Status: ConnectionActive}
+	return &PeerInfo{PublicKey: record.PublicKey, connectionActive: []*Connection{connection}, connectionLatest: connection, NodeID: publicKey2NodeID(record.PublicKey)}
+}
+
+// records2Nodes translates infoPeer structures to nodes
+// LastContact is passed on in the Node.LastSeen field.
+func records2Nodes(records []PeerRecord, network *Network) (nodes []*dht.Node) {
+	for _, record := range records {
+		peer := record2Peer(record, network)
+		nodes = append(nodes, &dht.Node{ID: peer.NodeID, LastSeen: lastContact2Time(record.LastContact), Info: peer})
+	}
+
+	return
 }

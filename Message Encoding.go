@@ -92,8 +92,8 @@ type InfoStore struct {
 	Type uint8   // Type of the file: 0 = File, 1 = Header file containing list of parts
 }
 
-// InfoPeer informs about a peer
-type InfoPeer struct {
+// PeerRecord informs about a peer
+type PeerRecord struct {
 	PublicKey   *btcec.PublicKey // Public Key
 	NodeID      []byte           // Kademlia Node ID
 	IP          net.IP           // IP
@@ -103,9 +103,9 @@ type InfoPeer struct {
 
 // Hash2Peer links a hash to peers who are known to store the data and to peers who are considered close to the hash
 type Hash2Peer struct {
-	ID      KeyHash    // Hash that was queried
-	Closest []InfoPeer // Closest peers
-	Storing []InfoPeer // Peers known to store the data identified by the hash
+	ID      KeyHash      // Hash that was queried
+	Closest []PeerRecord // Closest peers
+	Storing []PeerRecord // Peers known to store the data identified by the hash
 }
 
 // EmbeddedFileData contains embedded data sent within a response
@@ -289,11 +289,15 @@ func msgDecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 	countHashesNotFound := binary.LittleEndian.Uint16(msg.Payload[read+4 : read+4+2])
 	read += 6
 
+	if countPeerResponses == 0 && countEmbeddedFiles == 0 && countHashesNotFound == 0 {
+		return nil, errors.New("response: empty")
+	}
+
 	data := msg.Payload[read:]
 
 	// Peer response data
 	if countPeerResponses > 0 {
-		hash2Peers, read, valid := decodeInfoPeer(data, int(countPeerResponses))
+		hash2Peers, read, valid := decodePeerRecord(data, int(countPeerResponses))
 		if !valid {
 			return nil, errors.New("response: peer info invalid data")
 		}
@@ -330,8 +334,8 @@ func msgDecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 	return
 }
 
-// decodeInfoPeer decodes the response data for FIND_SELF, FIND_PEER and FIND_VALUE messages
-func decodeInfoPeer(data []byte, count int) (hash2Peers []Hash2Peer, read int, valid bool) {
+// decodePeerRecord decodes the response data for FIND_SELF, FIND_PEER and FIND_VALUE messages
+func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int, valid bool) {
 	index := 0
 
 	for n := 0; n < count; n++ {
@@ -352,7 +356,7 @@ func decodeInfoPeer(data []byte, count int) (hash2Peers []Hash2Peer, read int, v
 				return nil, 0, false
 			}
 
-			peer := InfoPeer{}
+			peer := PeerRecord{}
 
 			peerIDcompressed := make([]byte, 33)
 			copy(peerIDcompressed[:], data[index:index+33])
@@ -772,4 +776,9 @@ func (peer *PeerInfo) sendResponse(sendUA bool, hash2Peers []Hash2Peer, filesEmb
 	}
 
 	return err
+}
+
+// lastContact2Time translates a last contact time in seconds to a timestamp
+func lastContact2Time(LastContact uint32) time.Time {
+	return time.Now().Add(-time.Second * time.Duration(LastContact))
 }
