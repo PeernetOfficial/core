@@ -6,7 +6,7 @@ Author:     Peter Kleissner
 Simple key-value store implementation. Currently in-memory only.
 */
 
-package dht
+package store
 
 import (
 	"sync"
