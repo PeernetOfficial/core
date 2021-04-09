@@ -12,14 +12,8 @@ import (
 	"bytes"
 	"errors"
 	"sort"
+	"sync"
 	"time"
-)
-
-// IterateX are actions on the DHT
-const (
-	IterateStore     = iota // Store information in the network
-	IterateFindNode         // Find a node
-	IterateFindValue        // Find a value
 )
 
 // DHT represents the state of the local node in the distributed hash table
@@ -30,28 +24,35 @@ type DHT struct {
 	// The alpha amount of nodes will be contacted in parallel for finding the target.
 	alpha int
 
+	// ListIR keeps track of all active information requests.
+	ListIR      map[string]*InformationRequest
+	listIRmutex sync.RWMutex
+
 	// Functions below must be set and provided by the caller.
 
 	// ShouldEvict determines whether the given node shall be evicted
 	ShouldEvict func(node *Node) bool
 
-	// SendStore sends a store message to the remote node. I.e. asking it to store the given key-value.
-	SendStore func(node *Node, key []byte, value []byte)
+	// SendRequestStore sends a store message to the remote node. I.e. asking it to store the given key-value.
+	SendRequestStore func(node *Node, key []byte, value []byte)
 
-	// SendRequest sends an information request to the remote node. I.e. requesting information.
-	// The returned results channel will be closed when no more results are to be expected.
-	SendRequest func(request *InformationRequest, nodes []*Node)
+	// SendRequestFindNode sends an information request to find a particular node. nodes are the nodes to send the request to.
+	SendRequestFindNode func(request *InformationRequest)
 
-	// The maximum time to wait for a response to any message
+	// SendRequestFindValue sends an information request to find data. nodes are the nodes to send the request to.
+	SendRequestFindValue func(request *InformationRequest)
+
+	// The maximum time to wait for a response to any message in Store, Get, FindNode
 	TMsgTimeout time.Duration
 }
 
 // NewDHT initializes a new DHT node with default values.
-func NewDHT(self *Node, bits, bucketSize int) *DHT {
+func NewDHT(self *Node, bits, bucketSize, alpha int) *DHT {
 	return &DHT{
 		ht:          newHashTable(self, bits, bucketSize),
-		alpha:       3,
+		alpha:       alpha,
 		TMsgTimeout: 2 * time.Second,
+		ListIR:      make(map[string]*InformationRequest),
 	}
 }
 
@@ -88,41 +89,110 @@ func (dht *DHT) GetClosestContacts(count int, target []byte, filterFunc NodeFilt
 	return closest.Nodes
 }
 
-// Store stores data on the network. This will trigger an IterateStore message.
+// MarkNodeAsSeen marks a node as seen, which pushes it to the top in the bucket list.
+func (dht *DHT) MarkNodeAsSeen(ID []byte) {
+	dht.ht.markNodeAsSeen(dht.ht.getBucketIndexFromDifferingBit(ID), ID)
+}
+
+// ---- Synchronous network query functions below ----
+
+// Store stores data on the network.
 func (dht *DHT) Store(key, data []byte) (err error) {
-	_, _, err = dht.iterate(IterateStore, key[:], data)
-	return err
+	if len(key) != dht.ht.bBits {
+		return errors.New("invalid key size")
+	}
+
+	// Keep a reference to closestNode. If after performing a search we do not find a closer node, we stop searching.
+	sl := dht.ht.getClosestContacts(dht.alpha, key, nil)
+	if len(sl.Nodes) == 0 {
+		return nil
+	}
+
+	closestNode := sl.Nodes[0]
+
+	for {
+		info := dht.NewInformationRequest(ActionFindNode, key, sl.GetUncontacted(dht.alpha, true))
+		dht.SendRequestFindNode(info)
+		results := info.CollectResults(dht.TMsgTimeout)
+
+		for _, result := range results {
+			if result.Error != nil {
+				sl.RemoveNode(result.SenderID)
+				continue
+			}
+			sl.AppendUniqueNodes(result.Closest...)
+		}
+
+		sort.Sort(sl)
+
+		// If closestNode is unchanged then we are done
+		if bytes.Equal(sl.Nodes[0].ID, closestNode.ID) {
+			for i, node := range sl.Nodes {
+				if i >= dht.ht.bSize {
+					break
+				}
+
+				dht.SendRequestStore(node, key, data)
+			}
+			return nil
+		}
+
+		closestNode = sl.Nodes[0]
+	}
 }
 
 // Get retrieves data from the network using key
 func (dht *DHT) Get(key []byte) (value []byte, found bool, err error) {
-	value, _, err = dht.iterate(IterateFindValue, key, nil)
-	return value, value != nil, err
+	if len(key) != dht.ht.bBits {
+		return nil, false, errors.New("invalid key size")
+	}
+
+	// Keep a reference to closestNode. If after performing a search we do not find a closer node, we stop searching.
+	sl := dht.ht.getClosestContacts(dht.alpha, key, nil)
+	if len(sl.Nodes) == 0 {
+		return nil, false, nil
+	}
+
+	closestNode := sl.Nodes[0]
+
+	for {
+		info := dht.NewInformationRequest(ActionFindValue, key, sl.GetUncontacted(dht.alpha, true))
+		dht.SendRequestFindValue(info)
+		results := info.CollectResults(dht.TMsgTimeout)
+
+		for _, result := range results {
+			if result.Error != nil {
+				sl.RemoveNode(result.SenderID)
+				continue
+			}
+			if len(result.Data) > 0 {
+				return result.Data, false, nil
+			}
+			sl.AppendUniqueNodes(result.Storing...) // TODO: Assign higher priority, skip closesNode check.
+			sl.AppendUniqueNodes(result.Closest...)
+		}
+
+		sort.Sort(sl)
+
+		// If closestNode is unchanged then we are done
+		if bytes.Equal(sl.Nodes[0].ID, closestNode.ID) {
+			return nil, false, nil
+		}
+
+		closestNode = sl.Nodes[0]
+	}
 }
 
 // FindNode finds the target node in the network
 func (dht *DHT) FindNode(key []byte) (value []byte, found bool, err error) {
-	value, _, err = dht.iterate(IterateFindNode, key, nil)
-	return value, value != nil, err
-}
-
-// Iterate does an iterative search through the network. This can be done
-// for multiple reasons. These reasons include:
-//     IterateStore - Used to store new information in the network.
-//     IterateFindNode - Used to bootstrap the network.
-//     IterateFindValue - Used to find a value among the network given a key.
-func (dht *DHT) iterate(action int, target []byte, data []byte) (value []byte, closest []*Node, err error) {
-	if len(target) != dht.ht.bBits {
-		return nil, nil, errors.New("invalid key")
-	} else if action < IterateStore || action > IterateFindValue {
-		return nil, nil, errors.New("unknown iterate type")
+	if len(key) != dht.ht.bBits {
+		return nil, false, errors.New("invalid key size")
 	}
 
-	sl := dht.ht.getClosestContacts(dht.alpha, target, nil)
-
-	// We keep a reference to the closestNode. If after performing a search we do not find a closer node, we stop searching.
+	// Keep a reference to closestNode. If after performing a search we do not find a closer node, we stop searching.
+	sl := dht.ht.getClosestContacts(dht.alpha, key, nil)
 	if len(sl.Nodes) == 0 {
-		return nil, nil, nil
+		return nil, false, nil
 	}
 
 	// According to the Kademlia white paper, after a round of FIND_NODE RPCs fails to provide a node closer than closestNode, we should send a
@@ -132,8 +202,8 @@ func (dht *DHT) iterate(action int, target []byte, data []byte) (value []byte, c
 	closestNode := sl.Nodes[0]
 
 	for {
-		info := NewInformationRequest(action, target)
-		dht.SendRequest(info, sl.GetUncontacted(dht.alpha, !queryRest))
+		info := dht.NewInformationRequest(ActionFindNode, key, sl.GetUncontacted(dht.alpha, !queryRest))
+		dht.SendRequestFindNode(info)
 		results := info.CollectResults(dht.TMsgTimeout)
 
 		for _, result := range results {
@@ -141,47 +211,20 @@ func (dht *DHT) iterate(action int, target []byte, data []byte) (value []byte, c
 				sl.RemoveNode(result.SenderID)
 				continue
 			}
-			switch action {
-			case IterateFindNode:
-				sl.AppendUniqueNodes(result.Closest...)
-				// TODO: Accept contact info?
-			case IterateFindValue:
-				// When an IterateFindValue succeeds, the initiator COULD store the key/value pair at the closest node seen which did not return the value.
-				if len(result.Data) > 0 {
-					return result.Data, nil, nil
-				}
-				sl.AppendUniqueNodes(result.Closest...)
-			case IterateStore:
-				sl.AppendUniqueNodes(result.Closest...)
-			}
+			sl.AppendUniqueNodes(result.Closest...)
+
+			// TODO: Check if node was found.
 		}
 
 		sort.Sort(sl)
 
 		// If closestNode is unchanged then we are done
-		if bytes.Compare(sl.Nodes[0].ID, closestNode.ID) == 0 || queryRest {
-			// We are done
-			switch action {
-			case IterateFindNode:
-				if !queryRest {
-					queryRest = true
-					continue
-				}
-				return nil, sl.Nodes, nil
-
-			case IterateFindValue:
-				return nil, sl.Nodes, nil
-
-			case IterateStore:
-				for i, node := range sl.Nodes {
-					if i >= dht.ht.bSize {
-						break
-					}
-
-					dht.SendStore(node, target, data)
-				}
-				return nil, nil, nil
+		if bytes.Equal(sl.Nodes[0].ID, closestNode.ID) || queryRest {
+			if !queryRest {
+				queryRest = true
+				continue
 			}
+			return nil, false, nil
 		}
 
 		closestNode = sl.Nodes[0]
