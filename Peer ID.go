@@ -69,6 +69,11 @@ func ExportPrivateKey() (privateKey *btcec.PrivateKey, publicKey *btcec.PublicKe
 	return peerPrivateKey, peerPublicKey
 }
 
+// SelfNodeID returns the node ID used for DHT
+func SelfNodeID() []byte {
+	return nodeID
+}
+
 // PeerInfo stores information about a single remote peer
 type PeerInfo struct {
 	PublicKey          *btcec.PublicKey // Public key
@@ -182,4 +187,15 @@ func records2Nodes(records []PeerRecord, network *Network) (nodes []*dht.Node) {
 	}
 
 	return
+}
+
+// selfPeerRecord returns self as peer record
+func selfPeerRecord(network *Network) (result PeerRecord) {
+	return PeerRecord{
+		PublicKey:   peerPublicKey,
+		NodeID:      nodeID,
+		IP:          network.address.IP,
+		Port:        uint16(network.address.Port),
+		LastContact: 0,
+	}
 }

@@ -28,8 +28,6 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 		}
 
 		fmt.Printf("Incoming initial announcement from %s\n", msg.connection.Address.String())
-	} else {
-		fmt.Printf("Incoming secondary announcement from %s\n", msg.connection.Address.String())
 	}
 
 	// Filter function to only share peers that are "connectable" to the remote one. It checks IPv4, IPv6, and local connection.
@@ -43,6 +41,8 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 	allowIPv6 := msg.Features&(1<<FeatureIPv6Listen) > 0
 
 	var hash2Peers []Hash2Peer
+	var hashesNotFound [][]byte
+	var filesEmbed []EmbeddedFileData
 
 	// FIND_SELF: Requesting peers close to the sender?
 	if msg.Actions&(1<<ActionFindSelf) > 0 {
@@ -55,7 +55,11 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 			}
 		}
 
-		hash2Peers = append(hash2Peers, selfD)
+		if len(selfD.Closest) > 0 {
+			hash2Peers = append(hash2Peers, selfD)
+		} else {
+			hashesNotFound = append(hashesNotFound, peer.NodeID)
+		}
 	}
 
 	// FIND_PEER: Find a different peer?
@@ -69,22 +73,35 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 				}
 			}
 
-			hash2Peers = append(hash2Peers, details)
+			if len(details.Closest) > 0 {
+				hash2Peers = append(hash2Peers, details)
+			} else {
+				hashesNotFound = append(hashesNotFound, findPeer.Hash)
+			}
 		}
 	}
 
 	// Find a value?
 	if msg.Actions&(1<<ActionFindValue) > 0 {
-		// TODO query store
+		for _, findHash := range msg.FindDataKeys {
+			stored, data := announcementGetData(findHash.Hash)
+			if stored && len(data) > 0 {
+				filesEmbed = append(filesEmbed, EmbeddedFileData{ID: findHash, Data: data})
+			} else if stored {
+				selfRecord := selfPeerRecord(msg.connection.Network)
+				hash2Peers = append(hash2Peers, Hash2Peer{ID: findHash, Storing: []PeerRecord{selfRecord}})
+			} else {
+				hashesNotFound = append(hashesNotFound, findHash.Hash)
+			}
+		}
 	}
 
 	// Information about files stored by the sender?
-	if msg.Actions&(1<<ActionInfoStore) > 0 {
-		// TODO
+	if msg.Actions&(1<<ActionInfoStore) > 0 && len(msg.InfoStoreFiles) > 0 {
+		peer.announcementStore(msg.InfoStoreFiles)
 	}
 
-	// Empty announcement from existing peer means the peer most likely restarted. For regular connection upkeep ping should be used.
-	peer.sendResponse(added, hash2Peers, nil, nil)
+	peer.sendResponse(added, hash2Peers, filesEmbed, hashesNotFound)
 }
 
 func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result *PeerRecord) {
@@ -151,8 +168,6 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 			}
 		}
 	}*/
-
-	//fmt.Printf("Incoming response from %s on %s\n", msg.connection.Address.String(), msg.connection.Address.String())
 }
 
 // cmdPing handles an incoming ping message

@@ -14,6 +14,7 @@ func Init() {
 	initBroadcastIPv4()
 	initNetwork()
 	initSeedList()
+	initStore()
 }
 
 // Connect starts bootstrapping and local peer discovery.
