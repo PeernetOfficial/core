@@ -129,7 +129,7 @@ func (dht *DHT) IRLookup(nodeID []byte, hash []byte) (request *InformationReques
 	dht.listIRmutex.RLock()
 	defer dht.listIRmutex.RUnlock()
 
-	lookupKey := string(nodeID) + string(request.Key)
+	lookupKey := string(nodeID) + string(hash)
 	request = dht.ListIR[lookupKey]
 
 	return request

@@ -33,8 +33,8 @@ type DHT struct {
 	// ShouldEvict determines whether the given node shall be evicted
 	ShouldEvict func(node *Node) bool
 
-	// SendRequestStore sends a store message to the remote node. I.e. asking it to store the given key-value.
-	SendRequestStore func(node *Node, key []byte, value []byte)
+	// SendRequestStore sends an announcement-store message to the remote node. It informs the remote node that the local one stores the given key-value.
+	SendRequestStore func(node *Node, key []byte, dataSize uint64)
 
 	// SendRequestFindNode sends an information request to find a particular node. nodes are the nodes to send the request to.
 	SendRequestFindNode func(request *InformationRequest)
@@ -96,9 +96,9 @@ func (dht *DHT) MarkNodeAsSeen(ID []byte) {
 
 // ---- Synchronous network query functions below ----
 
-// Store stores data on the network.
-func (dht *DHT) Store(key, data []byte) (err error) {
-	if len(key) != dht.ht.bBits {
+// Store informs the network about data stored locally.
+func (dht *DHT) Store(key []byte, dataSize uint64) (err error) {
+	if len(key)*8 != dht.ht.bBits {
 		return errors.New("invalid key size")
 	}
 
@@ -132,7 +132,7 @@ func (dht *DHT) Store(key, data []byte) (err error) {
 					break
 				}
 
-				dht.SendRequestStore(node, key, data)
+				dht.SendRequestStore(node, key, dataSize)
 			}
 			return nil
 		}
@@ -143,7 +143,7 @@ func (dht *DHT) Store(key, data []byte) (err error) {
 
 // Get retrieves data from the network using key
 func (dht *DHT) Get(key []byte) (value []byte, found bool, err error) {
-	if len(key) != dht.ht.bBits {
+	if len(key)*8 != dht.ht.bBits {
 		return nil, false, errors.New("invalid key size")
 	}
 
@@ -166,7 +166,7 @@ func (dht *DHT) Get(key []byte) (value []byte, found bool, err error) {
 				continue
 			}
 			if len(result.Data) > 0 {
-				return result.Data, false, nil
+				return result.Data, true, nil
 			}
 			sl.AppendUniqueNodes(result.Storing...) // TODO: Assign higher priority, skip closesNode check.
 			sl.AppendUniqueNodes(result.Closest...)
@@ -185,7 +185,7 @@ func (dht *DHT) Get(key []byte) (value []byte, found bool, err error) {
 
 // FindNode finds the target node in the network
 func (dht *DHT) FindNode(key []byte) (value []byte, found bool, err error) {
-	if len(key) != dht.ht.bBits {
+	if len(key)*8 != dht.ht.bBits {
 		return nil, false, errors.New("invalid key size")
 	}
 
