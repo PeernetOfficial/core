@@ -42,8 +42,7 @@ var configFile string
 //go:embed "Config Default.yaml"
 var defaultConfig []byte
 
-// LoadConfig reads the YAML configuration file
-// If an error is returned, the application shall exit.
+// LoadConfig reads the YAML configuration file. If an error is returned, the application shall exit.
 // Status: 0 = Unknown error checking config file, 1 = Error reading config file, 2 = Error parsing config file, 3 = Success
 func LoadConfig(filename string) (status int, err error) {
 	var configData []byte
@@ -62,6 +61,32 @@ func LoadConfig(filename string) (status int, err error) {
 	// parse the config
 	err = yaml.Unmarshal(configData, &config)
 	if err != nil {
+		return 2, err
+	}
+
+	return 3, nil
+}
+
+// LoadConfigOut is similar to LoadConfig but unmarshals the config into a caller provided structure.
+func LoadConfigOut(Filename string, ConfigOut interface{}) (status int, err error) {
+	var configData []byte
+	configFile = Filename
+
+	// check if the file is non existent or empty
+	stats, err := os.Stat(Filename)
+	if err != nil && os.IsNotExist(err) || err == nil && stats.Size() == 0 {
+		configData = defaultConfig
+	} else if err != nil {
+		return 0, err
+	} else if configData, err = ioutil.ReadFile(Filename); err != nil {
+		return 1, err
+	}
+
+	// parse the config
+	if err = yaml.Unmarshal(configData, &config); err != nil {
+		return 2, err
+	}
+	if err = yaml.Unmarshal(configData, ConfigOut); err != nil {
 		return 2, err
 	}
 
