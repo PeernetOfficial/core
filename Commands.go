@@ -8,7 +8,9 @@ package core
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/PeernetOfficial/core/dht"
@@ -102,7 +104,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 		peer.announcementStore(msg.InfoStoreFiles)
 	}
 
-	peer.sendResponse(added, hash2Peers, filesEmbed, hashesNotFound)
+	peer.sendResponse(msg.Sequence, added, hash2Peers, filesEmbed, hashesNotFound)
 }
 
 func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result *PeerRecord) {
@@ -140,7 +142,7 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 		info := nodesDHT.IRLookup(peer.NodeID, hash2Peer.ID.Hash)
 		if info == nil {
 			// Response to FIND_SELF?
-			if bytes.Equal(info.Key, nodeID) && len(hash2Peer.Closest) > 0 {
+			if bytes.Equal(hash2Peer.ID.Hash, nodeID) && len(hash2Peer.Closest) > 0 {
 				peer.cmdResponseFindSelf(msg, hash2Peer.Closest)
 			}
 			continue
@@ -194,6 +196,30 @@ func (peer *PeerInfo) cmdPong(msg *MessageRaw) {
 // cmdChat handles a chat message [debug]
 func (peer *PeerInfo) cmdChat(msg *MessageRaw) {
 	fmt.Printf("Chat from '%s': %s\n", msg.connection.Address.String(), string(msg.PacketRaw.Payload))
+}
+
+// cmdLocalDiscovery handles an incoming announcement via local discovery
+func (peer *PeerInfo) cmdLocalDiscovery(msg *MessageAnnouncement) {
+	// only accept local discovery message from private IPs for IPv4
+	// IPv6 DHCP routers typically assign public IPv6s and they can join multicast in the local network.
+	if msg.connection.IsIPv4() && !msg.connection.IsLocal() {
+		log.Printf("cmdLocalDiscovery message received from non-local IP %s peer ID %s\n", msg.connection.Address.String(), hex.EncodeToString(msg.SenderPublicKey.SerializeCompressed()))
+		return
+	}
+
+	var added bool
+	if peer == nil {
+		// The added check is required due to potential race condition; initially the client may receive multiple incoming announcement from the same peer via different connections.
+		if peer, added = PeerlistAdd(msg.SenderPublicKey, msg.connection); !added {
+			return
+		}
+
+		fmt.Printf("Incoming initial local discovery from %s\n", msg.connection.Address.String())
+		//} else {
+		//	fmt.Printf("Incoming secondary local discovery from %s\n", msg.connection.Address.String())
+	}
+
+	peer.sendAnnouncement(true, true, nil, nil, nil)
 }
 
 // pingTime is the time in seconds to send out ping messages

@@ -141,7 +141,7 @@ func (network *Network) MulticastIPv6Send() (err error) {
 		return err
 	}
 
-	raw, err := PacketEncrypt(peerPrivateKey, ipv6MulticastPublicKey, &PacketRaw{Protocol: ProtocolVersion, Command: CommandAnnouncement, Payload: packets[0]})
+	raw, err := PacketEncrypt(peerPrivateKey, ipv6MulticastPublicKey, &PacketRaw{Protocol: ProtocolVersion, Command: CommandLocalDiscovery, Payload: packets[0]})
 	if err != nil {
 		return err
 	}

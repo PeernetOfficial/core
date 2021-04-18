@@ -49,7 +49,7 @@ func initPeerID() {
 	nodeID = publicKey2NodeID(peerPublicKey)
 
 	// save the newly generated private key into the config
-	config.PrivateKey = hex.EncodeToString(peerPublicKey.SerializeCompressed())
+	config.PrivateKey = hex.EncodeToString(peerPrivateKey.Serialize())
 
 	saveConfig()
 }

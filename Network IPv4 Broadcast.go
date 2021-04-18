@@ -95,7 +95,7 @@ func (network *Network) BroadcastIPv4Send() (err error) {
 		return err
 	}
 
-	raw, err := PacketEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &PacketRaw{Protocol: ProtocolVersion, Command: CommandAnnouncement, Payload: packets[0]})
+	raw, err := PacketEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &PacketRaw{Protocol: ProtocolVersion, Command: CommandLocalDiscovery, Payload: packets[0]})
 	if err != nil {
 		return err
 	}

@@ -28,13 +28,14 @@ var UserAgent = "Peernet Core/0.1"
 // Commands between peers
 const (
 	// Peer List Management
-	CommandAnnouncement = 0 // Announcement
-	CommandResponse     = 1 // Response
-	CommandPing         = 2 // Keep-alive message (no payload).
-	CommandPong         = 3 // Response to ping (no payload).
+	CommandAnnouncement   = 0 // Announcement
+	CommandResponse       = 1 // Response
+	CommandPing           = 2 // Keep-alive message (no payload).
+	CommandPong           = 3 // Response to ping (no payload).
+	CommandLocalDiscovery = 4 // Local discovery
 
 	// Blockchain
-	CommandGet = 4 // Request blocks for specified peer.
+	CommandGet = 6 // Request blocks for specified peer.
 
 	// File Discovery
 
@@ -762,11 +763,11 @@ func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash
 }
 
 // sendResponse sends the response message
-func (peer *PeerInfo) sendResponse(sendUA bool, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte) (err error) {
+func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte) (err error) {
 	packets, err := msgEncodeResponse(sendUA, hash2Peers, filesEmbed, hashesNotFound)
 
 	for _, packet := range packets {
-		peer.send(&PacketRaw{Command: CommandResponse, Payload: packet})
+		peer.send(&PacketRaw{Command: CommandResponse, Payload: packet, Sequence: sequence})
 	}
 
 	return err

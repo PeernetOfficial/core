@@ -166,6 +166,11 @@ func packetWorker(packets <-chan networkWire) {
 				peer.cmdResponse(response)
 			}
 
+		case CommandLocalDiscovery: // Local discovery, sent via IPv4 broadcast and IPv6 multicast
+			if announce, _ := msgDecodeAnnouncement(raw); announce != nil {
+				peer.cmdLocalDiscovery(announce)
+			}
+
 		case CommandPing: // Ping
 			peer.cmdPing(raw)
 
