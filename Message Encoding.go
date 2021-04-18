@@ -106,6 +106,7 @@ type Hash2Peer struct {
 	ID      KeyHash      // Hash that was queried
 	Closest []PeerRecord // Closest peers
 	Storing []PeerRecord // Peers known to store the data identified by the hash
+	IsLast  bool         // Whether it is the last records returned for the requested hash and no more results will follow
 }
 
 // EmbeddedFileData contains embedded data sent within a response
@@ -261,8 +262,8 @@ func msgDecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 		return nil, errors.New("response: invalid minimum length")
 	}
 
-	result.Protocol = msg.Payload[0] & 0x0F                // Protocol version support is stored in the first 4 bits
-	result.Features = decodeFeatureSupport(msg.Payload[1]) // Feature support
+	result.Protocol = msg.Payload[0] & 0x0F // Protocol version support is stored in the first 4 bits
+	result.Features = msg.Payload[1]        // Feature support
 	result.Actions = msg.Payload[2]
 	result.BlockchainHeight = binary.LittleEndian.Uint32(msg.Payload[3:7])
 	result.BlockchainVersion = binary.LittleEndian.Uint64(msg.Payload[7:15])
@@ -345,10 +346,11 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 
 		hash := make([]byte, hashSize)
 		copy(hash, data[index:index+32])
-		countField := binary.LittleEndian.Uint16(data[index+32 : index+32+2])
+		countField := binary.LittleEndian.Uint16(data[index+32:index+32+2]) & 0x7FFF
+		isLast := binary.LittleEndian.Uint16(data[index+32:index+32+2])&0x8000 > 0
 		index += 34
 
-		hash2Peer := Hash2Peer{ID: KeyHash{hash}}
+		hash2Peer := Hash2Peer{ID: KeyHash{hash}, IsLast: isLast}
 
 		// Response contains peer records
 		for m := 0; m < int(countField); m++ {
@@ -423,15 +425,6 @@ func decodeEmbeddedFile(data []byte, count int) (filesEmbed []EmbeddedFileData, 
 	}
 
 	return filesEmbed, read, true
-}
-
-func decodeFeatureSupport(feature byte) byte {
-	// Compatibility with Alpha 1: Set both IPv4/IPv6 bits if none is set.
-	if feature&(1<<FeatureIPv4Listen|1<<FeatureIPv6Listen) == 0 {
-		feature = 1<<FeatureIPv4Listen | 1<<FeatureIPv6Listen
-	}
-
-	return feature
 }
 
 // ---- message encoding ----
@@ -680,7 +673,8 @@ createPacketLoop:
 					binary.LittleEndian.PutUint16(raw[count2Index+0:count2Index+2], count2)
 				}
 
-				binary.LittleEndian.PutUint16(raw[countIndex+0:countIndex+0+2], uint16(n+1)) // count of peer responses
+				binary.LittleEndian.PutUint16(raw[count2Index+0:count2Index+2], count2|0x8000) // signal the last result for the key with bit 15
+				binary.LittleEndian.PutUint16(raw[countIndex+0:countIndex+0+2], uint16(n+1))   // count of peer responses
 			}
 
 			hash2Peers = nil
