@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"bytes"
 	"fmt"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 )
 
 // respondClosesContactsCount is the number of closest contact to respond.
-// Each peer record will take 55 bytes. Overhead is 73 + 15 payload header + UA length + 6 + 34 = 128 bytes without UA.
+// Each peer record will take 55 bytes. Overhead is 77 + 15 payload header + UA length + 6 + 34 = 132 bytes without UA.
 // It makes sense to stay below 508 bytes (no fragmentation). Reporting back 5 contacts for FIND_SELF requests should do the magic.
 const respondClosesContactsCount = 5
 
@@ -138,6 +139,10 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 	for _, hash2Peer := range msg.Hash2Peers {
 		info := nodesDHT.IRLookup(peer.NodeID, hash2Peer.ID.Hash)
 		if info == nil {
+			// Response to FIND_SELF?
+			if bytes.Equal(info.Key, nodeID) && len(hash2Peer.Closest) > 0 {
+				peer.cmdResponseFindSelf(msg, hash2Peer.Closest)
+			}
 			continue
 		}
 

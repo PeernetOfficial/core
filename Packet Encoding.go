@@ -8,8 +8,9 @@ Offset  Size   Info
 0       4      Nonce
 4       1      Protocol version = 0
 5       1      Command
-6       2      Size of payload data
-8       ?      Payload
+6       4      Sequence
+10      2      Size of payload data
+12      ?      Payload
         ?      Randomized garbage
 ?		65     Signature, ECDSA secp256k1 512-bit + 1 header byte
 
@@ -34,11 +35,12 @@ import (
 type PacketRaw struct {
 	Protocol uint8  // Protocol version = 0
 	Command  uint8  // 0 = Announcement
+	Sequence uint32 // Sequence number
 	Payload  []byte // Payload
 }
 
-// The minimum packet size is 8 bytes (minimum header size) + 65 bytes (signature)
-const packetLengthMin = 8 + signatureSize
+// The minimum packet size is 12 bytes (minimum header size) + 65 bytes (signature)
+const packetLengthMin = 12 + signatureSize
 const signatureSize = 65
 const maxRandomGarbage = 20
 
@@ -69,14 +71,15 @@ func PacketDecrypt(raw []byte, receiverPublicKey *btcec.PublicKey) (packet *Pack
 
 	// copy all fields
 	packet = &PacketRaw{Protocol: bufferDecrypted[0], Command: bufferDecrypted[1]}
+	packet.Sequence = binary.LittleEndian.Uint32(bufferDecrypted[2:6])
 
-	sizePayload := binary.LittleEndian.Uint16(bufferDecrypted[2:4])
-	if int(sizePayload) > len(bufferDecrypted)-4 { // invalid length?
+	sizePayload := binary.LittleEndian.Uint16(bufferDecrypted[6:8])
+	if int(sizePayload) > len(bufferDecrypted)-8 { // invalid length?
 		return nil, nil, errors.New("invalid length field")
 	}
 	if sizePayload > 0 {
 		packet.Payload = make([]byte, int(sizePayload))
-		copy(packet.Payload, bufferDecrypted[4:4+int(sizePayload)])
+		copy(packet.Payload, bufferDecrypted[8:8+int(sizePayload)])
 	}
 
 	return packet, senderPublicKey, nil
@@ -96,13 +99,14 @@ func PacketEncrypt(senderPrivateKey *btcec.PrivateKey, receiverPublicKey *btcec.
 	raw[4] = packet.Protocol
 	raw[5] = packet.Command
 
-	binary.LittleEndian.PutUint16(raw[6:8], uint16(len(packet.Payload)))
-	copy(raw[8:], packet.Payload)
-	copy(raw[8+len(packet.Payload):8+len(packet.Payload)+len(garbage)], garbage)
+	binary.LittleEndian.PutUint16(raw[6:10], uint16(packet.Sequence))
+	binary.LittleEndian.PutUint16(raw[10:12], uint16(len(packet.Payload)))
+	copy(raw[12:], packet.Payload)
+	copy(raw[12+len(packet.Payload):12+len(packet.Payload)+len(garbage)], garbage)
 
 	// encrypt it using Salsa20
 	keySalsa := publicKeyToSalsa20Key(receiverPublicKey)
-	salsa20.XORKeyStream(raw[4:8+len(packet.Payload)+len(garbage)], raw[4:8+len(packet.Payload)+len(garbage)], nonce, keySalsa)
+	salsa20.XORKeyStream(raw[4:12+len(packet.Payload)+len(garbage)], raw[4:12+len(packet.Payload)+len(garbage)], nonce, keySalsa)
 
 	// add signature
 	signature, err := btcec.SignCompact(btcec.S256(), senderPrivateKey, hashData(raw[:len(raw)-signatureSize]), true)

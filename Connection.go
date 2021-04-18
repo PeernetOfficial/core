@@ -45,6 +45,16 @@ func (c *Connection) IsLocal() bool {
 	return IsIPLocal(c.Address.IP)
 }
 
+// IsIPv4 checks if the connection is using IPv4
+func (c *Connection) IsIPv4() bool {
+	return IsIPv4(c.Address.IP)
+}
+
+// IsIPv6 checks if the connection is using IPv6
+func (c *Connection) IsIPv6() bool {
+	return IsIPv6(c.Address.IP)
+}
+
 // GetConnections returns the list of connections
 func (peer *PeerInfo) GetConnections(active bool) (connections []*Connection) {
 	peer.RLock()

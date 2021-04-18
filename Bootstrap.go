@@ -95,14 +95,7 @@ func parseAddress(Address string) (remote *net.UDPAddr, err error) {
 
 // contact tries to contact the root peer on all networks
 func (peer *rootPeer) contact() {
-	packets, err := msgEncodeAnnouncement(true, true, nil, nil, nil)
-	if len(packets) == 0 || err != nil {
-		return
-	}
-
-	for _, address := range peer.addresses {
-		sendAllNetworks(peer.publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0]}, address)
-	}
+	contactArbitraryPeer(peer.publicKey, peer.addresses)
 }
 
 // bootstrap connects to the initial set of peers. It will also start the routine for ongoing sending of multicast/broadcast messages.
@@ -198,8 +191,9 @@ func autoMulticastBroadcast() {
 	}
 }
 
-func contactArbitraryPeer(publicKey *btcec.PublicKey, ip net.IP, port uint16) {
-	// check first if peer is already in the list!
+// contactArbitraryPeer reaches for the first time to an arbitrary peer.
+// It does not contact the peer if it is in the peer list, which means that a connection is already established.
+func contactArbitraryPeer(publicKey *btcec.PublicKey, addresses []*net.UDPAddr) {
 	if peer := PeerlistLookup(publicKey); peer != nil {
 		return
 	}
@@ -209,5 +203,15 @@ func contactArbitraryPeer(publicKey *btcec.PublicKey, ip net.IP, port uint16) {
 		return
 	}
 
-	sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0]}, &net.UDPAddr{IP: ip, Port: int(port)})
+	for _, address := range addresses {
+		sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0]}, address)
+	}
+}
+
+// cmdResponseFindSelf processes FIND_SELF responses
+func (peer *PeerInfo) cmdResponseFindSelf(msg *MessageResponse, Closest []PeerRecord) {
+	for _, closePeer := range Closest {
+		// Initiate contact. Once a response comes back, the peer is actually added to the list.
+		contactArbitraryPeer(closePeer.PublicKey, []*net.UDPAddr{{IP: closePeer.IP, Port: int(closePeer.Port)}})
+	}
 }
