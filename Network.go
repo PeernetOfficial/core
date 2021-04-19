@@ -174,6 +174,10 @@ func packetWorker(packets <-chan networkWire) {
 
 		case CommandResponse: // Response
 			if response, _ := msgDecodeResponse(raw); response != nil {
+				if (response.Actions & (1 << ActionSequenceLast)) > 0 {
+					msgInvalidateSequence(raw)
+				}
+
 				peer.cmdResponse(response)
 			}
 

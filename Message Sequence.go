@@ -124,4 +124,16 @@ func msgValidateSequence(raw *MessageRaw) (valid bool, rtt time.Duration) {
 	return sequence.expires.After(time.Now()), rtt
 }
 
-// TODO: Manual invalidation of sequence number from high-level (once information request is considered handled).
+// msgInvalidateSequence invalidates the sequence number.
+func msgInvalidateSequence(raw *MessageRaw) {
+	// Only Response
+	if raw.Command != CommandResponse {
+		return
+	}
+
+	key := string(raw.SenderPublicKey.SerializeCompressed()) + strconv.FormatUint(uint64(raw.Sequence), 10)
+
+	sequencesMutex.Lock()
+	delete(sequences, key)
+	sequencesMutex.Unlock()
+}

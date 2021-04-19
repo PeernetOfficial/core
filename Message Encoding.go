@@ -51,6 +51,11 @@ const (
 	ActionInfoStore = 3 // INFO_STORE Sender indicates storing provided data
 )
 
+// Actions in Response message
+const (
+	ActionSequenceLast = 0 // SEQUENCE_LAST Last response to the announcement in the sequence
+)
+
 // Features are sent as bit array in the Announcement message.
 const (
 	FeatureIPv4Listen = 0 // Sender listens on IPv4
@@ -726,9 +731,10 @@ createPacketLoop:
 			hashesNotFound = nil
 		}
 
+		raw[2] |= 1 << ActionSequenceLast // Indicate that no more responses will be sent in this sequence
 		packetsRaw = append(packetsRaw, raw[:packetSize])
 
-		if len(hash2Peers) == 0 && len(filesEmbed) == 0 && len(hashesNotFound) == 0 {
+		if len(hash2Peers) == 0 && len(filesEmbed) == 0 && len(hashesNotFound) == 0 { // this should always be the case here
 			return
 		}
 	}
