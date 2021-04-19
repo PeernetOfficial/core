@@ -738,7 +738,7 @@ createPacketLoop:
 
 // pingConnection sends a ping to the target peer via the specified connection
 func (peer *PeerInfo) pingConnection(connection *Connection) {
-	err := peer.sendConnection(&PacketRaw{Command: CommandPing}, connection)
+	err := peer.sendConnection(&PacketRaw{Command: CommandPing, Sequence: peer.msgNewSequence()}, connection)
 	connection.LastPingOut = time.Now()
 
 	if (connection.Status == ConnectionActive || connection.Status == ConnectionRedundant) && IsNetworkErrorFatal(err) {
@@ -756,7 +756,7 @@ func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash
 	packets, err := msgEncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files)
 
 	for _, packet := range packets {
-		peer.send(&PacketRaw{Command: CommandAnnouncement, Payload: packet})
+		peer.send(&PacketRaw{Command: CommandAnnouncement, Payload: packet, Sequence: peer.msgNewSequence()})
 	}
 
 	return err

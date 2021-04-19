@@ -99,7 +99,7 @@ func PacketEncrypt(senderPrivateKey *btcec.PrivateKey, receiverPublicKey *btcec.
 	raw[4] = packet.Protocol
 	raw[5] = packet.Command
 
-	binary.LittleEndian.PutUint16(raw[6:10], uint16(packet.Sequence))
+	binary.LittleEndian.PutUint32(raw[6:10], uint32(packet.Sequence))
 	binary.LittleEndian.PutUint16(raw[10:12], uint16(len(packet.Payload)))
 	copy(raw[12:], packet.Payload)
 	copy(raw[12+len(packet.Payload):12+len(packet.Payload)+len(garbage)], garbage)

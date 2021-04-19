@@ -10,6 +10,7 @@ package core
 func Init() {
 	initPeerID()
 	initKademlia()
+	initMessageSequence()
 	initMulticastIPv6()
 	initBroadcastIPv4()
 	initNetwork()

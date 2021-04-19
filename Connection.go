@@ -18,13 +18,14 @@ import (
 // Connection is an established connection between a remote IP address and a local network adapter.
 // New connections may only be created in case of successful INCOMING packets.
 type Connection struct {
-	Network       *Network     // network which received the packet
-	Address       *net.UDPAddr // address of the sender or receiver
-	LastPacketIn  time.Time    // Last time an incoming packet was received.
-	LastPacketOut time.Time    // Last time an outgoing packet was attempted to send.
-	LastPingOut   time.Time    // Last ping out.
-	Expires       time.Time    // Inactive connections only: Expiry date. If it does not become active by that date, it will be considered expired and removed.
-	Status        int          // 0 = Active established connection, 1 = Inactive, 2 = Removed, 3 = Redundant
+	Network       *Network      // network which received the packet
+	Address       *net.UDPAddr  // address of the sender or receiver
+	LastPacketIn  time.Time     // Last time an incoming packet was received.
+	LastPacketOut time.Time     // Last time an outgoing packet was attempted to send.
+	LastPingOut   time.Time     // Last ping out.
+	Expires       time.Time     // Inactive connections only: Expiry date. If it does not become active by that date, it will be considered expired and removed.
+	Status        int           // 0 = Active established connection, 1 = Inactive, 2 = Removed, 3 = Redundant
+	RoundTripTime time.Duration // Full round-trip time of last reply.
 }
 
 // Connection status

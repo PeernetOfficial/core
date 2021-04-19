@@ -9,6 +9,7 @@ package core
 import (
 	"encoding/hex"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"sync"
@@ -82,6 +83,7 @@ type PeerInfo struct {
 	connectionInactive []*Connection    // List of former connections that are no longer valid. They may be removed after a while.
 	connectionLatest   *Connection      // Latest valid connection.
 	sync.RWMutex                        // Mutex for access to list of connections.
+	messageSequence    uint32           // Sequence number. Increased with every message.
 
 	// statistics
 	StatsPacketSent     uint64 // Count of packets sent
@@ -105,7 +107,7 @@ func PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*Connection) (peer *
 		return peer, false
 	}
 
-	peer = &PeerInfo{PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], NodeID: publicKey2NodeID(PublicKey)}
+	peer = &PeerInfo{PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], NodeID: publicKey2NodeID(PublicKey), messageSequence: rand.Uint32()}
 	peerList[publicKey2Compressed(peer.PublicKey)] = peer
 
 	// add to Kademlia
@@ -175,7 +177,7 @@ func record2Peer(record PeerRecord, network *Network) (peerN *PeerInfo) {
 
 	// Create temporary peer which is not added to the global list and not added to Kademlia.
 	connection := &Connection{Network: network, Address: &net.UDPAddr{IP: record.IP, Port: int(record.Port)}, Status: ConnectionActive}
-	return &PeerInfo{PublicKey: record.PublicKey, connectionActive: []*Connection{connection}, connectionLatest: connection, NodeID: publicKey2NodeID(record.PublicKey)}
+	return &PeerInfo{PublicKey: record.PublicKey, connectionActive: []*Connection{connection}, connectionLatest: connection, NodeID: publicKey2NodeID(record.PublicKey), messageSequence: rand.Uint32()}
 }
 
 // records2Nodes translates infoPeer structures to nodes

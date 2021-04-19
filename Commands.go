@@ -23,13 +23,9 @@ const respondClosesContactsCount = 5
 
 // cmdAnouncement handles an incoming announcement
 func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
-	added := false
+	var added bool
 	if peer == nil {
-		// The added check is required due to potential race condition; initially the client may receive multiple incoming announcement from the same peer via different connections.
-		if peer, added = PeerlistAdd(msg.SenderPublicKey, msg.connection); !added {
-			return
-		}
-
+		peer, added = PeerlistAdd(msg.SenderPublicKey, msg.connection)
 		fmt.Printf("Incoming initial announcement from %s\n", msg.connection.Address.String())
 	}
 
@@ -165,26 +161,16 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 		info.ActiveNodesSub(1)
 		info.Terminate() // file was found, terminate the request.
 	}
-
-	// check if incoming response to FIND_SELF
-	/*for _, hash2peer := range msg.Hash2Peers {
-		if !bytes.Equal(hash2peer.ID.Hash, nodeID) {
-			for _, closePeer := range hash2peer.Closest {
-				// Initiate contact. Once a response comes back, the peer is actually added to the list.
-				contactArbitraryPeer(closePeer.PublicKey, closePeer.IP, closePeer.Port)
-			}
-		}
-	}*/
 }
 
 // cmdPing handles an incoming ping message
 func (peer *PeerInfo) cmdPing(msg *MessageRaw) {
 	if peer == nil {
 		// Unexpected incoming ping, reply with announce message
-		// TODO
-		return
+		peer, _ = PeerlistAdd(msg.SenderPublicKey, msg.connection)
+		peer.sendAnnouncement(true, true, nil, nil, nil)
 	}
-	peer.send(&PacketRaw{Command: CommandPong})
+	peer.send(&PacketRaw{Command: CommandPong, Sequence: msg.Sequence})
 	//fmt.Printf("Incoming ping from %s on %s\n", msg.connection.Address.String(), msg.connection.Address.String())
 }
 
@@ -207,12 +193,8 @@ func (peer *PeerInfo) cmdLocalDiscovery(msg *MessageAnnouncement) {
 		return
 	}
 
-	var added bool
 	if peer == nil {
-		// The added check is required due to potential race condition; initially the client may receive multiple incoming announcement from the same peer via different connections.
-		if peer, added = PeerlistAdd(msg.SenderPublicKey, msg.connection); !added {
-			return
-		}
+		peer, _ = PeerlistAdd(msg.SenderPublicKey, msg.connection)
 
 		fmt.Printf("Incoming initial local discovery from %s\n", msg.connection.Address.String())
 		//} else {

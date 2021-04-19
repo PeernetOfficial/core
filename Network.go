@@ -40,6 +40,9 @@ var networksMutex sync.RWMutex
 // Default ports to use. This may be randomized in the future to prevent fingerprinting (and subsequent blocking) by corporate and ISP firewalls.
 const defaultPort = 'p' // 112
 
+// ReplyTimeout is the round-trip timeout.
+var ReplyTimeout = 20
+
 // AutoAssignPort assigns a port for the given IP. Use port 0 for zero configuration.
 func (network *Network) AutoAssignPort(ip net.IP, port int) (err error) {
 	networkA := "udp6"
@@ -154,6 +157,14 @@ func packetWorker(packets <-chan networkWire) {
 
 		// process the packet
 		raw := &MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded, connection: connection}
+
+		// Response, Pong: Validate sequence number which prevents unsolicited responses.
+		if valid, rtt := msgValidateSequence(raw); !valid {
+			log.Printf("packetWorker message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
+			continue
+		} else if rtt > 0 {
+			connection.RoundTripTime = rtt
+		}
 
 		switch decoded.Command {
 		case CommandAnnouncement: // Announce

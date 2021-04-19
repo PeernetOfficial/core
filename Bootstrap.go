@@ -204,7 +204,7 @@ func contactArbitraryPeer(publicKey *btcec.PublicKey, addresses []*net.UDPAddr) 
 	}
 
 	for _, address := range addresses {
-		sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0]}, address)
+		sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0], Sequence: msgArbitrarySequence(publicKey)}, address)
 	}
 }
 
