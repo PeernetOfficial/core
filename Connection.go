@@ -223,6 +223,24 @@ func (peer *PeerInfo) removeInactiveConnection(input *Connection) {
 	}
 }
 
+// GetRTT returns the round-trip time for the most recent active connection. 0 if not available.
+func (peer *PeerInfo) GetRTT() (rtt time.Duration) {
+	peer.Lock()
+	defer peer.Unlock()
+
+	if peer.connectionLatest != nil && peer.connectionLatest.RoundTripTime > 0 {
+		return peer.connectionLatest.RoundTripTime
+	}
+
+	for _, connection := range peer.connectionActive {
+		if connection.RoundTripTime > 0 {
+			return connection.RoundTripTime
+		}
+	}
+
+	return 0
+}
+
 // ---- sending code ----
 
 // send sends a raw packet to the peer. Only uses active connections.
