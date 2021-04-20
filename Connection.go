@@ -302,13 +302,10 @@ func (peer *PeerInfo) sendConnection(packet *PacketRaw, connection *Connection) 
 	return connection.Network.send(connection.Address.IP, connection.Address.Port, raw)
 }
 
-// sendAllNetworks sends a raw packet via all networks
+// sendAllNetworks sends a raw packet via all networks. It assigns a new sequence for each sent packet.
 func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remote *net.UDPAddr) (err error) {
+	var raw []byte
 	packet.Protocol = ProtocolVersion
-	raw, err := PacketEncrypt(peerPrivateKey, receiverPublicKey, packet)
-	if err != nil {
-		return err
-	}
 
 	successCount := 0
 
@@ -322,6 +319,11 @@ func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remo
 				continue
 			}
 
+			packet.Sequence = msgArbitrarySequence(receiverPublicKey)
+			if raw, err = PacketEncrypt(peerPrivateKey, receiverPublicKey, packet); err != nil {
+				return err
+			}
+
 			err = network.send(remote.IP, remote.Port, raw)
 			if err == nil {
 				successCount++
@@ -332,6 +334,11 @@ func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remo
 			// Do not mix link-local unicast targets with non link-local networks (only when iface is known, i.e. not catch all local)
 			if network.iface != nil && remote.IP.IsLinkLocalUnicast() != network.address.IP.IsLinkLocalUnicast() {
 				continue
+			}
+
+			packet.Sequence = msgArbitrarySequence(receiverPublicKey)
+			if raw, err = PacketEncrypt(peerPrivateKey, receiverPublicKey, packet); err != nil {
+				return err
 			}
 
 			err = network.send(remote.IP, remote.Port, raw)
