@@ -91,7 +91,7 @@ func msgArbitrarySequence(publicKey *btcec.PublicKey) (sequence uint32) {
 }
 
 // msgValidateSequence validates the sequence number of an incoming message
-func msgValidateSequence(raw *MessageRaw) (valid bool, rtt time.Duration) {
+func msgValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time.Duration) {
 	// Only Response and Pong
 	if raw.Command != CommandResponse && raw.Command != CommandPong {
 		return true, rtt
@@ -116,8 +116,11 @@ func msgValidateSequence(raw *MessageRaw) (valid bool, rtt time.Duration) {
 
 	sequence.counter++
 
-	// Special case CommandResponse: Extend validity in case there are follow-up responses by half of the round-trip time since they will be sent one-way.
-	if raw.Command == CommandResponse {
+	// invalidate the sequence immediately?
+	if invalidate {
+		delete(sequences, key)
+	} else if raw.Command == CommandResponse {
+		// Special case CommandResponse: Extend validity in case there are follow-up responses by half of the round-trip time since they will be sent one-way.
 		sequence.expires = time.Now().Add(time.Duration(ReplyTimeout) * time.Second / 2)
 	}
 

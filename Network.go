@@ -158,14 +158,6 @@ func packetWorker(packets <-chan networkWire) {
 		// process the packet
 		raw := &MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded, connection: connection}
 
-		// Response, Pong: Validate sequence number which prevents unsolicited responses.
-		if valid, rtt := msgValidateSequence(raw); !valid {
-			log.Printf("packetWorker message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
-			continue
-		} else if rtt > 0 {
-			connection.RoundTripTime = rtt
-		}
-
 		switch decoded.Command {
 		case CommandAnnouncement: // Announce
 			if announce, _ := msgDecodeAnnouncement(raw); announce != nil {
@@ -174,8 +166,12 @@ func packetWorker(packets <-chan networkWire) {
 
 		case CommandResponse: // Response
 			if response, _ := msgDecodeResponse(raw); response != nil {
-				if (response.Actions & (1 << ActionSequenceLast)) > 0 {
-					msgInvalidateSequence(raw)
+				// Validate sequence number which prevents unsolicited responses.
+				if valid, rtt := msgValidateSequence(raw, response.Actions&(1<<ActionSequenceLast) > 0); !valid {
+					log.Printf("packetWorker message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
+					continue
+				} else if rtt > 0 {
+					connection.RoundTripTime = rtt
 				}
 
 				peer.cmdResponse(response)
@@ -190,6 +186,14 @@ func packetWorker(packets <-chan networkWire) {
 			peer.cmdPing(raw)
 
 		case CommandPong: // Ping
+			// Validate sequence number which prevents unsolicited responses.
+			if valid, rtt := msgValidateSequence(raw, true); !valid {
+				log.Printf("packetWorker message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
+				continue
+			} else if rtt > 0 {
+				connection.RoundTripTime = rtt
+			}
+
 			peer.cmdPong(raw)
 
 		case CommandChat: // Chat [debug]
