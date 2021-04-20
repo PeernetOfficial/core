@@ -198,13 +198,13 @@ func contactArbitraryPeer(publicKey *btcec.PublicKey, addresses []*net.UDPAddr) 
 		return
 	}
 
-	packets, err := msgEncodeAnnouncement(true, true, nil, nil, nil)
-	if len(packets) == 0 || err != nil {
+	packets := msgEncodeAnnouncement(true, true, nil, nil, nil)
+	if len(packets) == 0 || packets[0].err != nil {
 		return
 	}
 
 	for _, address := range addresses {
-		sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0], Sequence: msgArbitrarySequence(publicKey)}, address)
+		sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw, Sequence: msgArbitrarySequence(publicKey)}, address)
 	}
 }
 

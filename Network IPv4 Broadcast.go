@@ -90,12 +90,12 @@ func (network *Network) BroadcastIPv4Listen() {
 
 // BroadcastIPv4Send sends out a single broadcast messages to discover peers
 func (network *Network) BroadcastIPv4Send() (err error) {
-	packets, err := msgEncodeAnnouncement(true, true, nil, nil, nil)
-	if len(packets) == 0 || err != nil {
-		return err
+	packets := msgEncodeAnnouncement(true, true, nil, nil, nil)
+	if len(packets) == 0 || packets[0].err != nil {
+		return packets[0].err
 	}
 
-	raw, err := PacketEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &PacketRaw{Protocol: ProtocolVersion, Command: CommandLocalDiscovery, Payload: packets[0]})
+	raw, err := PacketEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &PacketRaw{Protocol: ProtocolVersion, Command: CommandLocalDiscovery, Payload: packets[0].raw})
 	if err != nil {
 		return err
 	}
