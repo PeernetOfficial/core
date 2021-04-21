@@ -12,7 +12,6 @@ import (
 	"bytes"
 	"errors"
 	"sort"
-	"sync"
 	"time"
 )
 
@@ -23,10 +22,6 @@ type DHT struct {
 	// A small number representing the degree of parallelism in network calls.
 	// The alpha amount of nodes will be contacted in parallel for finding the target.
 	alpha int
-
-	// ListIR keeps track of all active information requests.
-	ListIR      map[string]*InformationRequest
-	listIRmutex sync.RWMutex
 
 	// Functions below must be set and provided by the caller.
 
@@ -52,7 +47,6 @@ func NewDHT(self *Node, bits, bucketSize, alpha int) *DHT {
 		ht:          newHashTable(self, bits, bucketSize),
 		alpha:       alpha,
 		TMsgTimeout: 2 * time.Second,
-		ListIR:      make(map[string]*InformationRequest),
 	}
 }
 

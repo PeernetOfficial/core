@@ -44,10 +44,6 @@ func (dht *DHT) NewInformationRequest(Action int, Key []byte, Nodes []*Node) (ir
 		ActiveNodes:     uint64(len(Nodes)),
 	}
 
-	for _, node := range Nodes {
-		dht.irAdd(node.ID, ir)
-	}
-
 	return
 }
 
@@ -84,53 +80,10 @@ func (ir *InformationRequest) Terminate() {
 	close(ir.ResultChan)
 }
 
-// ActiveNodesAdd increases the number of active nodes handling this request
-func (ir *InformationRequest) ActiveNodesAdd(count uint64) {
-	atomic.AddUint64(&ir.ActiveNodes, count)
-}
-
-// ActiveNodesSub decreases the number of active nodes handling this request
-func (ir *InformationRequest) ActiveNodesSub(count uint64) {
-	if atomic.AddUint64(&ir.ActiveNodes, ^uint64(count-1)) <= 0 {
+// Done is called when a remote node is done.
+func (ir *InformationRequest) Done() {
+	if atomic.AddUint64(&ir.ActiveNodes, ^uint64(0)) <= 0 {
 		// If the counter reaches 0, it means no nodes are handling this request anymore -> terminate it.
 		ir.Terminate()
 	}
-}
-
-// ---- keep track of information requests ----
-
-// irRemove add the information request to the list
-// If a request to the same node with the same key exists, it is overwritten. This will be improved. TODO: A nonce could easily fix that?
-func (dht *DHT) irAdd(nodeID []byte, request *InformationRequest) {
-	dht.listIRmutex.Lock()
-	defer dht.listIRmutex.Unlock()
-
-	// The list only supports one request per target node and key. This should be improved.
-	lookupKey := string(nodeID) + string(request.Key)
-	dht.ListIR[lookupKey] = request
-
-	// auto remove from list upon termination
-	go func(lookupKey string, terminateChan <-chan struct{}) {
-		<-terminateChan
-		dht.irRemove(lookupKey)
-	}(lookupKey, request.TerminateSignal)
-}
-
-// irRemove removes the information request from the list
-func (dht *DHT) irRemove(lookupKey string) {
-	dht.listIRmutex.Lock()
-	defer dht.listIRmutex.Unlock()
-
-	delete(dht.ListIR, lookupKey)
-}
-
-// IRLookup looks up the information request based on the peers public key and hash
-func (dht *DHT) IRLookup(nodeID []byte, hash []byte) (request *InformationRequest) {
-	dht.listIRmutex.RLock()
-	defer dht.listIRmutex.RUnlock()
-
-	lookupKey := string(nodeID) + string(hash)
-	request = dht.ListIR[lookupKey]
-
-	return request
 }
