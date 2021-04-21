@@ -136,19 +136,20 @@ func (dht *DHT) Store(key []byte, dataSize uint64) (err error) {
 }
 
 // Get retrieves data from the network using key
-func (dht *DHT) Get(key []byte) (value []byte, found bool, err error) {
+func (dht *DHT) Get(key []byte) (value []byte, senderID []byte, found bool, err error) {
 	if len(key)*8 != dht.ht.bBits {
-		return nil, false, errors.New("invalid key size")
+		return nil, nil, false, errors.New("invalid key size")
 	}
 
 	// Keep a reference to closestNode. If after performing a search we do not find a closer node, we stop searching.
 	sl := dht.ht.getClosestContacts(dht.alpha, key, nil)
 	if len(sl.Nodes) == 0 {
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 
 	closestNode := sl.Nodes[0]
 
+	// TODO: Limit max amount of iterations to mitigate malicious responses.
 	for {
 		info := dht.NewInformationRequest(ActionFindValue, key, sl.GetUncontacted(dht.alpha, true))
 		dht.SendRequestFindValue(info)
@@ -160,7 +161,7 @@ func (dht *DHT) Get(key []byte) (value []byte, found bool, err error) {
 				continue
 			}
 			if len(result.Data) > 0 {
-				return result.Data, true, nil
+				return result.Data, result.SenderID, true, nil
 			}
 			sl.AppendUniqueNodes(result.Storing...) // TODO: Assign higher priority, skip closesNode check.
 			sl.AppendUniqueNodes(result.Closest...)
@@ -170,7 +171,7 @@ func (dht *DHT) Get(key []byte) (value []byte, found bool, err error) {
 
 		// If closestNode is unchanged then we are done
 		if bytes.Equal(sl.Nodes[0].ID, closestNode.ID) {
-			return nil, false, nil
+			return nil, nil, false, nil
 		}
 
 		closestNode = sl.Nodes[0]
