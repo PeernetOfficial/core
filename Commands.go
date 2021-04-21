@@ -8,7 +8,6 @@ package core
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"time"
@@ -198,12 +197,13 @@ func (peer *PeerInfo) cmdChat(msg *MessageRaw) {
 
 // cmdLocalDiscovery handles an incoming announcement via local discovery
 func (peer *PeerInfo) cmdLocalDiscovery(msg *MessageAnnouncement) {
+	// 21.04.2021 update: Local peer discovery from public IPv4s is possible in datacenter situations. Keep it enabled for now.
 	// only accept local discovery message from private IPs for IPv4
 	// IPv6 DHCP routers typically assign public IPv6s and they can join multicast in the local network.
-	if msg.connection.IsIPv4() && !msg.connection.IsLocal() {
-		log.Printf("cmdLocalDiscovery message received from non-local IP %s peer ID %s\n", msg.connection.Address.String(), hex.EncodeToString(msg.SenderPublicKey.SerializeCompressed()))
-		return
-	}
+	//if msg.connection.IsIPv4() && !msg.connection.IsLocal() {
+	//	log.Printf("cmdLocalDiscovery message received from non-local IP %s peer ID %s\n", msg.connection.Address.String(), hex.EncodeToString(msg.SenderPublicKey.SerializeCompressed()))
+	//	return
+	//}
 
 	if peer == nil {
 		peer, _ = PeerlistAdd(msg.SenderPublicKey, msg.connection)
