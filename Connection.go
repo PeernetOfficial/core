@@ -303,7 +303,7 @@ func (peer *PeerInfo) sendConnection(packet *PacketRaw, connection *Connection) 
 }
 
 // sendAllNetworks sends a raw packet via all networks. It assigns a new sequence for each sent packet.
-func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remote *net.UDPAddr) (err error) {
+func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remote *net.UDPAddr, sequenceData interface{}) (err error) {
 	var raw []byte
 	packet.Protocol = ProtocolVersion
 
@@ -319,7 +319,7 @@ func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remo
 				continue
 			}
 
-			packet.Sequence = msgArbitrarySequence(receiverPublicKey)
+			packet.Sequence = msgArbitrarySequence(receiverPublicKey, sequenceData).sequence
 			if raw, err = PacketEncrypt(peerPrivateKey, receiverPublicKey, packet); err != nil {
 				return err
 			}
@@ -336,7 +336,7 @@ func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remo
 				continue
 			}
 
-			packet.Sequence = msgArbitrarySequence(receiverPublicKey)
+			packet.Sequence = msgArbitrarySequence(receiverPublicKey, sequenceData).sequence
 			if raw, err = PacketEncrypt(peerPrivateKey, receiverPublicKey, packet); err != nil {
 				return err
 			}

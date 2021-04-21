@@ -123,52 +123,64 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 		fmt.Printf("Incoming initial response from %s\n", msg.connection.Address.String())
 	}
 
-	// Each result is checked against the list of information requests. Only 1 response by peer is permitted per query currently.
-	// Response packets could be duplicated, which could happen due to auto broadcast when the remote peer responds and has multiple connections to self but none was active.
-
-	for _, hash := range msg.HashesNotFound {
-		info := nodesDHT.IRLookup(peer.NodeID, hash)
-		if info == nil {
-			continue
+	// The sequence data is used to correlate this response with the announcement.
+	if msg.sequence == nil || msg.sequence.data == nil {
+		// If there is no sequence data but there were results returned, it means we received unsolicited response data. It will be rejected.
+		if len(msg.HashesNotFound) > 0 || len(msg.Hash2Peers) > 0 || len(msg.FilesEmbed) > 0 {
+			log.Printf("cmdResponse unsolicited response data received from %s\n", msg.connection.Address.String())
 		}
-		info.ActiveNodesSub(1)
+
+		return
 	}
 
-	for _, hash2Peer := range msg.Hash2Peers {
-		info := nodesDHT.IRLookup(peer.NodeID, hash2Peer.ID.Hash)
-		if info == nil {
-			// Response to FIND_SELF?
-			if bytes.Equal(hash2Peer.ID.Hash, nodeID) && len(hash2Peer.Closest) > 0 {
-				peer.cmdResponseFindSelf(msg, hash2Peer.Closest)
+	// bootstrap FIND_SELF?
+	if _, ok := msg.sequence.data.(*bootstrapFindSelf); ok {
+		for _, hash2Peer := range msg.Hash2Peers {
+			// Make sure no garbage is returned. The key must be self and only Closest is expected.
+			if !bytes.Equal(hash2Peer.ID.Hash, nodeID) || len(hash2Peer.Closest) == 0 {
+				log.Printf("Incoming response to bootstrap FIND_SELF contains invalid data from %s\n", msg.connection.Address.String())
+				return
 			}
-			continue
+
+			peer.cmdResponseBootstrapFindSelf(msg, hash2Peer.Closest)
 		}
 
-		info.ResultChan <- &dht.NodeMessage{SenderID: peer.NodeID, Closest: records2Nodes(hash2Peer.Closest, msg.connection.Network), Storing: records2Nodes(hash2Peer.Storing, msg.connection.Network)}
-
-		// Future: a terminate field inform wether the remote peer is done sending. For now terminate after 1 packet.
-		info.ActiveNodesSub(1)
+		return
 	}
 
-	for _, file := range msg.FilesEmbed {
-		info := nodesDHT.IRLookup(peer.NodeID, file.ID.Hash)
-		if info == nil {
-			continue
+	// Response to an information request?
+	if _, ok := msg.sequence.data.(*dht.InformationRequest); ok {
+		// Future: Once multiple information requests are pooled (multiplexed) into one or multiple Announcement sequences (messages), the responses need to be de-pooled.
+		// A simple multiplex structure linked via the sequence containing a map (hash 2 IR) could simplify this.
+		info := msg.sequence.data.(*dht.InformationRequest)
+
+		if len(msg.HashesNotFound) > 0 {
+			info.Done()
 		}
 
-		info.ResultChan <- &dht.NodeMessage{SenderID: peer.NodeID, Data: file.Data}
+		for _, hash2Peer := range msg.Hash2Peers {
+			info.ResultChan <- &dht.NodeMessage{SenderID: peer.NodeID, Closest: records2Nodes(hash2Peer.Closest, msg.connection.Network), Storing: records2Nodes(hash2Peer.Storing, msg.connection.Network)}
 
-		info.ActiveNodesSub(1)
-		info.Terminate() // file was found, terminate the request.
+			if hash2Peer.IsLast {
+				info.Done()
+			}
+		}
+
+		for _, file := range msg.FilesEmbed {
+			info.ResultChan <- &dht.NodeMessage{SenderID: peer.NodeID, Data: file.Data}
+
+			info.Done()
+			info.Terminate() // file was found, terminate the request.
+		}
 	}
 }
 
 // cmdPing handles an incoming ping message
 func (peer *PeerInfo) cmdPing(msg *MessageRaw) {
 	if peer == nil {
-		// Unexpected incoming ping, reply with announce message
+		// Unexpected incoming ping, reply with announcement message. For security reasons the remote peer is not asked for FIND_SELF.
 		peer, _ = PeerlistAdd(msg.SenderPublicKey, msg.connection)
-		peer.sendAnnouncement(true, true, nil, nil, nil)
+		peer.sendAnnouncement(true, false, nil, nil, nil, nil)
 	}
 	peer.send(&PacketRaw{Command: CommandPong, Sequence: msg.Sequence})
 	//fmt.Printf("Incoming ping from %s on %s\n", msg.connection.Address.String(), msg.connection.Address.String())
@@ -201,7 +213,7 @@ func (peer *PeerInfo) cmdLocalDiscovery(msg *MessageAnnouncement) {
 		//	fmt.Printf("Incoming secondary local discovery from %s\n", msg.connection.Address.String())
 	}
 
-	peer.sendAnnouncement(true, true, nil, nil, nil)
+	peer.sendAnnouncement(true, true, nil, nil, nil, &bootstrapFindSelf{})
 }
 
 // pingTime is the time in seconds to send out ping messages

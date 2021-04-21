@@ -67,6 +67,7 @@ type MessageRaw struct {
 	PacketRaw
 	SenderPublicKey *btcec.PublicKey // Sender Public Key, ECDSA (secp256k1) 257-bit
 	connection      *Connection      // Connection that received the packet
+	sequence        *sequenceExpiry  // Sequence
 }
 
 // MessageAnnouncement is the decoded announcement message.
@@ -455,10 +456,10 @@ func selfFeatureSupport() (feature byte) {
 
 // announcementPacket contains information about a single announcement message
 type announcementPacket struct {
-	raw      []byte   // The raw packet
-	hashes   [][]byte // List of hashes that are being searched for
-	sequence uint32   // Sequence number once sent
-	err      error    // Sending error, if any
+	raw      []byte          // The raw packet
+	hashes   [][]byte        // List of hashes that are being searched for
+	sequence *sequenceExpiry // Sequence
+	err      error           // Sending error, if any
 }
 
 // msgEncodeAnnouncement encodes an announcement message. It may return multiple messages if the input does not fit into one.
@@ -761,7 +762,7 @@ createPacketLoop:
 
 // pingConnection sends a ping to the target peer via the specified connection
 func (peer *PeerInfo) pingConnection(connection *Connection) {
-	err := peer.sendConnection(&PacketRaw{Command: CommandPing, Sequence: peer.msgNewSequence()}, connection)
+	err := peer.sendConnection(&PacketRaw{Command: CommandPing, Sequence: peer.msgNewSequence(nil).sequence}, connection)
 	connection.LastPingOut = time.Now()
 
 	if (connection.Status == ConnectionActive || connection.Status == ConnectionRedundant) && IsNetworkErrorFatal(err) {
@@ -774,13 +775,13 @@ func (peer *PeerInfo) Chat(text string) {
 	peer.send(&PacketRaw{Command: CommandChat, Payload: []byte(text)})
 }
 
-// sendAnnouncement sends the announcement message
-func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore) (packets []*announcementPacket) {
+// sendAnnouncement sends the announcement message. It acquires a new sequence for each message.
+func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore, sequenceData interface{}) (packets []*announcementPacket) {
 	packets = msgEncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files)
 
 	for _, packet := range packets {
-		packet.sequence = peer.msgNewSequence()
-		packet.err = peer.send(&PacketRaw{Command: CommandAnnouncement, Payload: packet.raw, Sequence: packet.sequence})
+		packet.sequence = peer.msgNewSequence(sequenceData)
+		packet.err = peer.send(&PacketRaw{Command: CommandAnnouncement, Payload: packet.raw, Sequence: packet.sequence.sequence})
 	}
 
 	return

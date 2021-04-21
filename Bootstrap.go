@@ -204,13 +204,25 @@ func contactArbitraryPeer(publicKey *btcec.PublicKey, addresses []*net.UDPAddr) 
 	}
 
 	for _, address := range addresses {
-		sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw}, address)
+		sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw}, address, &bootstrapFindSelf{})
 	}
 }
 
-// cmdResponseFindSelf processes FIND_SELF responses
-func (peer *PeerInfo) cmdResponseFindSelf(msg *MessageResponse, Closest []PeerRecord) {
-	for _, closePeer := range Closest {
+// bootstrapFindSelf is a dummy structure assigned to sequences when sending the Announcement message.
+// When receiving the Response message, it will know that it was a legitimate bootstrap request.
+type bootstrapFindSelf struct {
+}
+
+// bootstrapAcceptContacts is the maximum count of contacts considered. It limits the impact of fake peers.
+const bootstrapAcceptContacts = 5
+
+// cmdResponseBootstrapFindSelf processes FIND_SELF responses
+func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest []PeerRecord) {
+	if len(closest) > bootstrapAcceptContacts {
+		closest = closest[:bootstrapAcceptContacts]
+	}
+
+	for _, closePeer := range closest {
 		// Initiate contact. Once a response comes back, the peer is actually added to the list.
 		contactArbitraryPeer(closePeer.PublicKey, []*net.UDPAddr{{IP: closePeer.IP, Port: int(closePeer.Port)}})
 	}

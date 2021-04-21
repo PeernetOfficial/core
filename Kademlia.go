@@ -49,9 +49,9 @@ func initKademlia() {
 func (peer *PeerInfo) sendAnnouncementFindNode(request *dht.InformationRequest) {
 	// If the key is self, send it as FIND_SELF
 	if bytes.Equal(request.Key, nodeID) {
-		peer.sendAnnouncement(false, true, nil, nil, nil)
+		peer.sendAnnouncement(false, true, nil, nil, nil, request)
 	} else {
-		peer.sendAnnouncement(false, false, []KeyHash{{Hash: request.Key}}, nil, nil)
+		peer.sendAnnouncement(false, false, []KeyHash{{Hash: request.Key}}, nil, nil, request)
 	}
 }
 
@@ -63,11 +63,11 @@ func (peer *PeerInfo) sendAnnouncementFindValue(request *dht.InformationRequest)
 
 	findValue = append(findValue, KeyHash{Hash: request.Key})
 
-	peer.sendAnnouncement(false, findSelf, findPeer, findValue, nil)
+	peer.sendAnnouncement(false, findSelf, findPeer, findValue, nil, request)
 }
 
 func (peer *PeerInfo) sendAnnouncementStore(fileHash []byte, fileSize uint64) {
-	peer.sendAnnouncement(false, false, nil, nil, []InfoStore{{ID: KeyHash{Hash: fileHash}, Size: fileSize, Type: 0}})
+	peer.sendAnnouncement(false, false, nil, nil, []InfoStore{{ID: KeyHash{Hash: fileHash}, Size: fileSize, Type: 0}}, nil)
 }
 
 // ---- CORE DATA FUNCTIONS ----
@@ -78,9 +78,9 @@ func Data2Hash(data []byte) (hash []byte) {
 }
 
 // GetData returns the requested data. It checks first the local store and then tries via DHT.
-func GetData(hash []byte) (data []byte, found bool) {
+func GetData(hash []byte) (data []byte, senderNodeID []byte, found bool) {
 	if data, found = GetDataLocal(hash); found {
-		return data, found
+		return data, nodeID, found
 	}
 
 	return GetDataDHT(hash)
@@ -92,9 +92,9 @@ func GetDataLocal(hash []byte) (data []byte, found bool) {
 }
 
 // GetDataDHT requests data via DHT
-func GetDataDHT(hash []byte) (data []byte, found bool) {
-	data, found, _ = nodesDHT.Get(hash)
-	return data, found
+func GetDataDHT(hash []byte) (data []byte, senderNodeID []byte, found bool) {
+	data, senderNodeID, found, _ = nodesDHT.Get(hash)
+	return data, senderNodeID, found
 }
 
 // StoreDataLocal stores data into the local warehouse.

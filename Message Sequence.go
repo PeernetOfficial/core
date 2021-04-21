@@ -30,9 +30,11 @@ var sequences map[string]*sequenceExpiry
 var sequencesMutex sync.Mutex
 
 type sequenceExpiry struct {
-	created time.Time // When the sequence was created.
-	expires time.Time // When the sequence expires. This can be extended on the fly!
-	counter int       // How many replies used the sequence. Multiple Response messages may be returned for a single Announcement one.
+	sequence uint32      // Sequence number
+	created  time.Time   // When the sequence was created.
+	expires  time.Time   // When the sequence expires. This can be extended on the fly!
+	counter  int         // How many replies used the sequence. Multiple Response messages may be returned for a single Announcement one.
+	data     interface{} // Optional high-level data associated with the sequence
 }
 
 func initMessageSequence() {
@@ -57,40 +59,42 @@ func initMessageSequence() {
 
 // msgNewSequence returns a new sequence and registers is
 // Use only for Announcement and Ping messages.
-func (peer *PeerInfo) msgNewSequence() (sequence uint32) {
-	sequence = atomic.AddUint32(&peer.messageSequence, 1)
-
-	key := string(peer.PublicKey.SerializeCompressed()) + strconv.FormatUint(uint64(sequence), 10)
+func (peer *PeerInfo) msgNewSequence(data interface{}) (info *sequenceExpiry) {
+	info = &sequenceExpiry{
+		sequence: atomic.AddUint32(&peer.messageSequence, 1),
+		created:  time.Now(),
+		expires:  time.Now().Add(time.Duration(ReplyTimeout) * time.Second),
+		data:     data,
+	}
 
 	// Add the sequence to the list. Sequences are unique enough that collisions are unlikely and negligible.
+	key := string(peer.PublicKey.SerializeCompressed()) + strconv.FormatUint(uint64(info.sequence), 10)
 	sequencesMutex.Lock()
-	sequences[key] = &sequenceExpiry{
-		created: time.Now(),
-		expires: time.Now().Add(time.Duration(ReplyTimeout) * time.Second),
-	}
+	sequences[key] = info
 	sequencesMutex.Unlock()
 
-	return sequence
+	return
 }
 
 // msgArbitrarySequence returns an arbitrary sequence to be used for uncontacted peers
-func msgArbitrarySequence(publicKey *btcec.PublicKey) (sequence uint32) {
-	sequence = rand.Uint32()
-
-	key := string(publicKey.SerializeCompressed()) + strconv.FormatUint(uint64(sequence), 10)
+func msgArbitrarySequence(publicKey *btcec.PublicKey, data interface{}) (info *sequenceExpiry) {
+	info = &sequenceExpiry{
+		sequence: rand.Uint32(),
+		created:  time.Now(),
+		expires:  time.Now().Add(time.Duration(ReplyTimeout) * time.Second),
+		data:     data,
+	}
 
 	// Add the sequence to the list. Sequences are unique enough that collisions are unlikely and negligible.
+	key := string(publicKey.SerializeCompressed()) + strconv.FormatUint(uint64(info.sequence), 10)
 	sequencesMutex.Lock()
-	sequences[key] = &sequenceExpiry{
-		created: time.Now(),
-		expires: time.Now().Add(time.Duration(ReplyTimeout) * time.Second),
-	}
+	sequences[key] = info
 	sequencesMutex.Unlock()
 
-	return sequence
+	return
 }
 
-// msgValidateSequence validates the sequence number of an incoming message
+// msgValidateSequence validates the sequence number of an incoming message. It will set raw.sequence if valid.
 func msgValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time.Duration) {
 	// Only Response and Pong
 	if raw.Command != CommandResponse && raw.Command != CommandPong {
@@ -123,6 +127,8 @@ func msgValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time
 		// Special case CommandResponse: Extend validity in case there are follow-up responses by half of the round-trip time since they will be sent one-way.
 		sequence.expires = time.Now().Add(time.Duration(ReplyTimeout) * time.Second / 2)
 	}
+
+	raw.sequence = sequence
 
 	return sequence.expires.After(time.Now()), rtt
 }

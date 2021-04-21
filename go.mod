@@ -3,12 +3,12 @@ module github.com/PeernetOfficial/core
 go 1.16
 
 require (
-	github.com/PeernetOfficial/core/dht v0.0.0-20210410140655-6a9d16717779
+	github.com/PeernetOfficial/core/dht v0.0.0-20210421010630-e432696ad116
 	github.com/btcsuite/btcd v0.21.0-beta.0.20210401013323-36a96f6a0025
 	github.com/pkg/errors v0.9.1
-	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
-	golang.org/x/net v0.0.0-20210414194228-064579744ee0
-	golang.org/x/sys v0.0.0-20210415045647-66c3f260301c
+	golang.org/x/crypto v0.0.0-20210415154028-4f45737414dc
+	golang.org/x/net v0.0.0-20210420210106-798c2154c571
+	golang.org/x/sys v0.0.0-20210420205809-ac73e9fd8988
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	lukechampine.com/blake3 v1.1.5
 )
