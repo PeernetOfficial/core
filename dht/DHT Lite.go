@@ -25,8 +25,8 @@ type DHT struct {
 
 	// Functions below must be set and provided by the caller.
 
-	// ShouldEvict determines whether the given node shall be evicted
-	ShouldEvict func(node *Node) bool
+	// ShouldEvict determines whether node 1 shall be evicted in favor of node 2
+	ShouldEvict func(node1, node2 *Node) bool
 
 	// SendRequestStore sends an announcement-store message to the remote node. It informs the remote node that the local one stores the given key-value.
 	SendRequestStore func(node *Node, key []byte, dataSize uint64)
@@ -86,6 +86,14 @@ func (dht *DHT) GetClosestContacts(count int, target []byte, filterFunc NodeFilt
 // MarkNodeAsSeen marks a node as seen, which pushes it to the top in the bucket list.
 func (dht *DHT) MarkNodeAsSeen(ID []byte) {
 	dht.ht.markNodeAsSeen(dht.ht.getBucketIndexFromDifferingBit(ID), ID)
+}
+
+// IsNodeCloser compares 2 nodes to self. If true, the first node is closer (= smaller distance) to self than the second.
+func (dht *DHT) IsNodeCloser(node1, node2 []byte) bool {
+	iDist := getDistance(node1, dht.ht.Self.ID)
+	jDist := getDistance(node2, dht.ht.Self.ID)
+
+	return iDist.Cmp(jDist) == -1
 }
 
 // ---- Synchronous network query functions below ----

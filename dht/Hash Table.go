@@ -9,7 +9,6 @@ package dht
 import (
 	"bytes"
 	"math"
-	"math/big"
 	"math/rand"
 	"sort"
 	"sync"
@@ -137,7 +136,7 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, filterFunc NodeF
 	return sl
 }
 
-func (ht *hashTable) insertNode(node *Node, shouldEvict func(*Node) bool) {
+func (ht *hashTable) insertNode(node *Node, shouldEvict func(nodeOld *Node, nodeNew *Node) bool) {
 	index := ht.getBucketIndexFromDifferingBit(node.ID)
 
 	// If the node already exist, mark it as seen
@@ -154,7 +153,7 @@ func (ht *hashTable) insertNode(node *Node, shouldEvict func(*Node) bool) {
 	bucket := ht.RoutingTable[index]
 
 	if len(bucket) == ht.bSize {
-		if shouldEvict(bucket[0]) {
+		if shouldEvict(bucket[0], node) {
 			bucket = append(bucket, node)
 			bucket = bucket[1:]
 		}
@@ -181,35 +180,10 @@ func (ht *hashTable) removeNode(ID []byte) {
 	ht.RoutingTable[index] = bucket
 }
 
-func (ht *hashTable) getAllNodesInBucketCloserThan(bucket int, id []byte) [][]byte {
-	b := ht.RoutingTable[bucket]
-	var nodes [][]byte
-	for _, v := range b {
-		d1 := ht.getDistance(id, ht.Self.ID)
-		d2 := ht.getDistance(id, v.ID)
-
-		result := d1.Sub(d1, d2)
-		if result.Sign() > -1 {
-			nodes = append(nodes, v.ID)
-		}
-	}
-
-	return nodes
-}
-
 func (ht *hashTable) getTotalNodesInBucket(bucket int) int {
 	ht.mutex.Lock()
 	defer ht.mutex.Unlock()
 	return len(ht.RoutingTable[bucket])
-}
-
-func (ht *hashTable) getDistance(id1 []byte, id2 []byte) *big.Int {
-	dst := make([]byte, ht.bSize)
-	for i := 0; i < ht.bSize; i++ {
-		dst[i] = id1[i] ^ id2[i]
-	}
-	ret := big.NewInt(0)
-	return ret.SetBytes(dst[:])
 }
 
 func (ht *hashTable) getRandomIDFromBucket(bucket int) []byte {

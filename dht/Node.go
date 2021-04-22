@@ -90,11 +90,7 @@ func (n *shortList) Less(i, j int) bool {
 	iDist := getDistance(n.Nodes[i].ID, n.Comparator)
 	jDist := getDistance(n.Nodes[j].ID, n.Comparator)
 
-	if iDist.Cmp(jDist) == -1 {
-		return true
-	}
-
-	return false
+	return iDist.Cmp(jDist) == -1
 }
 
 func getDistance(id1 []byte, id2 []byte) *big.Int {
