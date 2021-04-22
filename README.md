@@ -99,6 +99,8 @@ Above limits are constants and can be adjusted in the code via `pingTime`, `conn
 
 The routing table has a bucket size of 20 and the size of keys 256 bits (blake3 hash). Nodes within buckets are sorted by least recently seen. The number of nodes to contact concurrently in DHT lookups (also known as alpha number) is set to 5.
 
+If a bucket is full when a new peer connects `ShouldEvict` is called. It compares the RTTs (favoring smaller one) and in absence of the RTT time it will favor the node which is closer by XOR distance.
+
 ### Timeouts
 
 * The default reply timeout (round-trip time) is 20 seconds set in `ReplyTimeout`. This applies to Response and Pong messages. The RTT timeout implies an average minimum connection speed between peers of about 6.4 KB/s for files of 64 KB size.

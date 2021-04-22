@@ -18,10 +18,21 @@ var nodesDHT *dht.DHT
 func initKademlia() {
 	nodesDHT = dht.NewDHT(&dht.Node{ID: nodeID}, 256, 20, 5)
 
-	// ShouldEvict determines whether the given node shall be evicted
-	nodesDHT.ShouldEvict = func(node *dht.Node) bool {
-		// TODO: logic
-		return true
+	// ShouldEvict determines whether node 1 shall be evicted in favor of node 2
+	nodesDHT.ShouldEvict = func(node1, node2 *dht.Node) bool {
+		rttOld := node1.Info.(*PeerInfo).GetRTT()
+		rttNew := node2.Info.(*PeerInfo).GetRTT()
+
+		// evict the old node if the new one has a faster ping time
+		if rttOld == 0 { // old one has no recent RTT (happens if all connections are inactive)?
+			return true
+		} else if rttNew > 0 {
+			// If new RTT is smaller, evict old one.
+			return rttNew < rttOld
+		}
+
+		// If here, none has a RTT. Keep the closer (by distance) one.
+		return nodesDHT.IsNodeCloser(node1.ID, node2.ID)
 	}
 
 	// SendRequestStore sends a store message to the remote node. I.e. asking it to store the given key-value

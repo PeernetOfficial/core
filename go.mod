@@ -3,7 +3,7 @@ module github.com/PeernetOfficial/core
 go 1.16
 
 require (
-	github.com/PeernetOfficial/core/dht v0.0.0-20210421010630-e432696ad116
+	github.com/PeernetOfficial/core/dht v0.0.0-20210422034546-27152cb1450f
 	github.com/btcsuite/btcd v0.21.0-beta.0.20210401013323-36a96f6a0025
 	github.com/pkg/errors v0.9.1
 	golang.org/x/crypto v0.0.0-20210415154028-4f45737414dc
