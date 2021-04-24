@@ -51,7 +51,11 @@ func (dht *DHT) NewInformationRequest(Action int, Key []byte, Nodes []*Node) (ir
 func (ir *InformationRequest) CollectResults(timeout time.Duration) (results []*NodeMessage) {
 	for {
 		select {
-		case result := <-ir.ResultChan:
+		case result, ok := <-ir.ResultChan:
+			if !ok { // channel closed?
+				return
+			}
+
 			results = append(results, result)
 
 		case <-time.After(timeout):
