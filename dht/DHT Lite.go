@@ -233,3 +233,15 @@ func (dht *DHT) FindNode(key []byte) (value []byte, found bool, err error) {
 		closestNode = sl.Nodes[0]
 	}
 }
+
+// ---- DHT Health ----
+
+// RefreshBuckets refreshes all buckets not meeting the target node number. 0 to refresh all.
+func (dht *DHT) RefreshBuckets(target int) {
+	for bucket, total := range dht.ht.getTotalNodesPerBucket() {
+		if target == 0 || total < target {
+			nodeR := dht.ht.getRandomIDFromBucket(bucket)
+			dht.FindNode(nodeR)
+		}
+	}
+}

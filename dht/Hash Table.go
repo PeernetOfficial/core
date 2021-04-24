@@ -34,14 +34,14 @@ type hashTable struct {
 	//  └ Least recently seen                    Most recently seen ┘
 	RoutingTable [][]*Node // bBits x bSize
 
-	mutex *sync.Mutex
+	mutex *sync.RWMutex
 }
 
 func newHashTable(self *Node, bits, bucketSize int) *hashTable {
 	ht := &hashTable{
 		bBits: bits,
 		bSize: bucketSize,
-		mutex: &sync.Mutex{},
+		mutex: &sync.RWMutex{},
 		Self:  self,
 	}
 
@@ -75,8 +75,8 @@ func (ht *hashTable) markNodeAsSeen(index int, ID []byte) {
 }
 
 func (ht *hashTable) doesNodeExistInBucket(bucket int, node []byte) bool {
-	ht.mutex.Lock()
-	defer ht.mutex.Unlock()
+	ht.mutex.RLock()
+	defer ht.mutex.RUnlock()
 	for _, v := range ht.RoutingTable[bucket] {
 		if bytes.Compare(v.ID, node) == 0 {
 			return true
@@ -87,8 +87,8 @@ func (ht *hashTable) doesNodeExistInBucket(bucket int, node []byte) bool {
 
 // getClosestContacts returns the closest nodes to the target. filterFunc is optional and allows the caller to filter the nodes.
 func (ht *hashTable) getClosestContacts(num int, target []byte, filterFunc NodeFilterFunc, ignoredNodes ...[]byte) *shortList {
-	ht.mutex.Lock()
-	defer ht.mutex.Unlock()
+	ht.mutex.RLock()
+	defer ht.mutex.RUnlock()
 
 	// First we need to build the list of adjacent indices to our target in order
 	index := ht.getBucketIndexFromDifferingBit(target)
@@ -181,14 +181,14 @@ func (ht *hashTable) removeNode(ID []byte) {
 }
 
 func (ht *hashTable) getTotalNodesInBucket(bucket int) int {
-	ht.mutex.Lock()
-	defer ht.mutex.Unlock()
+	ht.mutex.RLock()
+	defer ht.mutex.RUnlock()
 	return len(ht.RoutingTable[bucket])
 }
 
 func (ht *hashTable) getRandomIDFromBucket(bucket int) []byte {
-	ht.mutex.Lock()
-	defer ht.mutex.Unlock()
+	ht.mutex.RLock()
+	defer ht.mutex.RUnlock()
 	// Set the new ID to to be equal in every byte up to
 	// the byte of the first differing bit in the bucket
 
@@ -228,8 +228,8 @@ func (ht *hashTable) getRandomIDFromBucket(bucket int) []byte {
 }
 
 func (ht *hashTable) lastSeenBefore(cutoff time.Time) (nodes []*Node) {
-	ht.mutex.Lock()
-	defer ht.mutex.Unlock()
+	ht.mutex.RLock()
+	defer ht.mutex.RUnlock()
 	nodes = make([]*Node, 0, ht.bSize)
 	for _, v := range ht.RoutingTable {
 		for _, n := range v {
@@ -266,8 +266,8 @@ func (ht *hashTable) getBucketIndexFromDifferingBit(id1 []byte) int {
 }
 
 func (ht *hashTable) totalNodes() int {
-	ht.mutex.Lock()
-	defer ht.mutex.Unlock()
+	ht.mutex.RLock()
+	defer ht.mutex.RUnlock()
 	var total int
 	for _, v := range ht.RoutingTable {
 		total += len(v)
@@ -276,8 +276,8 @@ func (ht *hashTable) totalNodes() int {
 }
 
 func (ht *hashTable) Nodes() (nodes []*Node) {
-	ht.mutex.Lock()
-	defer ht.mutex.Unlock()
+	ht.mutex.RLock()
+	defer ht.mutex.RUnlock()
 	nodes = make([]*Node, 0, ht.bSize)
 	for _, v := range ht.RoutingTable {
 		nodes = append(nodes, v...)
@@ -295,4 +295,16 @@ func hasBit(n byte, pos uint) bool {
 	pos = 7 - pos
 	val := n & (1 << pos)
 	return (val > 0)
+}
+
+// getTotalNodesPerBucket returns the count of nodes in all buckets
+func (ht *hashTable) getTotalNodesPerBucket() (total []int) {
+	ht.mutex.RLock()
+	defer ht.mutex.RUnlock()
+
+	for n, _ := range ht.RoutingTable {
+		total = append(total, len(ht.RoutingTable[n]))
+	}
+
+	return total
 }
