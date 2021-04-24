@@ -13,10 +13,13 @@ import (
 	"github.com/PeernetOfficial/core/dht"
 )
 
+const alpha = 5       // Count of nodes to be contacted in parallel for finding a key
+const bucketSize = 20 // Count of nodes per bucket
+
 var nodesDHT *dht.DHT
 
 func initKademlia() {
-	nodesDHT = dht.NewDHT(&dht.Node{ID: nodeID}, 256, 20, 5)
+	nodesDHT = dht.NewDHT(&dht.Node{ID: nodeID}, 256, bucketSize, alpha)
 
 	// ShouldEvict determines whether node 1 shall be evicted in favor of node 2
 	nodesDHT.ShouldEvict = func(node1, node2 *dht.Node) bool {
@@ -53,6 +56,20 @@ func initKademlia() {
 			node.Info.(*PeerInfo).sendAnnouncementFindValue(request)
 		}
 	}
+
+	// Refresh buckets every 5 minutes to meet the alpha nodes per bucket target. Force full refresh every hour.
+	go func() {
+		for minute := 5; ; minute += 5 {
+			time.Sleep(time.Minute * 5)
+
+			target := alpha
+			if minute%60 == 0 {
+				target = 0
+			}
+
+			nodesDHT.RefreshBuckets(target)
+		}
+	}()
 }
 
 // Future sendAnnouncementX: If it detects that announcements are sent out to the same peer within 50ms it should activate a wait-and-group scheme.

@@ -172,6 +172,8 @@ func networkChangeInterfaceNew(iface net.Interface, addresses []net.Addr) {
 	log.Printf("networkChangeInterfaceNew new interface '%s' (%d IPs)\n", iface.Name, len(addresses))
 
 	networkStart(iface, addresses)
+
+	go nodesDHT.RefreshBuckets(0)
 }
 
 // networkChangeInterfaceRemove is called when an existing interface is removed
@@ -213,6 +215,8 @@ func networkChangeIPNew(iface net.Interface, address net.Addr) {
 	log.Printf("networkChangeIPNew new interface '%s' IP %s\n", iface.Name, address.String())
 
 	networkStart(iface, []net.Addr{address})
+
+	go nodesDHT.RefreshBuckets(0)
 }
 
 // networkChangeIPRemove is called when an existing interface removes an IP
