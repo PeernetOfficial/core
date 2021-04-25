@@ -241,6 +241,12 @@ func (dht *DHT) RefreshBuckets(target int) {
 	for bucket, total := range dht.ht.getTotalNodesPerBucket() {
 		if target == 0 || total < target {
 			nodeR := dht.ht.getRandomIDFromBucket(bucket)
+
+			// Refreshing closest bucket? Use self ID instead of random one.
+			if bucket == 0 {
+				nodeR = dht.ht.Self.ID
+			}
+
 			dht.FindNode(nodeR)
 		}
 	}
