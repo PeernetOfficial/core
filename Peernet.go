@@ -11,11 +11,11 @@ func Init() {
 	initPeerID()
 	initKademlia()
 	initMessageSequence()
+	initSeedList()
 	initMulticastIPv6()
 	initBroadcastIPv4()
-	initNetwork()
-	initSeedList()
 	initStore()
+	initNetwork()
 }
 
 // Connect starts bootstrapping and local peer discovery.

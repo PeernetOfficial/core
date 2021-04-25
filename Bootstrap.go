@@ -33,6 +33,7 @@ type rootPeer struct {
 var rootPeers map[[btcec.PubKeyBytesLenCompressed]byte]*rootPeer
 
 // initSeedList loads the seed list from the config
+// Note: This should be called before any network listening function so that incoming root peers are properly recognized.
 func initSeedList() {
 	rootPeers = make(map[[btcec.PubKeyBytesLenCompressed]byte]*rootPeer)
 

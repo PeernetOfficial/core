@@ -88,6 +88,7 @@ type PeerInfo struct {
 	connectionLatest   *Connection      // Latest valid connection.
 	sync.RWMutex                        // Mutex for access to list of connections.
 	messageSequence    uint32           // Sequence number. Increased with every message.
+	IsRootPeer         bool             // Whether the peer is a trusted root peer.
 
 	// statistics
 	StatsPacketSent     uint64 // Count of packets sent
@@ -102,17 +103,20 @@ func PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*Connection) (peer *
 	if len(connections) == 0 {
 		return nil, false
 	}
+	publicKeyCompressed := publicKey2Compressed(PublicKey)
 
 	peerlistMutex.Lock()
 	defer peerlistMutex.Unlock()
 
-	peer, ok := peerList[publicKey2Compressed(PublicKey)]
+	peer, ok := peerList[publicKeyCompressed]
 	if ok {
 		return peer, false
 	}
 
 	peer = &PeerInfo{PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], NodeID: publicKey2NodeID(PublicKey), messageSequence: rand.Uint32()}
-	peerList[publicKey2Compressed(peer.PublicKey)] = peer
+	_, peer.IsRootPeer = rootPeers[publicKeyCompressed]
+
+	peerList[publicKeyCompressed] = peer
 
 	// add to Kademlia
 	nodesDHT.AddNode(&dht.Node{ID: peer.NodeID, Info: peer})
