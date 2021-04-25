@@ -1,4 +1,6 @@
 LogFile: Log.txt
+AutoUpdateSeedList: true
+SeedListVersion: 1
 SeedList:
   - PublicKey: 02c490e4252bc7608fd55ddd9d7ca4a488ad152f3da6a6c2e9061f4c7e59f5b7f8 # 1.peernet.network
     Address: ["185.254.123.112:112","[2a0c:1880::112]:112"]
@@ -6,3 +8,7 @@ SeedList:
     Address: ["167.99.45.141:112","[2a03:b0c0:2:d0::af0:e001]:112"]
   - PublicKey: 026836d40a77779b7df5f1a08ca1ef8a83e15edcf0e4d8dc6ed5fc351cb60bd07c # 3.peernet.network
     Address: ["[2a0b:6580::238:112]:112"]
+  - PublicKey: 0382728d11096efb211de8a9b7bb90f8e248be5572d4f5449f58a2af881b22dbe9 # 4.peernet.network
+    Address: ["178.18.241.68:112","[2a02:c206:2056:9660::1]:112"]
+  - PublicKey: 03174f370cb6d6f361d0511565b6b456a82c3d16b53d6b63b227d76a4f0f2abd2c # 5.peernet.network
+    Address: ["194.233.66.99:112","[2407:3640:2057:5241::1]:112"]

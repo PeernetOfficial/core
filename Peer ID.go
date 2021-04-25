@@ -33,6 +33,10 @@ func initPeerID() {
 		if err == nil {
 			peerPrivateKey, peerPublicKey = btcec.PrivKeyFromBytes(btcec.S256(), configPK)
 			nodeID = publicKey2NodeID(peerPublicKey)
+
+			if config.AutoUpdateSeedList {
+				configUpdateSeedList()
+			}
 			return
 		}
 

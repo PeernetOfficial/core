@@ -28,7 +28,9 @@ var config struct {
 	PrivateKey string `yaml:"PrivateKey"` // The Private Key, hex encoded so it can be copied manually
 
 	// Initial peer seed list
-	SeedList []peerSeed `yaml:"SeedList"`
+	SeedList           []peerSeed `yaml:"SeedList"`
+	AutoUpdateSeedList bool       `yaml:"AutoUpdateSeedList"`
+	SeedListVersion    int        `yaml:"SeedListVersion"`
 }
 
 // peerSeed is a singl peer entry from the config's seed list
@@ -119,4 +121,18 @@ func InitLog() (err error) {
 	log.Printf("---- Peernet Command-Line Client " + Version + " ----\n")
 
 	return nil
+}
+
+func configUpdateSeedList() {
+	// parse the embedded config
+	configD := config
+	if err := yaml.Unmarshal(defaultConfig, &configD); err != nil {
+		return
+	}
+
+	if config.SeedListVersion < configD.SeedListVersion {
+		config.SeedList = configD.SeedList
+		config.SeedListVersion = configD.SeedListVersion
+		saveConfig()
+	}
 }
