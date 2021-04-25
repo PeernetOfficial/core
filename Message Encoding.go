@@ -373,6 +373,9 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 			ipB := make([]byte, 16)
 			copy(ipB[:], data[index+33:index+33+16])
 			peer.IP = ipB
+			if peer.IP.To4() != nil { // If IPv4, convert to native 4-byte representation
+				peer.IP = peer.IP.To4()
+			}
 
 			peer.Port = binary.LittleEndian.Uint16(data[index+49 : index+49+2])
 			peer.LastContact = binary.LittleEndian.Uint32(data[index+51 : index+51+4])
@@ -665,7 +668,7 @@ createPacketLoop:
 
 					index := packetSize
 					copy(raw[index:index+33], peer.PublicKey.SerializeCompressed())
-					copy(raw[index+33:index+33+16], peer.IP)
+					copy(raw[index+33:index+33+16], peer.IP.To16())
 					binary.LittleEndian.PutUint16(raw[index+49:index+51], peer.Port)
 					binary.LittleEndian.PutUint32(raw[index+51:index+55], peer.LastContact)
 					raw[index+55] = 1
@@ -687,7 +690,7 @@ createPacketLoop:
 
 					index := packetSize
 					copy(raw[index:index+33], peer.PublicKey.SerializeCompressed())
-					copy(raw[index+33:index+33+16], peer.IP)
+					copy(raw[index+33:index+33+16], peer.IP.To16())
 					binary.LittleEndian.PutUint16(raw[index+49:index+51], peer.Port)
 					binary.LittleEndian.PutUint32(raw[index+51:index+55], peer.LastContact)
 					raw[index+55] = 0
