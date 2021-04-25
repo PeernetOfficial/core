@@ -83,6 +83,8 @@ The Private Key is required to make any changes to the user's blockchain, includ
   * Check every 10 seconds for new/removed network interfaces and for new/removed IPs.
   * Automatically listen on any newly detected network interfaces and IPs.
   * Start a full Kademlia bucket refresh in case of a new network interface or IP.
+* Kademlia bootstrap:
+  * As soon as there are at least 2 peers, keep refreshing buckets (target number is alpha) every 10 seconds 3 times.
 
 ### Ping
 

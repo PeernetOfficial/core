@@ -113,6 +113,14 @@ func PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*Connection) (peer *
 	// add to Kademlia
 	nodesDHT.AddNode(&dht.Node{ID: peer.NodeID, Info: peer})
 
+	// send to all channels non-blocking
+	for _, monitor := range peerMonitor {
+		select {
+		case monitor <- peer:
+		default:
+		}
+	}
+
 	return peer, true
 }
 
@@ -199,5 +207,32 @@ func selfPeerRecord(network *Network) (result PeerRecord) {
 		IP:          network.address.IP,
 		Port:        uint16(network.address.Port),
 		LastContact: 0,
+	}
+}
+
+var peerMonitor []chan<- *PeerInfo
+
+// registerPeerMonitor registers a channel to receive all new peers
+func registerPeerMonitor(channel chan<- *PeerInfo) {
+	peerlistMutex.Lock()
+	defer peerlistMutex.Unlock()
+
+	peerMonitor = append(peerMonitor, channel)
+}
+
+// unregisterPeerMonitor unregisters a channel
+func unregisterPeerMonitor(channel chan<- *PeerInfo) {
+	peerlistMutex.Lock()
+	defer peerlistMutex.Unlock()
+
+	for n, channel2 := range peerMonitor {
+		if channel == channel2 {
+			peerMonitorNew := peerMonitor[:n]
+			if n < len(peerMonitor)-1 {
+				peerMonitorNew = append(peerMonitorNew, peerMonitor[n+1:]...)
+			}
+			peerMonitor = peerMonitorNew
+			break
+		}
 	}
 }

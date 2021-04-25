@@ -56,20 +56,43 @@ func initKademlia() {
 			node.Info.(*PeerInfo).sendAnnouncementFindValue(request)
 		}
 	}
+}
 
-	// Refresh buckets every 5 minutes to meet the alpha nodes per bucket target. Force full refresh every hour.
-	go func() {
-		for minute := 5; ; minute += 5 {
-			time.Sleep(time.Minute * 5)
+// autoBucketRefresh refreshes buckets every 5 minutes to meet the alpha nodes per bucket target. Force full refresh every hour.
+func autoBucketRefresh() {
+	for minute := 5; ; minute += 5 {
+		time.Sleep(time.Minute * 5)
 
-			target := alpha
-			if minute%60 == 0 {
-				target = 0
-			}
-
-			nodesDHT.RefreshBuckets(target)
+		target := alpha
+		if minute%60 == 0 {
+			target = 0
 		}
-	}()
+
+		nodesDHT.RefreshBuckets(target)
+	}
+}
+
+// bootstrapKademlia bootstraps the Kademlia bucket list
+func bootstrapKademlia() {
+	monitor := make(chan *PeerInfo)
+	registerPeerMonitor(monitor)
+
+	// Wait until there are at least 2 peers connected.
+	for {
+		<-monitor
+		if nodesDHT.NumNodes() >= 2 {
+			break
+		}
+	}
+
+	unregisterPeerMonitor(monitor)
+
+	// Refresh every 10 seconds 3 times
+	for n := 0; n < 3; n++ {
+		nodesDHT.RefreshBuckets(alpha)
+
+		time.Sleep(time.Second)
+	}
 }
 
 // Future sendAnnouncementX: If it detects that announcements are sent out to the same peer within 50ms it should activate a wait-and-group scheme.

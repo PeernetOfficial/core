@@ -98,7 +98,7 @@ func (peer *rootPeer) contact() {
 	contactArbitraryPeer(peer.publicKey, peer.addresses)
 }
 
-// bootstrap connects to the initial set of peers. It will also start the routine for ongoing sending of multicast/broadcast messages.
+// bootstrap connects to the initial set of peers.
 func bootstrap() {
 	if len(rootPeers) == 0 {
 		log.Printf("bootstrap warning: Empty list of root peers. Connectivity relies on local peer discovery and incoming connections.\n")

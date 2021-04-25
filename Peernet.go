@@ -20,8 +20,10 @@ func Init() {
 
 // Connect starts bootstrapping and local peer discovery.
 func Connect() {
+	go bootstrapKademlia()
 	go bootstrap()
 	go autoMulticastBroadcast()
 	go autoPingAll()
 	go networkChangeMonitor()
+	go autoBucketRefresh()
 }
