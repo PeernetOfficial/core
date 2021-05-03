@@ -26,6 +26,7 @@ type Network struct {
 	multicastSocket net.PacketConn   // Multicast socket, IPv6 only.
 	broadcastSocket net.PacketConn   // Broadcast socket, IPv4 only.
 	broadcastIPv4   []net.IP         // Broadcast IPs, IPv4 only.
+	externalPort    uint16           // External port. 0 if not known.
 	isTerminated    bool             // If true, the network was signaled for termination
 	terminateSignal chan interface{} // gets closed on termination signal, can be used in select via "case _ = <- network.terminateSignal:"
 	sync.RWMutex                     // for sychronized closing
@@ -218,8 +219,8 @@ func GetNetworks(networkType int) (networks []*Network) {
 }
 
 // GetListen returns connectivity information
-func (network *Network) GetListen() (listen *net.UDPAddr, multicastIPv6 net.IP, broadcastIPv4 []net.IP) {
-	return network.address, network.multicastIP, network.broadcastIPv4
+func (network *Network) GetListen() (listen *net.UDPAddr, multicastIPv6 net.IP, broadcastIPv4 []net.IP, externalPort uint16) {
+	return network.address, network.multicastIP, network.broadcastIPv4, network.externalPort
 }
 
 // GetAdapterName returns the adapter name, if available

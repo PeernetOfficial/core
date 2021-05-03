@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"encoding/binary"
 	"errors"
 	"net"
 	"sync/atomic"
@@ -243,6 +244,28 @@ func (peer *PeerInfo) GetRTT() (rtt time.Duration) {
 
 // ---- sending code ----
 
+// setAnnouncementPorts sets the fields Internal Port and External Port according to the connection details.
+// This is important for the remote peer to make smart decisions whether this peer is behind a NAT/firewall and supports port forwarding/UPnP.
+func setAnnouncementPorts(packet *PacketRaw, n *Network) {
+	if packet.Command != CommandAnnouncement && packet.Command != CommandResponse { // only for Announcement and Response messages
+		return
+	}
+
+	// The internal port is set to where the network listens on.
+	// Datacenter: This should usually be the same as the outgoing port.
+	// NAT: The internal port will be different than the outgoing one.
+	portI := uint16(n.address.Port)
+
+	// External port: This is usually unknown, except in these 2 cases:
+	// UPnP: The port is forwarded automatically.
+	// Manual override in config: The user can specify a (global) incoming port that must be open on all listening IPs.
+	// This external port will be then passed onto other peers who will use it to connect.
+	portE := n.externalPort
+
+	binary.LittleEndian.PutUint16(packet.Payload[15:17], portI)
+	binary.LittleEndian.PutUint16(packet.Payload[17:19], portE)
+}
+
 // send sends a raw packet to the peer. Only uses active connections.
 func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 	if len(peer.connectionActive) == 0 {
@@ -251,11 +274,7 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 
 	packet.Protocol = ProtocolVersion
 
-	raw, err := PacketEncrypt(peerPrivateKey, peer.PublicKey, packet)
-	if err != nil {
-		return err
-	}
-
+	// always count as one sent packet even if sent via broadcast
 	atomic.AddUint64(&peer.StatsPacketSent, 1)
 
 	// Send out the wire. Use connectionLatest if available.
@@ -263,6 +282,13 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 	// Windows: This works great in case the adapter gets disabled, however, does not detect if the network cable is unplugged.
 	c := peer.connectionLatest
 	if c != nil {
+		setAnnouncementPorts(packet, c.Network)
+
+		raw, err := PacketEncrypt(peerPrivateKey, peer.PublicKey, packet)
+		if err != nil {
+			return err
+		}
+
 		c.LastPacketOut = time.Now()
 
 		if err = c.Network.send(c.Address.IP, c.Address.Port, raw); err == nil {
@@ -281,6 +307,13 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 	// The receiver is responsible for incoming deduplication of packets.
 	activeConnections := peer.GetConnections(true)
 	for _, c := range activeConnections {
+		setAnnouncementPorts(packet, c.Network)
+
+		raw, err := PacketEncrypt(peerPrivateKey, peer.PublicKey, packet)
+		if err != nil {
+			return err
+		}
+
 		c.LastPacketOut = time.Now()
 		c.Network.send(c.Address.IP, c.Address.Port, raw)
 	}
@@ -312,39 +345,27 @@ func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remo
 	networksMutex.RLock()
 	defer networksMutex.RUnlock()
 
+	networksTarget := networks4
 	if IsIPv6(remote.IP.To16()) {
-		for _, network := range networks6 {
-			// Do not mix link-local unicast targets with non link-local networks (only when iface is known, i.e. not catch all local)
-			if network.iface != nil && remote.IP.IsLinkLocalUnicast() != network.address.IP.IsLinkLocalUnicast() {
-				continue
-			}
+		networksTarget = networks6
+	}
 
-			packet.Sequence = msgArbitrarySequence(receiverPublicKey, sequenceData).sequence
-			if raw, err = PacketEncrypt(peerPrivateKey, receiverPublicKey, packet); err != nil {
-				return err
-			}
-
-			err = network.send(remote.IP, remote.Port, raw)
-			if err == nil {
-				successCount++
-			}
+	for _, network := range networksTarget {
+		// Do not mix link-local unicast targets with non link-local networks (only when iface is known, i.e. not catch all local)
+		if network.iface != nil && remote.IP.IsLinkLocalUnicast() != network.address.IP.IsLinkLocalUnicast() {
+			continue
 		}
-	} else {
-		for _, network := range networks4 {
-			// Do not mix link-local unicast targets with non link-local networks (only when iface is known, i.e. not catch all local)
-			if network.iface != nil && remote.IP.IsLinkLocalUnicast() != network.address.IP.IsLinkLocalUnicast() {
-				continue
-			}
 
-			packet.Sequence = msgArbitrarySequence(receiverPublicKey, sequenceData).sequence
-			if raw, err = PacketEncrypt(peerPrivateKey, receiverPublicKey, packet); err != nil {
-				return err
-			}
+		setAnnouncementPorts(packet, network)
 
-			err = network.send(remote.IP, remote.Port, raw)
-			if err == nil {
-				successCount++
-			}
+		packet.Sequence = msgArbitrarySequence(receiverPublicKey, sequenceData).sequence
+		if raw, err = PacketEncrypt(peerPrivateKey, receiverPublicKey, packet); err != nil {
+			return err
+		}
+
+		err = network.send(remote.IP, remote.Port, raw)
+		if err == nil {
+			successCount++
 		}
 	}
 

@@ -33,6 +33,7 @@ const (
 	CommandPing           = 2 // Keep-alive message (no payload).
 	CommandPong           = 3 // Response to ping (no payload).
 	CommandLocalDiscovery = 4 // Local discovery
+	CommandTraverse       = 5 // Help establish a connection between 2 remote peers
 
 	// Blockchain
 	CommandGet = 6 // Request blocks for specified peer.
@@ -78,6 +79,8 @@ type MessageAnnouncement struct {
 	Actions           uint8       // Action bit array. See ActionX
 	BlockchainHeight  uint32      // Blockchain height
 	BlockchainVersion uint64      // Blockchain version
+	PortInternal      uint16      // Internal port. Can be used to detect NATs.
+	PortExternal      uint16      // External port if known. 0 if not. Can be used for UPnP support.
 	UserAgent         string      // User Agent. Format "Software/Version". Required in the initial announcement/bootstrap. UTF-8 encoded. Max length is 255 bytes.
 	FindPeerKeys      []KeyHash   // FIND_PEER data
 	FindDataKeys      []KeyHash   // FIND_VALUE data
@@ -130,6 +133,8 @@ type MessageResponse struct {
 	Actions           uint8              // Action bit array. See ActionX
 	BlockchainHeight  uint32             // Blockchain height
 	BlockchainVersion uint64             // Blockchain version
+	PortInternal      uint16             // Internal port. Can be used to detect NATs.
+	PortExternal      uint16             // External port if known. 0 if not. Can be used for UPnP support.
 	UserAgent         string             // User Agent. Format "Software/Version". Required in the initial announcement/bootstrap. UTF-8 encoded. Max length is 255 bytes.
 	Hash2Peers        []Hash2Peer        // List of peers that know the requested hashes or at least are close to it
 	FilesEmbed        []EmbeddedFileData // Files that were embedded in the response
@@ -139,7 +144,7 @@ type MessageResponse struct {
 // ---- message decoding ----
 
 // Minimum length of Announcement payload header without User Agent
-const announcementPayloadHeaderSize = 16
+const announcementPayloadHeaderSize = 20
 
 // msgDecodeAnnouncement decodes the incoming announcement message. Returns nil if invalid.
 func msgDecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error) {
@@ -156,8 +161,10 @@ func msgDecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err er
 	result.Actions = msg.Payload[2]
 	result.BlockchainHeight = binary.LittleEndian.Uint32(msg.Payload[3:7])
 	result.BlockchainVersion = binary.LittleEndian.Uint64(msg.Payload[7:15])
+	result.PortInternal = binary.LittleEndian.Uint16(msg.Payload[15:17])
+	result.PortExternal = binary.LittleEndian.Uint16(msg.Payload[17:19])
 
-	userAgentLength := int(msg.Payload[15])
+	userAgentLength := int(msg.Payload[19])
 	if userAgentLength > 0 {
 		if userAgentLength > len(msg.Payload)-announcementPayloadHeaderSize {
 			return nil, errors.New("announcement: user agent overflow")
@@ -274,8 +281,10 @@ func msgDecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 	result.Actions = msg.Payload[2]
 	result.BlockchainHeight = binary.LittleEndian.Uint32(msg.Payload[3:7])
 	result.BlockchainVersion = binary.LittleEndian.Uint64(msg.Payload[7:15])
+	result.PortInternal = binary.LittleEndian.Uint16(msg.Payload[15:17])
+	result.PortExternal = binary.LittleEndian.Uint16(msg.Payload[17:19])
 
-	userAgentLength := int(msg.Payload[15])
+	userAgentLength := int(msg.Payload[19])
 	read := announcementPayloadHeaderSize
 
 	if userAgentLength > 0 {
