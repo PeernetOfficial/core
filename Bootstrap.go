@@ -194,19 +194,21 @@ func autoMulticastBroadcast() {
 
 // contactArbitraryPeer reaches for the first time to an arbitrary peer.
 // It does not contact the peer if it is in the peer list, which means that a connection is already established.
-func contactArbitraryPeer(publicKey *btcec.PublicKey, addresses []*net.UDPAddr) {
+func contactArbitraryPeer(publicKey *btcec.PublicKey, addresses []*net.UDPAddr) (contacted bool) {
 	if peer := PeerlistLookup(publicKey); peer != nil {
-		return
+		return false
 	}
 
-	packets := msgEncodeAnnouncement(true, true, nil, nil, nil)
+	packets := msgEncodeAnnouncement(true, ShouldSendFindSelf(), nil, nil, nil)
 	if len(packets) == 0 || packets[0].err != nil {
-		return
+		return false
 	}
 
 	for _, address := range addresses {
 		sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw}, address, &bootstrapFindSelf{})
 	}
+
+	return true
 }
 
 // bootstrapFindSelf is a dummy structure assigned to sequences when sending the Announcement message.
@@ -225,6 +227,16 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest
 
 	for _, closePeer := range closest {
 		// Initiate contact. Once a response comes back, the peer is actually added to the list.
-		contactArbitraryPeer(closePeer.PublicKey, []*net.UDPAddr{{IP: closePeer.IP, Port: int(closePeer.Port)}})
+		if contactArbitraryPeer(closePeer.PublicKey, []*net.UDPAddr{{IP: closePeer.IP, Port: int(closePeer.Port)}}) {
+			// Blacklist the target Peer ID, IP:Port for contact in the next 10 minutes.
+			// TODO
+		}
+
 	}
+}
+
+// ShouldSendFindSelf checks if FIND_SELF should be send
+func ShouldSendFindSelf() bool {
+	// TODO
+	return true
 }
