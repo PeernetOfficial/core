@@ -147,13 +147,13 @@ func packetWorker(packets <-chan networkWire) {
 
 		connection := &Connection{Network: packet.network, Address: packet.sender, Status: ConnectionActive}
 
-		peer := PeerlistLookup(senderPublicKey)
-		if peer != nil {
-			// Existing peers: Update statistics and network address if new
-			atomic.AddUint64(&peer.StatsPacketReceived, 1)
+		// A peer structure will always be returned, even if the peer won't be added to the peer list.
+		peer, added := PeerlistAdd(senderPublicKey, connection)
+		if !added {
 			connection = peer.registerConnection(connection)
 		}
 
+		atomic.AddUint64(&peer.StatsPacketReceived, 1)
 		connection.LastPacketIn = time.Now()
 
 		// process the packet
@@ -162,6 +162,13 @@ func packetWorker(packets <-chan networkWire) {
 		switch decoded.Command {
 		case CommandAnnouncement: // Announce
 			if announce, _ := msgDecodeAnnouncement(raw); announce != nil {
+				// Update known internal/external port and User Agent
+				connection.PortInternal = announce.PortInternal
+				connection.PortExternal = announce.PortExternal
+				if len(announce.UserAgent) > 0 {
+					peer.UserAgent = announce.UserAgent
+				}
+
 				peer.cmdAnouncement(announce)
 			}
 
@@ -175,11 +182,22 @@ func packetWorker(packets <-chan networkWire) {
 					connection.RoundTripTime = rtt
 				}
 
+				// Update known internal/external port and User Agent
+				connection.PortInternal = response.PortInternal
+				connection.PortExternal = response.PortExternal
+				if len(response.UserAgent) > 0 {
+					peer.UserAgent = response.UserAgent
+				}
+
 				peer.cmdResponse(response)
 			}
 
 		case CommandLocalDiscovery: // Local discovery, sent via IPv4 broadcast and IPv6 multicast
 			if announce, _ := msgDecodeAnnouncement(raw); announce != nil {
+				if len(announce.UserAgent) > 0 {
+					peer.UserAgent = announce.UserAgent
+				}
+
 				peer.cmdLocalDiscovery(announce)
 			}
 

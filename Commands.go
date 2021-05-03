@@ -16,18 +16,12 @@ import (
 )
 
 // respondClosesContactsCount is the number of closest contact to respond.
-// Each peer record will take 55 bytes. Overhead is 77 + 15 payload header + UA length + 6 + 34 = 132 bytes without UA.
+// Each peer record will take 55 bytes. Overhead is 77 + 20 payload header + UA length + 6 + 34 = 137 bytes without UA.
 // It makes sense to stay below 508 bytes (no fragmentation). Reporting back 5 contacts for FIND_SELF requests should do the magic.
 const respondClosesContactsCount = 5
 
 // cmdAnouncement handles an incoming announcement
 func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
-	var added bool
-	if peer == nil {
-		peer, added = PeerlistAdd(msg.SenderPublicKey, msg.connection)
-		fmt.Printf("Incoming initial announcement from %s\n", msg.connection.Address.String())
-	}
-
 	// Filter function to only share peers that are "connectable" to the remote one. It checks IPv4, IPv6, and local connection.
 	filterFunc := func(allowLocal, allowIPv4, allowIPv6 bool) dht.NodeFilterFunc {
 		return func(node *dht.Node) (accept bool) {
@@ -99,7 +93,8 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 		peer.announcementStore(msg.InfoStoreFiles)
 	}
 
-	peer.sendResponse(msg.Sequence, added, hash2Peers, filesEmbed, hashesNotFound)
+	sendUA := msg.UserAgent != "" // Send user agent if one was provided. Per protocol the first announcement message must have the User Agent set.
+	peer.sendResponse(msg.Sequence, sendUA, hash2Peers, filesEmbed, hashesNotFound)
 }
 
 func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result *PeerRecord) {
@@ -117,11 +112,6 @@ func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result
 
 // cmdResponse handles the response to the announcement
 func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
-	if peer == nil {
-		peer, _ = PeerlistAdd(msg.SenderPublicKey, msg.connection)
-		fmt.Printf("Incoming initial response from %s\n", msg.connection.Address.String())
-	}
-
 	// The sequence data is used to correlate this response with the announcement.
 	if msg.sequence == nil || msg.sequence.data == nil {
 		// If there is no sequence data but there were results returned, it means we received unsolicited response data. It will be rejected.
@@ -176,18 +166,18 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 
 // cmdPing handles an incoming ping message
 func (peer *PeerInfo) cmdPing(msg *MessageRaw) {
-	if peer == nil {
-		// Unexpected incoming ping, reply with announcement message. For security reasons the remote peer is not asked for FIND_SELF.
-		peer, _ = PeerlistAdd(msg.SenderPublicKey, msg.connection)
+	// If PortInternal is 0, it means no incoming announcement or response message was received on that connection.
+	// This means the ping is unexpected. In that case for security reasons the remote peer is not asked for FIND_SELF.
+	if msg.connection.PortInternal == 0 {
 		peer.sendAnnouncement(true, false, nil, nil, nil, nil)
+		return
 	}
+
 	peer.send(&PacketRaw{Command: CommandPong, Sequence: msg.Sequence})
-	//fmt.Printf("Incoming ping from %s on %s\n", msg.connection.Address.String(), msg.connection.Address.String())
 }
 
 // cmdPong handles an incoming pong message
 func (peer *PeerInfo) cmdPong(msg *MessageRaw) {
-	//fmt.Printf("Incoming pong from %s on %s\n", msg.connection.Address.String(), msg.connection.Address.String())
 }
 
 // cmdChat handles a chat message [debug]
@@ -205,15 +195,7 @@ func (peer *PeerInfo) cmdLocalDiscovery(msg *MessageAnnouncement) {
 	//	return
 	//}
 
-	if peer == nil {
-		peer, _ = PeerlistAdd(msg.SenderPublicKey, msg.connection)
-
-		fmt.Printf("Incoming initial local discovery from %s\n", msg.connection.Address.String())
-		//} else {
-		//	fmt.Printf("Incoming secondary local discovery from %s\n", msg.connection.Address.String())
-	}
-
-	peer.sendAnnouncement(true, true, nil, nil, nil, &bootstrapFindSelf{})
+	peer.sendAnnouncement(true, ShouldSendFindSelf(), nil, nil, nil, &bootstrapFindSelf{})
 }
 
 // pingTime is the time in seconds to send out ping messages

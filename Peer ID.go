@@ -89,12 +89,14 @@ type PeerInfo struct {
 	sync.RWMutex                        // Mutex for access to list of connections.
 	messageSequence    uint32           // Sequence number. Increased with every message.
 	IsRootPeer         bool             // Whether the peer is a trusted root peer.
+	UserAgent          string           // User Agent reported by remote peer. Empty if no Announcement/Response message was yet received.
 
 	// statistics
 	StatsPacketSent     uint64 // Count of packets sent
 	StatsPacketReceived uint64 // Count of packets received
 }
 
+// peerList keeps track of all peers
 var peerList map[[btcec.PubKeyBytesLenCompressed]byte]*PeerInfo
 var peerlistMutex sync.RWMutex
 
@@ -120,6 +122,8 @@ func PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*Connection) (peer *
 
 	// add to Kademlia
 	nodesDHT.AddNode(&dht.Node{ID: peer.NodeID, Info: peer})
+
+	// TODO: If the node isn't added to Kademlia, it should be either added temporarily to the peerList with an expiration, or to a temp list, or not at all.
 
 	// send to all channels non-blocking
 	for _, monitor := range peerMonitor {

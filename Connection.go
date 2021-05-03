@@ -19,8 +19,10 @@ import (
 // Connection is an established connection between a remote IP address and a local network adapter.
 // New connections may only be created in case of successful INCOMING packets.
 type Connection struct {
-	Network       *Network      // network which received the packet
-	Address       *net.UDPAddr  // address of the sender or receiver
+	Network       *Network      // Network which received the packet.
+	Address       *net.UDPAddr  // Address of the remote peer.
+	PortInternal  uint16        // Internal listening port reported by remote peer. 0 if no Announcement/Response message was yet received.
+	PortExternal  uint16        // External listening port reported by remote peer. 0 if not known by the peer.
 	LastPacketIn  time.Time     // Last time an incoming packet was received.
 	LastPacketOut time.Time     // Last time an outgoing packet was attempted to send.
 	LastPingOut   time.Time     // Last ping out.
@@ -110,7 +112,7 @@ func (peer *PeerInfo) registerConnection(incoming *Connection) (result *Connecti
 	peer.Lock()
 	defer peer.Unlock()
 
-	// first check if already an active connection
+	// first check if already an active connection to the same IP
 	for _, connection := range peer.connectionActive {
 		if connection.Equal(incoming) {
 			// Connection already established. Verify port and update if necessary.
@@ -240,6 +242,30 @@ func (peer *PeerInfo) GetRTT() (rtt time.Duration) {
 	}
 
 	return 0
+}
+
+// IsBehindNAT checks if the peer is behind NAT
+func (peer *PeerInfo) IsBehindNAT() (result bool) {
+	peer.Lock()
+	defer peer.Unlock()
+
+	// Default is no. Only if a public network reports different connected port vs internal one, NAT is assumed.
+	// This also assumes that all 3rd party clients bind their connection to the outgoing port.
+	// PortInternal is 0 if no Announcement or Response message was received.
+
+	for _, connection := range peer.connectionActive {
+		if connection.PortInternal > 0 && connection.Address.Port != int(connection.PortInternal) {
+			return true
+		}
+	}
+
+	for _, connection := range peer.connectionInactive {
+		if connection.PortInternal > 0 && connection.Address.Port != int(connection.PortInternal) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // ---- sending code ----

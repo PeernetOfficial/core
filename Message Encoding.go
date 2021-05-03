@@ -495,12 +495,12 @@ createPacketLoop:
 
 		// only on initial announcement the User Agent must be provided according to the protocol spec
 		if sendUA {
-			if len(UserAgent) > 255 {
-				UserAgent = UserAgent[:255]
-			}
 			userAgentB := []byte(UserAgent)
+			if len(userAgentB) > 255 {
+				userAgentB = userAgentB[:255]
+			}
 
-			raw[15] = byte(len(userAgentB))
+			raw[19] = byte(len(userAgentB))
 			copy(raw[announcementPayloadHeaderSize:announcementPayloadHeaderSize+len(userAgentB)], userAgentB)
 			packetSize += len(userAgentB)
 		}
@@ -637,12 +637,12 @@ createPacketLoop:
 
 		// only on initial response the User Agent must be provided according to the protocol spec
 		if sendUA {
-			if len(UserAgent) > 255 {
-				UserAgent = UserAgent[:255]
-			}
 			userAgentB := []byte(UserAgent)
+			if len(userAgentB) > 255 {
+				userAgentB = userAgentB[:255]
+			}
 
-			raw[15] = byte(len(userAgentB))
+			raw[19] = byte(len(userAgentB))
 			copy(raw[announcementPayloadHeaderSize:announcementPayloadHeaderSize+len(userAgentB)], userAgentB)
 			packetSize += len(userAgentB)
 		}
