@@ -1,8 +1,8 @@
 # Peernet Core
 
-The core library which is needed for any Peernet application. It provides connectivity to the network and all basic functions. For details about Peernet see https://peernet.org/.
+The core library which is needed for any Peernet application. It provides connectivity to the network and all basic functions. For details about Peernet see https://peernet.org/. For the current technical roadmap and upcoming releases see the [Talk forum](https://talk.peernet.org/discussion/10/technical-roadmap).
 
-Current version: 0.2 (early alpha)
+Current version: 0.2 (pre alpha 2)
 
 Current development status: Initial connectivity works. DHT functionality is in development.
 
@@ -53,15 +53,14 @@ lukechampine.com/blake3
 
 ## Configuration
 
-Peernet follows a "zeroconf" approach, meaning there is no manual configuration required. However, in certain cases such as providing root peers [1] that shall listen on a fixed IP and port, it is desirable to create a config file.
+Peernet follows a "zeroconf" approach, meaning there is no manual configuration required. However, in certain cases such as providing root peers that shall listen on a fixed IP and port, it is desirable to create a config file. See inline documentation in the file [Config Default.yaml](Config%20Default.yaml).
 
 The name of the config file is passed to the function `LoadConfig`. If it does not exist, it will be created with the values from the file `Config Default.yaml`. It uses the YAML format. Any public/private keys in the config are hex encoded. Here are some notable settings:
 
 * `PrivateKey` The users Private Key hex encoded. The users public key is derived from it.
-* `ListenWorkers` defines the count of concurrent workers processing packets (decrypting them and then taking action). Default 2.
 * `Listen` defines IP:Port combinations to listen on. If not specified, it will listen on all IPs. You can specify an IP but port 0 for auto port selection. IPv6 addresses must be in the format "[IPv6]:Port".
 
-[1] Root peer = A peer operated by a known trusted entity. They allow to speed up the network including discovery of peers and data.
+Root peer = A peer operated by a known trusted entity. They allow to speed up the network including discovery of peers and data.
 
 ### Private Key
 

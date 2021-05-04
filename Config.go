@@ -31,6 +31,13 @@ var config struct {
 	SeedList           []peerSeed `yaml:"SeedList"`
 	AutoUpdateSeedList bool       `yaml:"AutoUpdateSeedList"`
 	SeedListVersion    int        `yaml:"SeedListVersion"`
+
+	// Connection settings
+	EnableUPnP bool `yaml:"EnableUPnP"` // Enables support for UPnP.
+
+	// PortForward specifies an external port that was manually forwarded by the user. All listening IPs must have that same port number forwarded!
+	// If this setting is invalid, it will prohibit other peers from connecting. If set, it automatically disables UPnP.
+	PortForward uint16 `yaml:"PortForward"`
 }
 
 // peerSeed is a singl peer entry from the config's seed list

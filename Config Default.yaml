@@ -1,5 +1,16 @@
 LogFile: Log.txt
+
+# Listen defines all IP:Port combinations to listen on. If empty, it will listen on all IPs automatically on available ports.
+# IPv6 must be in the form "[IPv6]:Port". This setting is only recommended to be set on servers.
+Listen: []
+
+# Count of workers to process incoming raw packets. Default 2.
+ListenWorkers: 0
+
+# AutoUpdateSeedList enables auto update of the seed list.
 AutoUpdateSeedList: true
+
+# Initial peer seed list. If AutoUpdateSeedList is enabled then any changes will be overwritten on update.
 SeedListVersion: 1
 SeedList:
   - PublicKey: 02c490e4252bc7608fd55ddd9d7ca4a488ad152f3da6a6c2e9061f4c7e59f5b7f8 # 1.peernet.network
@@ -12,3 +23,10 @@ SeedList:
     Address: ["178.18.241.68:112","[2a02:c206:2056:9660::1]:112"]
   - PublicKey: 03174f370cb6d6f361d0511565b6b456a82c3d16b53d6b63b227d76a4f0f2abd2c # 5.peernet.network
     Address: ["194.233.66.99:112","[2407:3640:2057:5241::1]:112"]
+
+# Connection settings
+EnableUPnP: true # Enables support for UPnP.
+
+# PortForward specifies an external port that was manually forwarded by the user. All listening IPs must have that same port number forwarded!
+# If this setting is invalid, it will prohibit other peers from connecting. If set, it automatically disables UPnP.
+PortForward: 0   # Default not set.

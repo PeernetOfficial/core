@@ -286,7 +286,11 @@ func setAnnouncementPorts(packet *PacketRaw, n *Network) {
 	// UPnP: The port is forwarded automatically.
 	// Manual override in config: The user can specify a (global) incoming port that must be open on all listening IPs.
 	// This external port will be then passed onto other peers who will use it to connect.
-	portE := n.externalPort
+	portE := n.portExternal
+
+	if config.PortForward > 0 {
+		portE = config.PortForward
+	}
 
 	binary.LittleEndian.PutUint16(packet.Payload[15:17], portI)
 	binary.LittleEndian.PutUint16(packet.Payload[17:19], portE)
