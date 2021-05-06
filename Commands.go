@@ -148,7 +148,7 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 		}
 
 		for _, hash2Peer := range msg.Hash2Peers {
-			info.ResultChan <- &dht.NodeMessage{SenderID: peer.NodeID, Closest: records2Nodes(hash2Peer.Closest, msg.connection.Network), Storing: records2Nodes(hash2Peer.Storing, msg.connection.Network)}
+			info.QueueResult(&dht.NodeMessage{SenderID: peer.NodeID, Closest: records2Nodes(hash2Peer.Closest, msg.connection.Network), Storing: records2Nodes(hash2Peer.Storing, msg.connection.Network)})
 
 			if hash2Peer.IsLast {
 				info.Done()
@@ -156,7 +156,7 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 		}
 
 		for _, file := range msg.FilesEmbed {
-			info.ResultChan <- &dht.NodeMessage{SenderID: peer.NodeID, Data: file.Data}
+			info.QueueResult(&dht.NodeMessage{SenderID: peer.NodeID, Data: file.Data})
 
 			info.Done()
 			info.Terminate() // file was found, terminate the request.
