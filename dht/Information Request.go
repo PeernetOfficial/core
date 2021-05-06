@@ -32,11 +32,13 @@ const (
 	ActionFindValue        // Find a value
 )
 
+const messageChannelSize = 100
+
 // NewInformationRequest creates a new information request and adds it to the list.
 // It marks the count of nodes as active, meaning the caller should later decrease it via ActiveNodesSub.
 func (dht *DHT) NewInformationRequest(Action int, Key []byte, Nodes []*Node) (ir *InformationRequest) {
 	ir = &InformationRequest{
-		ResultChan:      make(chan *NodeMessage),
+		ResultChan:      make(chan *NodeMessage, messageChannelSize),
 		TerminateSignal: make(chan struct{}),
 		Action:          Action,
 		Key:             Key,
@@ -90,4 +92,16 @@ func (ir *InformationRequest) Done() {
 		// If the counter reaches 0, it means no nodes are handling this request anymore -> terminate it.
 		ir.Terminate()
 	}
+}
+
+// QueueResult accepts incoming results
+func (ir *InformationRequest) QueueResult(message *NodeMessage) {
+	ir.Lock()
+	if !ir.IsTerminated {
+		select {
+		case ir.ResultChan <- message:
+		default:
+		}
+	}
+	ir.Unlock()
 }
