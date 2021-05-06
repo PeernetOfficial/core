@@ -26,4 +26,5 @@ func Connect() {
 	go autoPingAll()
 	go networkChangeMonitor()
 	go autoBucketRefresh()
+	go startUPnP()
 }

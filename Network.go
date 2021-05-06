@@ -13,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/PeernetOfficial/core/upnp"
 )
 
 // Network is a connection adapter through one network interface (adapter).
@@ -27,6 +29,8 @@ type Network struct {
 	broadcastSocket net.PacketConn   // Broadcast socket, IPv4 only.
 	broadcastIPv4   []net.IP         // Broadcast IPs, IPv4 only.
 	portExternal    uint16           // External port. 0 if not known.
+	ipExternal      net.IP           // External IP of the network. Usually not known.
+	nat             upnp.NAT         // UPnP: NAT information
 	isTerminated    bool             // If true, the network was signaled for termination
 	terminateSignal chan interface{} // gets closed on termination signal, can be used in select via "case _ = <- network.terminateSignal:"
 	sync.RWMutex                     // for sychronized closing

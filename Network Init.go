@@ -107,7 +107,7 @@ func initNetwork() {
 }
 
 // networkStart will start the listeners on all the IP addresses for the network
-func networkStart(iface net.Interface, addresses []net.Addr) {
+func networkStart(iface net.Interface, addresses []net.Addr) (networks []*Network) {
 	for _, address := range addresses {
 		net1 := address.(*net.IPNet)
 
@@ -133,7 +133,11 @@ func networkStart(iface net.Interface, addresses []net.Addr) {
 		addListenAddress(netw.address)
 
 		log.Printf("Listen on network '%s' UDP %s\n", iface.Name, netw.address.String())
+
+		networks = append(networks, netw)
 	}
+
+	return
 }
 
 // networkPrepareListen prepares to listen on the given IP address. If port is 0, one is chosen automatically.
@@ -147,7 +151,7 @@ func networkPrepareListen(ipA string, port int) (network *Network, err error) {
 	network.terminateSignal = make(chan interface{})
 
 	// get the network interface that belongs to the IP
-	if ipA != "0.0.0.0" && ipA != "::" {
+	if !ip.IsUnspecified() { // checks for IPv4 "0.0.0.0" and IPv6 "::"
 		network.iface, network.ipnet = FindInterfaceByIP(ip)
 		if network.iface == nil {
 			return nil, errors.New("error finding the network interface belonging to IP")

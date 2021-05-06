@@ -171,7 +171,11 @@ func networkChangeMonitor() {
 func networkChangeInterfaceNew(iface net.Interface, addresses []net.Addr) {
 	log.Printf("networkChangeInterfaceNew new interface '%s' (%d IPs)\n", iface.Name, len(addresses))
 
-	networkStart(iface, addresses)
+	networks := networkStart(iface, addresses)
+
+	for _, network := range networks {
+		go network.upnpAuto()
+	}
 
 	go nodesDHT.RefreshBuckets(0)
 }
@@ -214,7 +218,11 @@ func networkChangeInterfaceRemove(iface string, addresses []net.Addr) {
 func networkChangeIPNew(iface net.Interface, address net.Addr) {
 	log.Printf("networkChangeIPNew new interface '%s' IP %s\n", iface.Name, address.String())
 
-	networkStart(iface, []net.Addr{address})
+	networks := networkStart(iface, []net.Addr{address})
+
+	for _, network := range networks {
+		go network.upnpAuto()
+	}
 
 	go nodesDHT.RefreshBuckets(0)
 }
