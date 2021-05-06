@@ -4,7 +4,6 @@ Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
 Currently only supports IPv4 networks.
-TODO: Limit mapping to X hours. Auto remap upon expiration.
 */
 
 package core
@@ -60,15 +59,6 @@ func (network *Network) upnpAuto() {
 		return
 	}
 
-	// Only allow 1 UPnP worker at a time.
-	upnpMutex.Lock()
-	defer upnpMutex.Unlock()
-
-	// If there is already a running UPnP on the adapter, skip.
-	if _, ok := upnpListInterfaces[network.GetAdapterName()]; ok {
-		return
-	}
-
 	nat, err := upnp.Discover(network.address.IP)
 	if err != nil {
 		return
@@ -82,6 +72,15 @@ func (network *Network) upnpAuto() {
 	}
 
 	network.ipExternal = externalIP
+
+	// Only allow 1 UPnP worker at a time for registering the adapter.
+	upnpMutex.Lock()
+	defer upnpMutex.Unlock()
+
+	// If there is already a running UPnP on the adapter, skip.
+	if _, ok := upnpListInterfaces[network.GetAdapterName()]; ok {
+		return
+	}
 
 	if err := network.upnpTryPortForward(); err != nil {
 		return
@@ -163,3 +162,5 @@ func (network *Network) upnpValidate() (err error) {
 	// TODO: Send special message which validates the UPnP mapping
 	return nil
 }
+
+// TODO: Function to check if there is an existing port forward
