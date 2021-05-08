@@ -16,7 +16,7 @@ import (
 )
 
 // respondClosesContactsCount is the number of closest contact to respond.
-// Each peer record will take 55 bytes. Overhead is 77 + 20 payload header + UA length + 6 + 34 = 137 bytes without UA.
+// Each peer record will take 60 bytes. Overhead is 77 + 20 payload header + UA length + 6 + 34 = 137 bytes without UA.
 // It makes sense to stay below 508 bytes (no fragmentation). Reporting back 5 contacts for FIND_SELF requests should do the magic.
 const respondClosesContactsCount = 5
 
@@ -100,10 +100,12 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result *PeerRecord) {
 	if connection := peer.GetConnection2Share(allowLocal, allowIPv4, allowIPv6); connection != nil {
 		return &PeerRecord{
-			PublicKey: peer.PublicKey,
-			NodeID:    peer.NodeID,
-			IP:        connection.Address.IP,
-			Port:      uint16(connection.Address.Port),
+			PublicKey:            peer.PublicKey,
+			NodeID:               peer.NodeID,
+			IP:                   connection.Address.IP,
+			Port:                 uint16(connection.Address.Port),
+			PortReportedInternal: connection.PortInternal,
+			PortReportedExternal: connection.PortExternal,
 		}
 	}
 

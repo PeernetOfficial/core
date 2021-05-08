@@ -104,11 +104,14 @@ type InfoStore struct {
 
 // PeerRecord informs about a peer
 type PeerRecord struct {
-	PublicKey   *btcec.PublicKey // Public Key
-	NodeID      []byte           // Kademlia Node ID
-	IP          net.IP           // IP
-	Port        uint16           // Port
-	LastContact uint32           // Last contact in seconds
+	PublicKey            *btcec.PublicKey // Public Key
+	NodeID               []byte           // Kademlia Node ID
+	IP                   net.IP           // IP address
+	Port                 uint16           // Port (actual one used for connection)
+	PortReportedInternal uint16           // Internal port as reported by that peer. This can be used to identify whether the peer is potentially behind a NAT.
+	PortReportedExternal uint16           // External port as reported by that peer. This is used in case of port forwarding (manual or automated).
+	LastContact          uint32           // Last contact in seconds
+	LastContactT         time.Time        // Last contact time translated from seconds
 }
 
 // Hash2Peer links a hash to peers who are known to store the data and to peers who are considered close to the hash
@@ -351,6 +354,9 @@ func msgDecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 	return
 }
 
+// Length of peer record in bytes
+const peerRecordSize = 60
+
 // decodePeerRecord decodes the response data for FIND_SELF, FIND_PEER and FIND_VALUE messages
 func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int, valid bool) {
 	index := 0
@@ -370,7 +376,7 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 
 		// Response contains peer records
 		for m := 0; m < int(countField); m++ {
-			if read += 56; len(data) < read {
+			if read += peerRecordSize; len(data) < read {
 				return nil, 0, false
 			}
 
@@ -387,8 +393,11 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 			}
 
 			peer.Port = binary.LittleEndian.Uint16(data[index+49 : index+49+2])
-			peer.LastContact = binary.LittleEndian.Uint32(data[index+51 : index+51+4])
-			reason := data[index+55]
+			peer.PortReportedInternal = binary.LittleEndian.Uint16(data[index+51 : index+51+2])
+			peer.PortReportedExternal = binary.LittleEndian.Uint16(data[index+53 : index+53+2])
+			peer.LastContact = binary.LittleEndian.Uint32(data[index+55 : index+55+4])
+			peer.LastContactT = time.Now().Add(-time.Second * time.Duration(peer.LastContact))
+			reason := data[index+59]
 
 			var err error
 			if peer.PublicKey, err = btcec.ParsePubKey(peerIDcompressed, btcec.S256()); err != nil {
@@ -403,7 +412,7 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 				hash2Peer.Storing = append(hash2Peer.Storing, peer)
 			}
 
-			index += 56
+			index += peerRecordSize
 		}
 
 		hash2Peers = append(hash2Peers, hash2Peer)
@@ -654,7 +663,7 @@ createPacketLoop:
 		// Encode the peer response data for FIND_SELF, FIND_PEER and FIND_VALUE requests.
 		if len(hash2Peers) > 0 {
 			for n, hash2Peer := range hash2Peers {
-				if isPacketSizeExceed(packetSize, 34+56) { // check if minimum length is available in packet
+				if isPacketSizeExceed(packetSize, 34+peerRecordSize) { // check if minimum length is available in packet
 					packetsRaw = append(packetsRaw, raw[:packetSize])
 					hash2Peers = hash2Peers[n:]
 					continue createPacketLoop
@@ -668,7 +677,7 @@ createPacketLoop:
 				count2 := uint16(0)
 
 				for m, peer := range hash2Peer.Storing {
-					if isPacketSizeExceed(packetSize, 56) { // check if minimum length is available in packet
+					if isPacketSizeExceed(packetSize, peerRecordSize) { // check if minimum length is available in packet
 						packetsRaw = append(packetsRaw, raw[:packetSize])
 						hash2Peers = hash2Peers[n:]
 						hash2Peer.Storing = hash2Peer.Storing[m:]
@@ -679,10 +688,12 @@ createPacketLoop:
 					copy(raw[index:index+33], peer.PublicKey.SerializeCompressed())
 					copy(raw[index+33:index+33+16], peer.IP.To16())
 					binary.LittleEndian.PutUint16(raw[index+49:index+51], peer.Port)
-					binary.LittleEndian.PutUint32(raw[index+51:index+55], peer.LastContact)
-					raw[index+55] = 1
+					binary.LittleEndian.PutUint16(raw[index+51:index+53], peer.PortReportedInternal)
+					binary.LittleEndian.PutUint16(raw[index+53:index+55], peer.PortReportedExternal)
+					binary.LittleEndian.PutUint32(raw[index+55:index+59], peer.LastContact)
+					raw[index+59] = 1
 
-					packetSize += 56
+					packetSize += peerRecordSize
 					binary.LittleEndian.PutUint16(raw[count2Index+0:count2Index+2], uint16(m+1))
 					count2++
 				}
@@ -690,7 +701,7 @@ createPacketLoop:
 				hash2Peer.Storing = nil
 
 				for m, peer := range hash2Peer.Closest {
-					if isPacketSizeExceed(packetSize, 56) { // check if minimum length is available in packet
+					if isPacketSizeExceed(packetSize, peerRecordSize) { // check if minimum length is available in packet
 						packetsRaw = append(packetsRaw, raw[:packetSize])
 						hash2Peers = hash2Peers[n:]
 						hash2Peer.Closest = hash2Peer.Closest[m:]
@@ -701,10 +712,12 @@ createPacketLoop:
 					copy(raw[index:index+33], peer.PublicKey.SerializeCompressed())
 					copy(raw[index+33:index+33+16], peer.IP.To16())
 					binary.LittleEndian.PutUint16(raw[index+49:index+51], peer.Port)
-					binary.LittleEndian.PutUint32(raw[index+51:index+55], peer.LastContact)
-					raw[index+55] = 0
+					binary.LittleEndian.PutUint16(raw[index+51:index+53], peer.PortReportedInternal)
+					binary.LittleEndian.PutUint16(raw[index+53:index+55], peer.PortReportedExternal)
+					binary.LittleEndian.PutUint32(raw[index+55:index+59], peer.LastContact)
+					raw[index+59] = 0
 
-					packetSize += 56
+					packetSize += peerRecordSize
 					count2++
 					binary.LittleEndian.PutUint16(raw[count2Index+0:count2Index+2], count2)
 				}
@@ -808,9 +821,4 @@ func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []Ha
 	}
 
 	return err
-}
-
-// lastContact2Time translates a last contact time in seconds to a timestamp
-func lastContact2Time(LastContact uint32) time.Time {
-	return time.Now().Add(-time.Second * time.Duration(LastContact))
 }

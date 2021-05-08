@@ -205,7 +205,7 @@ func record2Peer(record PeerRecord, network *Network) (peerN *PeerInfo) {
 func records2Nodes(records []PeerRecord, network *Network) (nodes []*dht.Node) {
 	for _, record := range records {
 		peer := record2Peer(record, network)
-		nodes = append(nodes, &dht.Node{ID: peer.NodeID, LastSeen: lastContact2Time(record.LastContact), Info: peer})
+		nodes = append(nodes, &dht.Node{ID: peer.NodeID, LastSeen: record.LastContactT, Info: peer})
 	}
 
 	return
