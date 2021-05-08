@@ -196,7 +196,14 @@ func record2Peer(record PeerRecord, network *Network) (peerN *PeerInfo) {
 	}
 
 	// Create temporary peer which is not added to the global list and not added to Kademlia.
-	connection := &Connection{Network: network, Address: &net.UDPAddr{IP: record.IP, Port: int(record.Port)}, Status: ConnectionActive}
+	port := record.Port
+	if record.PortReportedExternal > 0 { // Use the external port if available
+		port = record.PortReportedExternal
+	}
+
+	// TODO: Traverse message needs to be considered here
+
+	connection := &Connection{Network: network, Address: &net.UDPAddr{IP: record.IP, Port: int(port)}, Status: ConnectionActive, PortInternal: record.PortReportedInternal, PortExternal: record.PortReportedExternal}
 	return &PeerInfo{PublicKey: record.PublicKey, connectionActive: []*Connection{connection}, connectionLatest: connection, NodeID: publicKey2NodeID(record.PublicKey), messageSequence: rand.Uint32()}
 }
 

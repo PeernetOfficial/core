@@ -226,10 +226,22 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest
 	}
 
 	for _, closePeer := range closest {
+		// Use the self-reported external port if available.
+		port := closePeer.Port
+		if closePeer.PortReportedExternal > 0 {
+			port = closePeer.PortReportedExternal
+		}
+
 		// Initiate contact. Once a response comes back, the peer is actually added to the list.
-		if contactArbitraryPeer(closePeer.PublicKey, []*net.UDPAddr{{IP: closePeer.IP, Port: int(closePeer.Port)}}) {
+		if contactArbitraryPeer(closePeer.PublicKey, []*net.UDPAddr{{IP: closePeer.IP, Port: int(port)}}) {
 			// Blacklist the target Peer ID, IP:Port for contact in the next 10 minutes.
 			// TODO
+		}
+
+		// If NAT is detected and the port is not forwarded, send a Traverse message.
+		// NAT detection is the same algorithm as peer.IsBehindNAT.
+		if closePeer.PortReportedExternal == 0 && closePeer.Port != closePeer.PortReportedInternal {
+			// TODO send traverse message
 		}
 
 	}
