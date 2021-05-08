@@ -59,7 +59,8 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 		for _, findPeer := range msg.FindPeerKeys {
 			details := Hash2Peer{ID: findPeer}
 
-			for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, findPeer.Hash, filterFunc(msg.connection.IsLocal(), allowIPv4, allowIPv6)) {
+			// Same as before, put self as ignoredNodes.
+			for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, findPeer.Hash, filterFunc(msg.connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
 				if info := node.Info.(*PeerInfo).peer2Record(msg.connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
 					details.Closest = append(details.Closest, *info)
 				}
@@ -150,7 +151,7 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 		}
 
 		for _, hash2Peer := range msg.Hash2Peers {
-			info.QueueResult(&dht.NodeMessage{SenderID: peer.NodeID, Closest: records2Nodes(hash2Peer.Closest, msg.connection.Network), Storing: records2Nodes(hash2Peer.Storing, msg.connection.Network)})
+			info.QueueResult(&dht.NodeMessage{SenderID: peer.NodeID, Closest: records2Nodes(hash2Peer.Closest, msg.connection.Network, peer), Storing: records2Nodes(hash2Peer.Storing, msg.connection.Network, peer)})
 
 			if hash2Peer.IsLast {
 				info.Done()

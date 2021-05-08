@@ -226,6 +226,10 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest
 	}
 
 	for _, closePeer := range closest {
+		if closePeer.IsBadQuality() {
+			continue
+		}
+
 		// Use the self-reported external port if available.
 		port := closePeer.Port
 		if closePeer.PortReportedExternal > 0 {
@@ -239,9 +243,10 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest
 		}
 
 		// If NAT is detected and the port is not forwarded, send a Traverse message.
-		// NAT detection is the same algorithm as peer.IsBehindNAT.
+		// NAT detection is the same algorithm as connection.IsBehindNAT.
 		if closePeer.PortReportedExternal == 0 && closePeer.Port != closePeer.PortReportedInternal {
 			// TODO send traverse message
+			//fmt.Printf("FIND_SELF Traverse message needed for target %s target port %d internal %d\n", closePeer.IP.String(), closePeer.Port, closePeer.PortReportedInternal)
 		}
 
 	}
@@ -251,4 +256,21 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest
 func ShouldSendFindSelf() bool {
 	// TODO
 	return true
+}
+
+// IsBadQuality checks if the returned peer record is bad quality and should be discarded
+func (record *PeerRecord) IsBadQuality() bool {
+	// Internal port must be provided. Otherwise the external port is likely not provided either, and checking the NAT and port forwarded status is not possible.
+	if record.PortReportedInternal == 0 {
+		//fmt.Printf("IsBadQuality port internal not available for target %s port %d, peer %s\n", record.IP.String(), record.Port, hex.EncodeToString(record.PublicKey.SerializeCompressed()))
+		return true
+	}
+
+	// Must not be self. There is no point that a remote peer would return self
+	if record.PublicKey.IsEqual(peerPublicKey) {
+		//fmt.Printf("IsBadQuality received self peer\n")
+		return true
+	}
+
+	return false
 }

@@ -29,6 +29,7 @@ type Connection struct {
 	Expires       time.Time     // Inactive connections only: Expiry date. If it does not become active by that date, it will be considered expired and removed.
 	Status        int           // 0 = Active established connection, 1 = Inactive, 2 = Removed, 3 = Redundant
 	RoundTripTime time.Duration // Full round-trip time of last reply.
+	traversePeer  *PeerInfo     // Temporary peer that may act as proxy for a Traverse message used for the first packet. This is used to establish this Connection to a peer that is behind a NAT.
 }
 
 // Connection status
@@ -59,6 +60,11 @@ func (c *Connection) IsIPv6() bool {
 	return IsIPv6(c.Address.IP)
 }
 
+// IsBehindNAT checks if the remote peer on the connection is likely behind a NAT
+func (c *Connection) IsBehindNAT() bool {
+	return c.PortInternal > 0 && c.Address.Port != int(c.PortInternal)
+}
+
 // GetConnections returns the list of connections
 func (peer *PeerInfo) GetConnections(active bool) (connections []*Connection) {
 	peer.RLock()
@@ -77,6 +83,13 @@ func (peer *PeerInfo) IsConnectable(allowLocal, allowIPv4, allowIPv6 bool) bool 
 
 	// Only 1 active connection must be allowed for being connectable.
 	for _, connection := range peer.connectionActive {
+		// If the internal port is not known, which happens if no Announcement or Response was returned, do not share the peer details.
+		// This can happen if only other messages such as Ping/Pong were received, or the protocol implementation is not compatible. The external port is also likely not available.
+		// In this case sharing the peer would be bad, since the receiving peer could not use internal/external port to detemine the NAT status and port forwarding.
+		if connection.PortInternal == 0 {
+			continue
+		}
+
 		if IsIPv4(connection.Address.IP) && allowIPv4 || IsIPv6(connection.Address.IP) && allowIPv6 {
 			if !(!allowLocal && connection.IsLocal()) {
 				return true
@@ -94,12 +107,12 @@ func (peer *PeerInfo) GetConnection2Share(allowLocal, allowIPv4, allowIPv6 bool)
 	defer peer.RUnlock()
 
 	if peer.connectionLatest != nil && !(!allowLocal && peer.connectionLatest.IsLocal()) &&
-		(IsIPv4(peer.connectionLatest.Address.IP) && allowIPv4 || IsIPv6(peer.connectionLatest.Address.IP) && allowIPv6) {
+		(IsIPv4(peer.connectionLatest.Address.IP) && allowIPv4 || IsIPv6(peer.connectionLatest.Address.IP) && allowIPv6) && peer.connectionLatest.PortInternal > 0 {
 		return peer.connectionLatest
 	}
 
 	for _, connection := range peer.connectionActive {
-		if (IsIPv4(connection.Address.IP) && allowIPv4 || IsIPv6(connection.Address.IP) && allowIPv6) && !(!allowLocal && connection.IsLocal()) {
+		if (IsIPv4(connection.Address.IP) && allowIPv4 || IsIPv6(connection.Address.IP) && allowIPv6) && !(!allowLocal && connection.IsLocal()) && connection.PortInternal > 0 {
 			return connection
 		}
 	}
@@ -254,13 +267,13 @@ func (peer *PeerInfo) IsBehindNAT() (result bool) {
 	// PortInternal is 0 if no Announcement or Response message was received.
 
 	for _, connection := range peer.connectionActive {
-		if connection.PortInternal > 0 && connection.Address.Port != int(connection.PortInternal) {
+		if connection.IsBehindNAT() {
 			return true
 		}
 	}
 
 	for _, connection := range peer.connectionInactive {
-		if connection.PortInternal > 0 && connection.Address.Port != int(connection.PortInternal) {
+		if connection.IsBehindNAT() {
 			return true
 		}
 	}
@@ -304,6 +317,10 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 
 	packet.Protocol = ProtocolVersion
 
+	// For Traverse: check if no packet has been sent, and none received (i.e. initial contact).
+	// If a packet was already received directly (note: not via incoming traversed message), a valid connection is already established.
+	isFirstPacketOut := atomic.LoadUint64(&peer.StatsPacketSent) == 0 && atomic.LoadUint64(&peer.StatsPacketReceived) == 0
+
 	// always count as one sent packet even if sent via broadcast
 	atomic.AddUint64(&peer.StatsPacketSent, 1)
 
@@ -322,6 +339,11 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 		c.LastPacketOut = time.Now()
 
 		if err = c.Network.send(c.Address.IP, c.Address.Port, raw); err == nil {
+			// Send Traverse message if the peer is behind NAT and this is the first message.
+			if isFirstPacketOut && c.IsBehindNAT() {
+				//fmt.Printf("Traverse message needed for target %s\n", c.Address.String())
+			}
+
 			return nil
 		}
 
@@ -345,7 +367,14 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 		}
 
 		c.LastPacketOut = time.Now()
-		c.Network.send(c.Address.IP, c.Address.Port, raw)
+
+		if err = c.Network.send(c.Address.IP, c.Address.Port, raw); err == nil {
+			// Send Traverse message if the peer is behind NAT and this is the first message.
+			if isFirstPacketOut && c.IsBehindNAT() {
+				//fmt.Printf("Traverse message needed for target %s\n", c.Address.String())
+
+			}
+		}
 	}
 
 	return nil // on broadcast no error is known and returned

@@ -188,30 +188,29 @@ func publicKey2NodeID(publicKey *btcec.PublicKey) (nodeID []byte) {
 	return hashData(publicKey.SerializeCompressed())
 }
 
-// record2Peer translate a peer record (from a message) into an actual usable PeerInfo structure
-// It requires the network parameter which must be the same as caller/supplier. This ensures that peer details do not "jump" between physical network adapters.
-func record2Peer(record PeerRecord, network *Network) (peerN *PeerInfo) {
-	if peerN = PeerlistLookup(record.PublicKey); peerN != nil {
-		return peerN
-	}
-
-	// Create temporary peer which is not added to the global list and not added to Kademlia.
-	port := record.Port
-	if record.PortReportedExternal > 0 { // Use the external port if available
-		port = record.PortReportedExternal
-	}
-
-	// TODO: Traverse message needs to be considered here
-
-	connection := &Connection{Network: network, Address: &net.UDPAddr{IP: record.IP, Port: int(port)}, Status: ConnectionActive, PortInternal: record.PortReportedInternal, PortExternal: record.PortReportedExternal}
-	return &PeerInfo{PublicKey: record.PublicKey, connectionActive: []*Connection{connection}, connectionLatest: connection, NodeID: publicKey2NodeID(record.PublicKey), messageSequence: rand.Uint32()}
-}
-
-// records2Nodes translates infoPeer structures to nodes
+// records2Nodes translates infoPeer structures to nodes. If the reported nodes are not in the peer table, it will create temporary PeerInfo structures.
 // LastContact is passed on in the Node.LastSeen field.
-func records2Nodes(records []PeerRecord, network *Network) (nodes []*dht.Node) {
+// It requires the network parameter which must be the same as caller/supplier. This ensures that peer details do not "jump" between physical network adapters.
+func records2Nodes(records []PeerRecord, network *Network, peerSource *PeerInfo) (nodes []*dht.Node) {
 	for _, record := range records {
-		peer := record2Peer(record, network)
+		if record.IsBadQuality() {
+			continue
+		}
+
+		var peer *PeerInfo
+		if peer = PeerlistLookup(record.PublicKey); peer == nil {
+			// Create temporary peer which is not added to the global list and not added to Kademlia.
+			port := record.Port
+			if record.PortReportedExternal > 0 { // Use the external port if available
+				port = record.PortReportedExternal
+			}
+
+			// traversePeer is set to the peer who provided the node information.
+
+			connection := &Connection{Network: network, Address: &net.UDPAddr{IP: record.IP, Port: int(port)}, Status: ConnectionActive, PortInternal: record.PortReportedInternal, PortExternal: record.PortReportedExternal, traversePeer: peerSource}
+			peer = &PeerInfo{PublicKey: record.PublicKey, connectionActive: []*Connection{connection}, connectionLatest: connection, NodeID: publicKey2NodeID(record.PublicKey), messageSequence: rand.Uint32()}
+		}
+
 		nodes = append(nodes, &dht.Node{ID: peer.NodeID, LastSeen: record.LastContactT, Info: peer})
 	}
 
