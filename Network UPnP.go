@@ -24,6 +24,16 @@ var upnpMutex sync.RWMutex
 func startUPnP() {
 	upnpListInterfaces = make(map[string]struct{})
 
+	for _, cidr := range []string{
+		"10.0.0.0/8",     // RFC1918
+		"172.16.0.0/12",  // RFC1918
+		"192.168.0.0/16", // RFC1918
+	} {
+		if _, block, err := net.ParseCIDR(cidr); err == nil {
+			privateIPv4Blocks = append(privateIPv4Blocks, block)
+		}
+	}
+
 	if config.PortForward > 0 {
 		config.EnableUPnP = false
 	}
@@ -38,19 +48,39 @@ func startUPnP() {
 
 // upnpIsEligible checks if the network is eligible for UPnP
 func (network *Network) upnpIsEligible() bool {
-	// No link-local addresses. 169.254.*.*
-	// No loopback.
-	if network.address.IP.IsLinkLocalUnicast() || network.address.IP.IsLoopback() {
+	// IPv4 only for now.
+	if !IsIPv4(network.address.IP) {
 		return false
 	}
 
 	// The network interface must be known which indicates that the IP address is NOT a wildcard.
 	// Port forwarding requires to specify a local IP. In case of listening on a wildcard that would not be known and guessing (looking at you btcd) is not a solution.
-	if network.iface == nil {
+	if network.iface == nil || network.address.IP.IsUnspecified() {
+		return false
+	}
+
+	// IPv4/IPv6: No link-local addresses, no loopback. Multicast would be invalid anyway.
+	if network.address.IP.IsLinkLocalUnicast() || network.address.IP.IsLoopback() || network.address.IP.IsMulticast() {
+		return false
+	}
+
+	// IPv4: Must be private IP.
+	if IsIPv4(network.address.IP) && !isPrivateIP(network.address.IP) {
 		return false
 	}
 
 	return true
+}
+
+var privateIPv4Blocks []*net.IPNet
+
+func isPrivateIP(ip net.IP) bool {
+	for _, block := range privateIPv4Blocks {
+		if block.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // upnpAuto runs a UPnP daemon to forward the port, refresh the forwarding and continuously monitor if the forwarding remains valid.
