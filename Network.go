@@ -203,7 +203,7 @@ func packetWorker(packets <-chan networkWire) {
 				if len(announce.UserAgent) > 0 {
 					peer.UserAgent = announce.UserAgent
 				}
-				peer.Features = response.Features
+				peer.Features = announce.Features
 
 				peer.cmdLocalDiscovery(announce)
 			}
@@ -224,6 +224,15 @@ func packetWorker(packets <-chan networkWire) {
 
 		case CommandChat: // Chat [debug]
 			peer.cmdChat(raw)
+
+		case CommandTraverse:
+			if traverse, _ := msgDecodeTraverse(raw); traverse != nil {
+				if traverse.TargetPeer.IsEqual(peerPublicKey) && traverse.AuthorizedRelayPeer.IsEqual(peer.PublicKey) {
+					peer.cmdTraverseReceive(traverse)
+				} else if traverse.AuthorizedRelayPeer.IsEqual(peerPublicKey) {
+					peer.cmdTraverseForward(traverse)
+				}
+			}
 
 		default: // Unknown command
 

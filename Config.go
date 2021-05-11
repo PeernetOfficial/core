@@ -16,7 +16,7 @@ import (
 )
 
 // Version is the current core library version
-const Version = "0.2"
+const Version = "Alpha 2"
 
 var config struct {
 	LogFile string `yaml:"LogFile"` // Log file

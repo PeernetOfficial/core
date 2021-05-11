@@ -102,7 +102,7 @@ func (peer *PeerInfo) IsConnectable(allowLocal, allowIPv4, allowIPv6 bool) bool 
 
 // GetConnection2Share returns a connection to share. Nil if none.
 // allowLocal specifies whether it is OK to return local IPs.
-func (peer *PeerInfo) GetConnection2Share(allowLocal, allowIPv4, allowIPv6 bool) (connections *Connection) {
+func (peer *PeerInfo) GetConnection2Share(allowLocal, allowIPv4, allowIPv6 bool) (connection *Connection) {
 	peer.RLock()
 	defer peer.RUnlock()
 
@@ -340,8 +340,10 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 
 		if err = c.Network.send(c.Address.IP, c.Address.Port, raw); err == nil {
 			// Send Traverse message if the peer is behind NAT and this is the first message.
-			if isFirstPacketOut && c.IsBehindNAT() {
-				//fmt.Printf("Traverse message needed for target %s\n", c.Address.String())
+			if isFirstPacketOut && c.IsBehindNAT() && c.traversePeer != nil {
+				if raw, err := createVirtualAnnouncement(c.Network, peer.PublicKey, &bootstrapFindSelf{}); err == nil {
+					c.traversePeer.sendTraverse(raw, peer.PublicKey)
+				}
 			}
 
 			return nil
@@ -370,9 +372,10 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 
 		if err = c.Network.send(c.Address.IP, c.Address.Port, raw); err == nil {
 			// Send Traverse message if the peer is behind NAT and this is the first message.
-			if isFirstPacketOut && c.IsBehindNAT() {
-				//fmt.Printf("Traverse message needed for target %s\n", c.Address.String())
-
+			if isFirstPacketOut && c.IsBehindNAT() && c.traversePeer != nil {
+				if raw, err := createVirtualAnnouncement(c.Network, peer.PublicKey, &bootstrapFindSelf{}); err == nil {
+					c.traversePeer.sendTraverse(raw, peer.PublicKey)
+				}
 			}
 		}
 	}

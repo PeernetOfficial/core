@@ -240,15 +240,16 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest
 		if contactArbitraryPeer(closePeer.PublicKey, []*net.UDPAddr{{IP: closePeer.IP, Port: int(port)}}) {
 			// Blacklist the target Peer ID, IP:Port for contact in the next 10 minutes.
 			// TODO
-		}
 
-		// If NAT is detected and the port is not forwarded, send a Traverse message.
-		// NAT detection is the same algorithm as connection.IsBehindNAT.
-		if closePeer.PortReportedExternal == 0 && closePeer.Port != closePeer.PortReportedInternal {
-			// TODO send traverse message
-			//fmt.Printf("FIND_SELF Traverse message needed for target %s target port %d internal %d\n", closePeer.IP.String(), closePeer.Port, closePeer.PortReportedInternal)
+			// If NAT is detected and the port is not forwarded, send a Traverse message.
+			// NAT detection is the same algorithm as connection.IsBehindNAT.
+			if closePeer.PortReportedExternal == 0 && closePeer.Port != closePeer.PortReportedInternal {
+				// TODO: PortExternal needs to be guaranteed. send() needs to be broken up.
+				if raw, err := createVirtualAnnouncement(msg.MessageRaw.connection.Network, closePeer.PublicKey, &bootstrapFindSelf{}); err == nil {
+					peer.sendTraverse(raw, closePeer.PublicKey)
+				}
+			}
 		}
-
 	}
 }
 
