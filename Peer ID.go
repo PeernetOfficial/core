@@ -90,6 +90,7 @@ type PeerInfo struct {
 	messageSequence    uint32           // Sequence number. Increased with every message.
 	IsRootPeer         bool             // Whether the peer is a trusted root peer.
 	UserAgent          string           // User Agent reported by remote peer. Empty if no Announcement/Response message was yet received.
+	Features           uint8            // Feature bit array. 0 = IPv4_LISTEN, 1 = IPv6_LISTEN
 
 	// statistics
 	StatsPacketSent     uint64 // Count of packets sent

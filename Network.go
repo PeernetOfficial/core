@@ -98,8 +98,8 @@ func (network *Network) send(IP net.IP, port int, raw []byte) (err error) {
 	return err
 }
 
-// Currently packets are maxed at 4 KB. This is going to be refined.
-const maxPacketSize = 4096
+// Max packet size is 64 KB.
+const maxPacketSize = 65536
 
 // Listen starts listening for incoming packets on the given UDP connection
 func (network *Network) Listen() {
@@ -172,6 +172,7 @@ func packetWorker(packets <-chan networkWire) {
 				if len(announce.UserAgent) > 0 {
 					peer.UserAgent = announce.UserAgent
 				}
+				peer.Features = announce.Features
 
 				peer.cmdAnouncement(announce)
 			}
@@ -192,6 +193,7 @@ func packetWorker(packets <-chan networkWire) {
 				if len(response.UserAgent) > 0 {
 					peer.UserAgent = response.UserAgent
 				}
+				peer.Features = response.Features
 
 				peer.cmdResponse(response)
 			}
@@ -201,6 +203,7 @@ func packetWorker(packets <-chan networkWire) {
 				if len(announce.UserAgent) > 0 {
 					peer.UserAgent = announce.UserAgent
 				}
+				peer.Features = response.Features
 
 				peer.cmdLocalDiscovery(announce)
 			}
