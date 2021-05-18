@@ -481,12 +481,11 @@ func isPacketSizeExceed(currentSize int, testSize int) bool {
 	return currentSize+testSize > udpMaxPacketSize-packetLengthMin
 }
 
-func selfFeatureSupport() (feature byte) {
-	// networksMutex not needed here
-	if len(networks4) > 0 {
+func FeatureSupport() (feature byte) {
+	if countListen4 > 0 {
 		feature |= 1 << FeatureIPv4Listen
 	}
-	if len(networks6) > 0 {
+	if countListen6 > 0 {
 		feature |= 1 << FeatureIPv6Listen
 	}
 	return feature
@@ -514,7 +513,7 @@ createPacketLoop:
 		packetSize := announcementPayloadHeaderSize
 
 		raw[0] = byte(ProtocolVersion) // Protocol
-		raw[1] = selfFeatureSupport()  // Feature support
+		raw[1] = FeatureSupport()      // Feature support
 		//raw[2] = Actions                                   // Action bit array
 		binary.LittleEndian.PutUint32(raw[3:7], BlockchainHeight)
 		binary.LittleEndian.PutUint64(raw[7:15], BlockchainVersion)
@@ -656,7 +655,7 @@ createPacketLoop:
 		packetSize := announcementPayloadHeaderSize
 
 		raw[0] = byte(ProtocolVersion) // Protocol
-		raw[1] = selfFeatureSupport()  // Feature support
+		raw[1] = FeatureSupport()      // Feature support
 		//raw[2] = Actions                                   // Action bit array
 		binary.LittleEndian.PutUint32(raw[3:7], BlockchainHeight)
 		binary.LittleEndian.PutUint64(raw[7:15], BlockchainVersion)

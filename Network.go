@@ -42,10 +42,14 @@ var networks4, networks6 []*Network
 // single mutex for both network lists. Higher granularity currently not needed.
 var networksMutex sync.RWMutex
 
+// countListenX is the number of networks listened to, excluding link-local only listeners. This number might be different than len(networksN).
+// This is useful to determine if there are any IPv4 or IPv6 listeners for potential external connections. This can be used to determine IPv4_LISTEN and IPv6_LISTEN.
+var countListen4, countListen6 int64
+
 // Default ports to use. This may be randomized in the future to prevent fingerprinting (and subsequent blocking) by corporate and ISP firewalls.
 const defaultPort = 'p' // 112
 
-// ReplyTimeout is the round-trip timeout.
+// ReplyTimeout is the round-trip timeout for message sequences.
 var ReplyTimeout = 20
 
 // AutoAssignPort assigns a port for the given IP. Use port 0 for zero configuration.
@@ -103,6 +107,14 @@ const maxPacketSize = 65536
 
 // Listen starts listening for incoming packets on the given UDP connection
 func (network *Network) Listen() {
+	if !network.address.IP.IsLinkLocalUnicast() {
+		if IsIPv4(network.address.IP) {
+			atomic.AddInt64(&countListen4, 1)
+		} else {
+			atomic.AddInt64(&countListen6, 1)
+		}
+	}
+
 	for !network.isTerminated {
 		// Buffer: Must be created for each packet as it is passed as pointer.
 		// If the buffer is too small, ReadFromUDP only reads until its length and returns this error: "wsarecvfrom: A message sent on a datagram socket was larger than the internal message buffer or some other network limit, or the buffer used to receive a datagram into was smaller than the datagram itself."
@@ -272,6 +284,14 @@ func (network *Network) Terminate() {
 
 	if network.isTerminated {
 		return
+	}
+
+	if !network.address.IP.IsLinkLocalUnicast() {
+		if IsIPv4(network.address.IP) {
+			atomic.AddInt64(&countListen4, -1)
+		} else {
+			atomic.AddInt64(&countListen6, -1)
+		}
 	}
 
 	// set the termination signal

@@ -111,6 +111,13 @@ If a bucket is full when a new peer connects `ShouldEvict` is called. It compare
 * The default reply timeout (round-trip time) is 20 seconds set in `ReplyTimeout`. This applies to Response and Pong messages. The RTT timeout implies an average minimum connection speed between peers of about 6.4 KB/s for files of 64 KB size.
 * Separate timeouts for file transfers will be established.
 
+### Network Listen
+
+Unless specified in the config via `Listen`, it will listen on all network adapters. The default port is 112, but that may be randomized in the future.
+
+* Traffic between link-local unicast IPs and non link-local IPs is not allowed.
+* UPnP is supported on IPv4 only for now.
+
 ## Contributing
 
 Please note that by contributing code, documentation, ideas, snippets, or any other intellectual property you agree that you have all the necessary rights and you agree that we, the Peernet organization, may use it for any purpose.
