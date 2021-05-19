@@ -799,6 +799,19 @@ createPacketLoop:
 	}
 }
 
+// setSelfReportedPorts sets the fields Internal Port and External Port according to the connection details.
+// This is important for the remote peer to make smart decisions whether this peer is behind a NAT/firewall and supports port forwarding/UPnP.
+func (packet *PacketRaw) setSelfReportedPorts(n *Network) {
+	if packet.Command != CommandAnnouncement && packet.Command != CommandResponse { // only for Announcement and Response messages
+		return
+	}
+
+	portI, portE := n.SelfReportedPorts()
+
+	binary.LittleEndian.PutUint16(packet.Payload[15:17], portI)
+	binary.LittleEndian.PutUint16(packet.Payload[17:19], portE)
+}
+
 // ---- Traverse ----
 
 const traversePayloadHeaderSize = 76 + 65 + 28

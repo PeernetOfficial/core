@@ -96,7 +96,10 @@ func parseAddress(Address string) (remote *net.UDPAddr, err error) {
 
 // contact tries to contact the root peer on all networks
 func (peer *rootPeer) contact() {
-	contactArbitraryPeer(peer.publicKey, peer.addresses)
+	for _, address := range peer.addresses {
+		// Port internal is always set to 0 for root peers. It disables NAT detection and will not send out a Traverse message.
+		contactArbitraryPeer(peer.publicKey, address, 0)
+	}
 }
 
 // bootstrap connects to the initial set of peers.
@@ -194,7 +197,7 @@ func autoMulticastBroadcast() {
 
 // contactArbitraryPeer reaches for the first time to an arbitrary peer.
 // It does not contact the peer if it is in the peer list, which means that a connection is already established.
-func contactArbitraryPeer(publicKey *btcec.PublicKey, addresses []*net.UDPAddr) (contacted bool) {
+func contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, receiverPortInternal uint16) (contacted bool) {
 	if peer := PeerlistLookup(publicKey); peer != nil {
 		return false
 	}
@@ -204,9 +207,7 @@ func contactArbitraryPeer(publicKey *btcec.PublicKey, addresses []*net.UDPAddr) 
 		return false
 	}
 
-	for _, address := range addresses {
-		sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw}, address, &bootstrapFindSelf{})
-	}
+	sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw}, address, receiverPortInternal, &bootstrapFindSelf{})
 
 	return true
 }
@@ -236,19 +237,10 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest
 			port = closePeer.PortReportedExternal
 		}
 
-		// Initiate contact. Once a response comes back, the peer is actually added to the list.
-		if contactArbitraryPeer(closePeer.PublicKey, []*net.UDPAddr{{IP: closePeer.IP, Port: int(port)}}) {
+		// Initiate contact. Once a response comes back, the peer will be actually added to the peer list.
+		if contactArbitraryPeer(closePeer.PublicKey, &net.UDPAddr{IP: closePeer.IP, Port: int(port)}, closePeer.PortReportedInternal) {
 			// Blacklist the target Peer ID, IP:Port for contact in the next 10 minutes.
 			// TODO
-
-			// If NAT is detected and the port is not forwarded, send a Traverse message.
-			// NAT detection is the same algorithm as connection.IsBehindNAT.
-			if closePeer.PortReportedExternal == 0 && closePeer.Port != closePeer.PortReportedInternal {
-				// TODO: PortExternal needs to be guaranteed. send() needs to be broken up.
-				if raw, err := createVirtualAnnouncement(msg.MessageRaw.connection.Network, closePeer.PublicKey, &bootstrapFindSelf{}); err == nil {
-					peer.sendTraverse(raw, closePeer.PublicKey)
-				}
-			}
 		}
 	}
 }

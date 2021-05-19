@@ -7,7 +7,6 @@ Author:     Peter Kleissner
 package core
 
 import (
-	"encoding/binary"
 	"errors"
 	"net"
 	"sync/atomic"
@@ -283,30 +282,32 @@ func (peer *PeerInfo) IsBehindNAT() (result bool) {
 
 // ---- sending code ----
 
-// setAnnouncementPorts sets the fields Internal Port and External Port according to the connection details.
-// This is important for the remote peer to make smart decisions whether this peer is behind a NAT/firewall and supports port forwarding/UPnP.
-func setAnnouncementPorts(packet *PacketRaw, n *Network) {
-	if packet.Command != CommandAnnouncement && packet.Command != CommandResponse { // only for Announcement and Response messages
-		return
+// send sends the packet to the peer on the connection
+func (c *Connection) send(packet *PacketRaw, receiverPublicKey *btcec.PublicKey, isFirstPacket bool) (err error) {
+	if c == nil {
+		return errors.New("invalid connection")
 	}
 
-	// The internal port is set to where the network listens on.
-	// Datacenter: This should usually be the same as the outgoing port.
-	// NAT: The internal port will be different than the outgoing one.
-	portI := uint16(n.address.Port)
+	packet.Protocol = ProtocolVersion
+	packet.setSelfReportedPorts(c.Network)
 
-	// External port: This is usually unknown, except in these 2 cases:
-	// UPnP: The port is forwarded automatically.
-	// Manual override in config: The user can specify a (global) incoming port that must be open on all listening IPs.
-	// This external port will be then passed onto other peers who will use it to connect.
-	portE := n.portExternal
-
-	if config.PortForward > 0 {
-		portE = config.PortForward
+	raw, err := PacketEncrypt(peerPrivateKey, receiverPublicKey, packet)
+	if err != nil {
+		return err
 	}
 
-	binary.LittleEndian.PutUint16(packet.Payload[15:17], portI)
-	binary.LittleEndian.PutUint16(packet.Payload[17:19], portE)
+	c.LastPacketOut = time.Now()
+
+	err = c.Network.send(c.Address.IP, c.Address.Port, raw)
+
+	// Send Traverse message if the peer is behind a NAT and this is the first message
+	if err == nil && isFirstPacket && c.IsBehindNAT() && c.traversePeer != nil {
+		if raw, err := createVirtualAnnouncement(c.Network, receiverPublicKey, &bootstrapFindSelf{}); err == nil {
+			c.traversePeer.sendTraverse(raw, receiverPublicKey)
+		}
+	}
+
+	return err
 }
 
 // send sends a raw packet to the peer. Only uses active connections.
@@ -314,8 +315,6 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 	if len(peer.connectionActive) == 0 {
 		return errors.New("no valid connection to peer")
 	}
-
-	packet.Protocol = ProtocolVersion
 
 	// For Traverse: check if no packet has been sent, and none received (i.e. initial contact).
 	// If a packet was already received directly (note: not via incoming traversed message), a valid connection is already established.
@@ -327,56 +326,28 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 	// Send out the wire. Use connectionLatest if available.
 	// Failover: If sending fails and there are other connections available, try those. Automatically update connectionLatest if one is successful.
 	// Windows: This works great in case the adapter gets disabled, however, does not detect if the network cable is unplugged.
-	c := peer.connectionLatest
-	if c != nil {
-		setAnnouncementPorts(packet, c.Network)
-
-		raw, err := PacketEncrypt(peerPrivateKey, peer.PublicKey, packet)
-		if err != nil {
-			return err
-		}
-
-		c.LastPacketOut = time.Now()
-
-		if err = c.Network.send(c.Address.IP, c.Address.Port, raw); err == nil {
-			// Send Traverse message if the peer is behind NAT and this is the first message.
-			if isFirstPacketOut && c.IsBehindNAT() && c.traversePeer != nil {
-				if raw, err := createVirtualAnnouncement(c.Network, peer.PublicKey, &bootstrapFindSelf{}); err == nil {
-					c.traversePeer.sendTraverse(raw, peer.PublicKey)
-				}
-			}
-
+	cLatest := peer.connectionLatest
+	if cLatest != nil {
+		if err := cLatest.send(packet, peer.PublicKey, isFirstPacketOut); err == nil {
 			return nil
-		}
-
-		// Invalid connection, immediately invalidate. Fallback to broadcast to all other active ones.
-		// Windows: A common error when the network adapter is disabled is "wsasendto: The requested address is not valid in its context".
-		if IsNetworkErrorFatal(err) {
-			peer.invalidateActiveConnection(c)
+		} else if IsNetworkErrorFatal(err) {
+			// Invalid connection, immediately invalidate. Fallback to broadcast to all other active ones.
+			// Windows: A common error when the network adapter is disabled is "wsasendto: The requested address is not valid in its context".
+			peer.invalidateActiveConnection(cLatest)
 		}
 	}
 
-	// If no latest connection available, broadcast on all available connections.
+	// If no latest connection available, broadcast on all other available connections.
 	// This might be noisy, but if no latest connection is available it means the last established connection is already considered dead.
 	// The receiver is responsible for incoming deduplication of packets.
 	activeConnections := peer.GetConnections(true)
 	for _, c := range activeConnections {
-		setAnnouncementPorts(packet, c.Network)
-
-		raw, err := PacketEncrypt(peerPrivateKey, peer.PublicKey, packet)
-		if err != nil {
-			return err
+		if c == cLatest {
+			continue
 		}
 
-		c.LastPacketOut = time.Now()
-
-		if err = c.Network.send(c.Address.IP, c.Address.Port, raw); err == nil {
-			// Send Traverse message if the peer is behind NAT and this is the first message.
-			if isFirstPacketOut && c.IsBehindNAT() && c.traversePeer != nil {
-				if raw, err := createVirtualAnnouncement(c.Network, peer.PublicKey, &bootstrapFindSelf{}); err == nil {
-					c.traversePeer.sendTraverse(raw, peer.PublicKey)
-				}
-			}
+		if err := c.send(packet, peer.PublicKey, isFirstPacketOut); err != nil && IsNetworkErrorFatal(err) {
+			peer.invalidateActiveConnection(c)
 		}
 	}
 
@@ -385,23 +356,15 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 
 // sendConnection sends a packet to the peer using the specific connection
 func (peer *PeerInfo) sendConnection(packet *PacketRaw, connection *Connection) (err error) {
-	packet.Protocol = ProtocolVersion
-	raw, err := PacketEncrypt(peerPrivateKey, peer.PublicKey, packet)
-	if err != nil {
-		return err
-	}
-
+	isFirstPacketOut := atomic.LoadUint64(&peer.StatsPacketSent) == 0 && atomic.LoadUint64(&peer.StatsPacketReceived) == 0
 	atomic.AddUint64(&peer.StatsPacketSent, 1)
-	connection.LastPacketOut = time.Now()
 
-	return connection.Network.send(connection.Address.IP, connection.Address.Port, raw)
+	return connection.send(packet, peer.PublicKey, isFirstPacketOut)
 }
 
 // sendAllNetworks sends a raw packet via all networks. It assigns a new sequence for each sent packet.
-func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remote *net.UDPAddr, sequenceData interface{}) (err error) {
-	var raw []byte
-	packet.Protocol = ProtocolVersion
-
+// receiverPortInternal is important for NAT detection and sending the traverse message.
+func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, sequenceData interface{}) (err error) {
 	successCount := 0
 
 	networksMutex.RLock()
@@ -418,14 +381,9 @@ func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remo
 			continue
 		}
 
-		setAnnouncementPorts(packet, network)
-
 		packet.Sequence = msgArbitrarySequence(receiverPublicKey, sequenceData).sequence
-		if raw, err = PacketEncrypt(peerPrivateKey, receiverPublicKey, packet); err != nil {
-			return err
-		}
+		err = (&Connection{Network: network, Address: remote, PortInternal: receiverPortInternal}).send(packet, receiverPublicKey, true)
 
-		err = network.send(remote.IP, remote.Port, raw)
 		if err == nil {
 			successCount++
 		}

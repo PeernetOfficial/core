@@ -301,3 +301,23 @@ func (network *Network) Terminate() {
 
 	removeListenAddress(network.address)
 }
+
+// SelfReportedPorts returns the internal and external ports as self-reported by the peer to others.
+func (network *Network) SelfReportedPorts() (portI, portE uint16) {
+	// The internal port is set to where the network listens on.
+	// Datacenter: This should usually be the same as the outgoing port.
+	// NAT: The internal port will be different than the outgoing one.
+	portI = uint16(network.address.Port)
+
+	// External port: This is usually unknown, except in these 2 cases:
+	// UPnP: The port is forwarded automatically.
+	// Manual override in config: The user can specify a (global) incoming port that must be open on all listening IPs.
+	// This external port will be then passed onto other peers who will use it to connect.
+	portE = network.portExternal
+
+	if config.PortForward > 0 {
+		portE = config.PortForward
+	}
+
+	return portI, portE
+}

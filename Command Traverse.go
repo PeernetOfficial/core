@@ -108,14 +108,14 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *MessageTraverse) {
 	//peer.sendResponse(announce.Sequence, true, nil, nil, hashesNotFound)
 	//packets, err := msgEncodeResponse(true, nil, nil, hashesNotFound)
 	//sendAllNetworks()
-	var addresses []*net.UDPAddr
 
 	if !msg.IPv4.IsUnspecified() {
 		addressOriginalSenderIPv4 := &net.UDPAddr{IP: msg.IPv4, Port: int(msg.PortIPv4)}
 		if msg.PortIPv4ReportedExternal > 0 {
 			addressOriginalSenderIPv4.Port = int(msg.PortIPv4ReportedExternal)
 		}
-		addresses = append(addresses, addressOriginalSenderIPv4)
+
+		contactArbitraryPeer(msg.SignerPublicKey, addressOriginalSenderIPv4, 0)
 	}
 
 	if !msg.IPv6.IsUnspecified() {
@@ -124,11 +124,8 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *MessageTraverse) {
 			addressOriginalSenderIPv6.Port = int(msg.PortIPv6ReportedExternal)
 		}
 
-		addresses = append(addresses, addressOriginalSenderIPv6)
+		contactArbitraryPeer(msg.SignerPublicKey, addressOriginalSenderIPv6, 0)
 	}
-
-	// for now send a packet which should open up the NAT and establish a connection
-	contactArbitraryPeer(msg.SignerPublicKey, addresses)
 }
 
 // createVirtualAnnouncement is temporary code and will be improved.
@@ -139,7 +136,7 @@ func createVirtualAnnouncement(network *Network, receiverPublicKey *btcec.Public
 	}
 
 	packet := &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw}
-	setAnnouncementPorts(packet, network)
+	packet.setSelfReportedPorts(network)
 
 	packet.Sequence = msgArbitrarySequence(receiverPublicKey, sequenceData).sequence
 	packet.Protocol = ProtocolVersion
