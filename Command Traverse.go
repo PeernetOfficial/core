@@ -7,11 +7,8 @@ Author:     Peter Kleissner
 package core
 
 import (
-	"errors"
-	"net"
+	"math/rand"
 	"time"
-
-	"github.com/btcsuite/btcd/btcec"
 )
 
 // cmdTraverseForward handles an incoming traverse message that should be forwarded to another peer
@@ -56,17 +53,35 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *MessageTraverse) {
 		return
 	}
 
-	// already an active connection established? nothing todo.
-	peerOriginalSender := PeerlistLookup(msg.SignerPublicKey)
-	if peerOriginalSender != nil {
-		// could process the packet?
-		//if connections := peerOriginalSender.GetConnections(true); len(connections) > 0 {
-		//	rawPacketsIncoming <- networkWire{network: connections[0].Network, sender: addressOriginalSender, raw: msg.EmbeddedPacketRaw, receiverPublicKey: peerPublicKey, unicast: true}
-		//}
+	// Already an active connection established? The relayed message should not be needed in this case.
+	// This could be changed in the future if it turns out that there are 1-way connection issues.
+	if peerTarget := PeerlistLookup(msg.SignerPublicKey); peerTarget != nil {
+		return
+	}
+
+	// parse IP addresses of the original sender
+	var addresses []*peerAddress
+
+	if !msg.IPv4.IsUnspecified() {
+		port := msg.PortIPv4
+		if msg.PortIPv4ReportedExternal > 0 {
+			port = msg.PortIPv4ReportedExternal
+		}
+		addresses = append(addresses, &peerAddress{IP: msg.IPv4, Port: port, PortInternal: 0})
+	}
+	if !msg.IPv6.IsUnspecified() {
+		port := msg.PortIPv6
+		if msg.PortIPv6ReportedExternal > 0 {
+			port = msg.PortIPv6ReportedExternal
+		}
+		addresses = append(addresses, &peerAddress{IP: msg.IPv6, Port: port, PortInternal: 0})
+	}
+	if len(addresses) == 0 {
 		return
 	}
 
 	// ---- fork packetWorker to decode and validate embedded packet ---
+	// Due to missing connection and other embedded details in the message (such as ports), the packet is not just simply queued to rawPacketsIncoming.
 	decoded, senderPublicKey, err := PacketDecrypt(msg.EmbeddedPacketRaw, peerPublicKey)
 	if err != nil {
 		return
@@ -81,65 +96,22 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *MessageTraverse) {
 		return
 	}
 
-	// --------
-	virtualMessage := &MessageRaw{PacketRaw: *decoded}
-	announce, err := msgDecodeAnnouncement(virtualMessage)
-	if err != nil {
-		return
-	}
+	// process the packet and create a virtual peer
+	raw := &MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded, connection: nil}
+	peerV := &PeerInfo{PublicKey: senderPublicKey, connectionActive: nil, connectionLatest: nil, NodeID: publicKey2NodeID(senderPublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses}
 
-	// Proper handling of announcement todo, virtual announcement function
-	var hashesNotFound [][]byte
-	if announce.Actions&(1<<ActionFindSelf) > 0 {
-		hashesNotFound = append(hashesNotFound, peer.NodeID)
-	}
-	if announce.Actions&(1<<ActionFindPeer) > 0 && len(announce.FindPeerKeys) > 0 {
-		for _, findPeer := range announce.FindPeerKeys {
-			hashesNotFound = append(hashesNotFound, findPeer.Hash)
-		}
-	}
-	if announce.Actions&(1<<ActionFindValue) > 0 {
-		for _, findHash := range announce.FindDataKeys {
-			hashesNotFound = append(hashesNotFound, findHash.Hash)
-		}
-	}
+	// process it!
+	switch decoded.Command {
+	case CommandAnnouncement: // Announce
+		if announce, _ := msgDecodeAnnouncement(raw); announce != nil {
+			if len(announce.UserAgent) > 0 {
+				peerV.UserAgent = announce.UserAgent
+			}
+			peerV.Features = announce.Features
 
-	// TODO
-	//peer.sendResponse(announce.Sequence, true, nil, nil, hashesNotFound)
-	//packets, err := msgEncodeResponse(true, nil, nil, hashesNotFound)
-	//sendAllNetworks()
-
-	if !msg.IPv4.IsUnspecified() {
-		addressOriginalSenderIPv4 := &net.UDPAddr{IP: msg.IPv4, Port: int(msg.PortIPv4)}
-		if msg.PortIPv4ReportedExternal > 0 {
-			addressOriginalSenderIPv4.Port = int(msg.PortIPv4ReportedExternal)
+			peerV.cmdAnouncement(announce)
 		}
 
-		contactArbitraryPeer(msg.SignerPublicKey, addressOriginalSenderIPv4, 0)
+	default:
 	}
-
-	if !msg.IPv6.IsUnspecified() {
-		addressOriginalSenderIPv6 := &net.UDPAddr{IP: msg.IPv6, Port: int(msg.PortIPv6)}
-		if msg.PortIPv4ReportedExternal > 0 {
-			addressOriginalSenderIPv6.Port = int(msg.PortIPv6ReportedExternal)
-		}
-
-		contactArbitraryPeer(msg.SignerPublicKey, addressOriginalSenderIPv6, 0)
-	}
-}
-
-// createVirtualAnnouncement is temporary code and will be improved.
-func createVirtualAnnouncement(network *Network, receiverPublicKey *btcec.PublicKey, sequenceData interface{}) (raw []byte, err error) {
-	packets := msgEncodeAnnouncement(true, ShouldSendFindSelf(), nil, nil, nil)
-	if len(packets) == 0 || packets[0].err != nil {
-		return nil, errors.New("error creating virtual packet")
-	}
-
-	packet := &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw}
-	packet.setSelfReportedPorts(network)
-
-	packet.Sequence = msgArbitrarySequence(receiverPublicKey, sequenceData).sequence
-	packet.Protocol = ProtocolVersion
-
-	return PacketEncrypt(peerPrivateKey, receiverPublicKey, packet)
 }

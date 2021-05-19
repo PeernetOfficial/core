@@ -91,10 +91,19 @@ type PeerInfo struct {
 	IsRootPeer         bool             // Whether the peer is a trusted root peer.
 	UserAgent          string           // User Agent reported by remote peer. Empty if no Announcement/Response message was yet received.
 	Features           uint8            // Feature bit array. 0 = IPv4_LISTEN, 1 = IPv6_LISTEN
+	isVirtual          bool             // Whether it is a virtual peer for establishing a connection.
+	targetAddresses    []*peerAddress   // Virtual peer: Addresses to send any replies.
+	traversePeer       *PeerInfo        // Virtual peer: Same field as in connection.
 
 	// statistics
 	StatsPacketSent     uint64 // Count of packets sent
 	StatsPacketReceived uint64 // Count of packets received
+}
+
+type peerAddress struct {
+	IP           net.IP
+	Port         uint16
+	PortInternal uint16
 }
 
 // peerList keeps track of all peers
@@ -191,25 +200,30 @@ func publicKey2NodeID(publicKey *btcec.PublicKey) (nodeID []byte) {
 
 // records2Nodes translates infoPeer structures to nodes. If the reported nodes are not in the peer table, it will create temporary PeerInfo structures.
 // LastContact is passed on in the Node.LastSeen field.
-// It requires the network parameter which must be the same as caller/supplier. This ensures that peer details do not "jump" between physical network adapters.
-func records2Nodes(records []PeerRecord, network *Network, peerSource *PeerInfo) (nodes []*dht.Node) {
+func records2Nodes(records []PeerRecord, peerSource *PeerInfo) (nodes []*dht.Node) {
 	for _, record := range records {
 		if record.IsBadQuality() {
 			continue
 		}
 
 		var peer *PeerInfo
-		if peer = PeerlistLookup(record.PublicKey); peer == nil {
+		if record.PublicKey.IsEqual(peerSource.PublicKey) {
+			// Special case if peer that stores info = sender. In that case IP:Port in the record would be empty anyway.
+			peer = peerSource
+		} else if peer = PeerlistLookup(record.PublicKey); peer == nil {
 			// Create temporary peer which is not added to the global list and not added to Kademlia.
+			var addresses []*peerAddress
+
 			port := record.Port
 			if record.PortReportedExternal > 0 { // Use the external port if available
 				port = record.PortReportedExternal
 			}
 
+			addresses = append(addresses, &peerAddress{IP: record.IP, Port: port, PortInternal: record.PortReportedInternal})
+
 			// traversePeer is set to the peer who provided the node information.
 
-			connection := &Connection{Network: network, Address: &net.UDPAddr{IP: record.IP, Port: int(port)}, Status: ConnectionActive, PortInternal: record.PortReportedInternal, PortExternal: record.PortReportedExternal, traversePeer: peerSource}
-			peer = &PeerInfo{PublicKey: record.PublicKey, connectionActive: []*Connection{connection}, connectionLatest: connection, NodeID: publicKey2NodeID(record.PublicKey), messageSequence: rand.Uint32()}
+			peer = &PeerInfo{PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, NodeID: publicKey2NodeID(record.PublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource}
 		}
 
 		nodes = append(nodes, &dht.Node{ID: peer.NodeID, LastSeen: record.LastContactT, Info: peer})
@@ -219,12 +233,12 @@ func records2Nodes(records []PeerRecord, network *Network, peerSource *PeerInfo)
 }
 
 // selfPeerRecord returns self as peer record
-func selfPeerRecord(network *Network) (result PeerRecord) {
+func selfPeerRecord() (result PeerRecord) {
 	return PeerRecord{
-		PublicKey:   peerPublicKey,
-		NodeID:      nodeID,
-		IP:          network.address.IP,
-		Port:        uint16(network.address.Port),
+		PublicKey: peerPublicKey,
+		NodeID:    nodeID,
+		//IP:          network.address.IP,
+		//Port:        uint16(network.address.Port),
 		LastContact: 0,
 	}
 }

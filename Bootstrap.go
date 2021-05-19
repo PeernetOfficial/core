@@ -207,7 +207,7 @@ func contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, rece
 		return false
 	}
 
-	sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw}, address, receiverPortInternal, &bootstrapFindSelf{})
+	sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw}, address, receiverPortInternal, nil, &bootstrapFindSelf{})
 
 	return true
 }

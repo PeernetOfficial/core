@@ -46,7 +46,7 @@ func (c *Connection) Equal(other *Connection) bool {
 
 // IsLocal checks if the connection is a local network one (LAN)
 func (c *Connection) IsLocal() bool {
-	return IsIPLocal(c.Address.IP)
+	return c != nil && IsIPLocal(c.Address.IP)
 }
 
 // IsIPv4 checks if the connection is using IPv4
@@ -300,11 +300,9 @@ func (c *Connection) send(packet *PacketRaw, receiverPublicKey *btcec.PublicKey,
 
 	err = c.Network.send(c.Address.IP, c.Address.Port, raw)
 
-	// Send Traverse message if the peer is behind a NAT and this is the first message
-	if err == nil && isFirstPacket && c.IsBehindNAT() && c.traversePeer != nil {
-		if raw, err := createVirtualAnnouncement(c.Network, receiverPublicKey, &bootstrapFindSelf{}); err == nil {
-			c.traversePeer.sendTraverse(raw, receiverPublicKey)
-		}
+	// Send Traverse message if the peer is behind a NAT and this is the first message. Only for Announcement.
+	if err == nil && isFirstPacket && c.IsBehindNAT() && c.traversePeer != nil && packet.Command == CommandAnnouncement {
+		c.traversePeer.sendTraverse(packet, receiverPublicKey)
 	}
 
 	return err
@@ -312,6 +310,12 @@ func (c *Connection) send(packet *PacketRaw, receiverPublicKey *btcec.PublicKey,
 
 // send sends a raw packet to the peer. Only uses active connections.
 func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
+	if peer.isVirtual { // special case for peers that were not contacted before
+		for _, address := range peer.targetAddresses {
+			sendAllNetworks(peer.PublicKey, packet, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, peer.traversePeer, nil)
+		}
+		return
+	}
 	if len(peer.connectionActive) == 0 {
 		return errors.New("no valid connection to peer")
 	}
@@ -364,9 +368,7 @@ func (peer *PeerInfo) sendConnection(packet *PacketRaw, connection *Connection) 
 
 // sendAllNetworks sends a raw packet via all networks. It assigns a new sequence for each sent packet.
 // receiverPortInternal is important for NAT detection and sending the traverse message.
-func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, sequenceData interface{}) (err error) {
-	successCount := 0
-
+func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, traversePeer *PeerInfo, sequenceData interface{}) (err error) {
 	networksMutex.RLock()
 	defer networksMutex.RUnlock()
 
@@ -375,14 +377,20 @@ func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remo
 		networksTarget = networks6
 	}
 
+	successCount := 0
+	isFirstPacket := true
+
 	for _, network := range networksTarget {
 		// Do not mix link-local unicast targets with non link-local networks (only when iface is known, i.e. not catch all local)
 		if network.iface != nil && remote.IP.IsLinkLocalUnicast() != network.address.IP.IsLinkLocalUnicast() {
 			continue
 		}
 
-		packet.Sequence = msgArbitrarySequence(receiverPublicKey, sequenceData).sequence
-		err = (&Connection{Network: network, Address: remote, PortInternal: receiverPortInternal}).send(packet, receiverPublicKey, true)
+		if sequenceData != nil {
+			packet.Sequence = msgArbitrarySequence(receiverPublicKey, sequenceData).sequence
+		}
+		err = (&Connection{Network: network, Address: remote, PortInternal: receiverPortInternal, traversePeer: traversePeer}).send(packet, receiverPublicKey, isFirstPacket)
+		isFirstPacket = false
 
 		if err == nil {
 			successCount++

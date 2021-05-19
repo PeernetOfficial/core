@@ -988,7 +988,16 @@ func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []Ha
 }
 
 // sendTraverse sends a traverse message
-func (peer *PeerInfo) sendTraverse(embeddedPacketRaw []byte, receiverEnd *btcec.PublicKey) (err error) {
+func (peer *PeerInfo) sendTraverse(packet *PacketRaw, receiverEnd *btcec.PublicKey) (err error) {
+	packet.Protocol = ProtocolVersion
+	// self-reported ports are not set, as this isn't sent via a specific network but a relay
+	//packet.setSelfReportedPorts(c.Network)
+
+	embeddedPacketRaw, err := PacketEncrypt(peerPrivateKey, receiverEnd, packet)
+	if err != nil {
+		return err
+	}
+
 	packetRaw, err := msgEncodeTraverse(peerPrivateKey, embeddedPacketRaw, receiverEnd, peer.PublicKey)
 	if err != nil {
 		return err

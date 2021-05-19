@@ -80,7 +80,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 			if stored && len(data) > 0 {
 				filesEmbed = append(filesEmbed, EmbeddedFileData{ID: findHash, Data: data})
 			} else if stored {
-				selfRecord := selfPeerRecord(msg.connection.Network)
+				selfRecord := selfPeerRecord()
 				hash2Peers = append(hash2Peers, Hash2Peer{ID: findHash, Storing: []PeerRecord{selfRecord}})
 			} else {
 				hashesNotFound = append(hashesNotFound, findHash.Hash)
@@ -150,7 +150,7 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 		}
 
 		for _, hash2Peer := range msg.Hash2Peers {
-			info.QueueResult(&dht.NodeMessage{SenderID: peer.NodeID, Closest: records2Nodes(hash2Peer.Closest, msg.connection.Network, peer), Storing: records2Nodes(hash2Peer.Storing, msg.connection.Network, peer)})
+			info.QueueResult(&dht.NodeMessage{SenderID: peer.NodeID, Closest: records2Nodes(hash2Peer.Closest, peer), Storing: records2Nodes(hash2Peer.Storing, peer)})
 
 			if hash2Peer.IsLast {
 				info.Done()
