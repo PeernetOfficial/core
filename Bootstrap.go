@@ -231,16 +231,12 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest
 			continue
 		}
 
-		// Use the self-reported external port if available.
-		port := closePeer.Port
-		if closePeer.PortReportedExternal > 0 {
-			port = closePeer.PortReportedExternal
-		}
-
-		// Initiate contact. Once a response comes back, the peer will be actually added to the peer list.
-		if contactArbitraryPeer(closePeer.PublicKey, &net.UDPAddr{IP: closePeer.IP, Port: int(port)}, closePeer.PortReportedInternal) {
-			// Blacklist the target Peer ID, IP:Port for contact in the next 10 minutes.
-			// TODO
+		for _, address := range closePeer.ToAddresses() {
+			// Initiate contact. Once a response comes back, the peer will be actually added to the peer list.
+			if contactArbitraryPeer(closePeer.PublicKey, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal) {
+				// Blacklist the target Peer ID, IP:Port for contact in the next 10 minutes.
+				// TODO
+			}
 		}
 	}
 }
@@ -253,8 +249,16 @@ func ShouldSendFindSelf() bool {
 
 // IsBadQuality checks if the returned peer record is bad quality and should be discarded
 func (record *PeerRecord) IsBadQuality() bool {
+	isIPv4 := record.IPv4 != nil && !record.IPv4.IsUnspecified()
+	isIPv6 := record.IPv6 != nil && !record.IPv6.IsUnspecified()
+
+	// At least one IP must be provided.
+	if !isIPv4 && !isIPv6 {
+		return true
+	}
+
 	// Internal port must be provided. Otherwise the external port is likely not provided either, and checking the NAT and port forwarded status is not possible.
-	if record.PortReportedInternal == 0 {
+	if isIPv4 && record.IPv4PortReportedInternal == 0 || isIPv6 && record.IPv6PortReportedInternal == 0 {
 		//fmt.Printf("IsBadQuality port internal not available for target %s port %d, peer %s\n", record.IP.String(), record.Port, hex.EncodeToString(record.PublicKey.SerializeCompressed()))
 		return true
 	}
@@ -266,4 +270,27 @@ func (record *PeerRecord) IsBadQuality() bool {
 	}
 
 	return false
+}
+
+// ToAddresses returns the addresses in a usable way
+func (record *PeerRecord) ToAddresses() (addresses []*peerAddress) {
+	// IPv4
+	ipv4Port := record.IPv4Port
+	if record.IPv4PortReportedExternal > 0 { // Use the external port if available
+		ipv4Port = record.IPv4PortReportedExternal
+	}
+	if record.IPv4 != nil && !record.IPv4.IsUnspecified() {
+		addresses = append(addresses, &peerAddress{IP: record.IPv4, Port: ipv4Port, PortInternal: record.IPv4PortReportedInternal})
+	}
+
+	// IPv6
+	ipv6Port := record.IPv6Port
+	if record.IPv6PortReportedExternal > 0 { // Use the external port if available
+		ipv6Port = record.IPv6PortReportedExternal
+	}
+	if record.IPv6 != nil && !record.IPv6.IsUnspecified() {
+		addresses = append(addresses, &peerAddress{IP: record.IPv6, Port: ipv6Port, PortInternal: record.IPv6PortReportedInternal})
+	}
+
+	return addresses
 }

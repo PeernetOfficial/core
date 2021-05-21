@@ -15,7 +15,7 @@ import (
 )
 
 // respondClosesContactsCount is the number of closest contact to respond.
-// Each peer record will take 60 bytes. Overhead is 77 + 20 payload header + UA length + 6 + 34 = 137 bytes without UA.
+// Each peer record will take 70 bytes. Overhead is 77 + 20 payload header + UA length + 6 + 34 = 137 bytes without UA.
 // It makes sense to stay below 508 bytes (no fragmentation). Reporting back 5 contacts for FIND_SELF requests should do the magic.
 const respondClosesContactsCount = 5
 
@@ -98,18 +98,32 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 }
 
 func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result *PeerRecord) {
-	if connection := peer.GetConnection2Share(allowLocal, allowIPv4, allowIPv6); connection != nil {
-		return &PeerRecord{
-			PublicKey:            peer.PublicKey,
-			NodeID:               peer.NodeID,
-			IP:                   connection.Address.IP,
-			Port:                 uint16(connection.Address.Port),
-			PortReportedInternal: connection.PortInternal,
-			PortReportedExternal: connection.PortExternal,
-		}
+	connectionIPv4 := peer.GetConnection2Share(allowLocal, allowIPv4, false)
+	connectionIPv6 := peer.GetConnection2Share(allowLocal, false, allowIPv6)
+	if connectionIPv4 == nil && connectionIPv6 == nil {
+		return nil
 	}
 
-	return nil
+	result = &PeerRecord{
+		PublicKey: peer.PublicKey,
+		NodeID:    peer.NodeID,
+	}
+
+	if connectionIPv4 != nil {
+		result.IPv4 = connectionIPv4.Address.IP
+		result.IPv4Port = uint16(connectionIPv4.Address.Port)
+		result.IPv4PortReportedInternal = connectionIPv4.PortInternal
+		result.IPv4PortReportedExternal = connectionIPv4.PortExternal
+	}
+
+	if connectionIPv6 != nil {
+		result.IPv6 = connectionIPv6.Address.IP
+		result.IPv6Port = uint16(connectionIPv6.Address.Port)
+		result.IPv6PortReportedInternal = connectionIPv6.PortInternal
+		result.IPv6PortReportedExternal = connectionIPv6.PortExternal
+	}
+
+	return result
 }
 
 // cmdResponse handles the response to the announcement

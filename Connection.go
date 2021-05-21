@@ -102,6 +102,10 @@ func (peer *PeerInfo) IsConnectable(allowLocal, allowIPv4, allowIPv6 bool) bool 
 // GetConnection2Share returns a connection to share. Nil if none.
 // allowLocal specifies whether it is OK to return local IPs.
 func (peer *PeerInfo) GetConnection2Share(allowLocal, allowIPv4, allowIPv6 bool) (connection *Connection) {
+	if !allowLocal && !allowIPv4 && !allowIPv6 {
+		return nil
+	}
+
 	peer.RLock()
 	defer peer.RUnlock()
 

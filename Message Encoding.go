@@ -104,14 +104,18 @@ type InfoStore struct {
 
 // PeerRecord informs about a peer
 type PeerRecord struct {
-	PublicKey            *btcec.PublicKey // Public Key
-	NodeID               []byte           // Kademlia Node ID
-	IP                   net.IP           // IP address
-	Port                 uint16           // Port (actual one used for connection)
-	PortReportedInternal uint16           // Internal port as reported by that peer. This can be used to identify whether the peer is potentially behind a NAT.
-	PortReportedExternal uint16           // External port as reported by that peer. This is used in case of port forwarding (manual or automated).
-	LastContact          uint32           // Last contact in seconds
-	LastContactT         time.Time        // Last contact time translated from seconds
+	PublicKey                *btcec.PublicKey // Public Key
+	NodeID                   []byte           // Kademlia Node ID
+	IPv4                     net.IP           // IPv4 address. 0 if not set.
+	IPv4Port                 uint16           // Port (actual one used for connection)
+	IPv4PortReportedInternal uint16           // Internal port as reported by that peer. This can be used to identify whether the peer is potentially behind a NAT.
+	IPv4PortReportedExternal uint16           // External port as reported by that peer. This is used in case of port forwarding (manual or automated).
+	IPv6                     net.IP           // IPv6 address. 0 if not set.
+	IPv6Port                 uint16           // Port (actual one used for connection)
+	IPv6PortReportedInternal uint16           // Internal port as reported by that peer. This can be used to identify whether the peer is potentially behind a NAT.
+	IPv6PortReportedExternal uint16           // External port as reported by that peer. This is used in case of port forwarding (manual or automated).
+	LastContact              uint32           // Last contact in seconds
+	LastContactT             time.Time        // Last contact time translated from seconds
 }
 
 // Hash2Peer links a hash to peers who are known to store the data and to peers who are considered close to the hash
@@ -372,7 +376,7 @@ func msgDecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 }
 
 // Length of peer record in bytes
-const peerRecordSize = 60
+const peerRecordSize = 70
 
 // decodePeerRecord decodes the response data for FIND_SELF, FIND_PEER and FIND_VALUE messages
 func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int, valid bool) {
@@ -402,19 +406,31 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 			peerIDcompressed := make([]byte, 33)
 			copy(peerIDcompressed[:], data[index:index+33])
 
-			ipB := make([]byte, 16)
-			copy(ipB[:], data[index+33:index+33+16])
-			peer.IP = ipB
-			if peer.IP.To4() != nil { // If IPv4, convert to native 4-byte representation
-				peer.IP = peer.IP.To4()
+			// IPv4
+			ipv4B := make([]byte, 4)
+			copy(ipv4B[:], data[index+33:index+33+4])
+
+			peer.IPv4 = ipv4B
+			peer.IPv4Port = binary.LittleEndian.Uint16(data[index+37 : index+37+2])
+			peer.IPv4PortReportedInternal = binary.LittleEndian.Uint16(data[index+39 : index+39+2])
+			peer.IPv4PortReportedExternal = binary.LittleEndian.Uint16(data[index+41 : index+41+2])
+
+			// IPv6
+			ipv6B := make([]byte, 16)
+			copy(ipv6B[:], data[index+43:index+43+16])
+
+			peer.IPv6 = ipv6B
+			peer.IPv6Port = binary.LittleEndian.Uint16(data[index+59 : index+59+2])
+			peer.IPv6PortReportedInternal = binary.LittleEndian.Uint16(data[index+61 : index+61+2])
+			peer.IPv6PortReportedExternal = binary.LittleEndian.Uint16(data[index+63 : index+63+2])
+
+			if peer.IPv6.To4() != nil { // IPv6 address mismatch
+				return nil, 0, false
 			}
 
-			peer.Port = binary.LittleEndian.Uint16(data[index+49 : index+49+2])
-			peer.PortReportedInternal = binary.LittleEndian.Uint16(data[index+51 : index+51+2])
-			peer.PortReportedExternal = binary.LittleEndian.Uint16(data[index+53 : index+53+2])
-			peer.LastContact = binary.LittleEndian.Uint32(data[index+55 : index+55+4])
+			peer.LastContact = binary.LittleEndian.Uint32(data[index+65 : index+65+4])
 			peer.LastContactT = time.Now().Add(-time.Second * time.Duration(peer.LastContact))
-			reason := data[index+59]
+			reason := data[index+69]
 
 			var err error
 			if peer.PublicKey, err = btcec.ParsePubKey(peerIDcompressed, btcec.S256()); err != nil {
@@ -692,7 +708,7 @@ createPacketLoop:
 				packetSize += 34
 				count2 := uint16(0)
 
-				for m, peer := range hash2Peer.Storing {
+				for m := range hash2Peer.Storing {
 					if isPacketSizeExceed(packetSize, peerRecordSize) { // check if minimum length is available in packet
 						packetsRaw = append(packetsRaw, raw[:packetSize])
 						hash2Peers = hash2Peers[n:]
@@ -701,13 +717,7 @@ createPacketLoop:
 					}
 
 					index := packetSize
-					copy(raw[index:index+33], peer.PublicKey.SerializeCompressed())
-					copy(raw[index+33:index+33+16], peer.IP.To16())
-					binary.LittleEndian.PutUint16(raw[index+49:index+51], peer.Port)
-					binary.LittleEndian.PutUint16(raw[index+51:index+53], peer.PortReportedInternal)
-					binary.LittleEndian.PutUint16(raw[index+53:index+55], peer.PortReportedExternal)
-					binary.LittleEndian.PutUint32(raw[index+55:index+59], peer.LastContact)
-					raw[index+59] = 1
+					encodePeerRecord(raw[index:index+peerRecordSize], &hash2Peer.Storing[m], 1)
 
 					packetSize += peerRecordSize
 					binary.LittleEndian.PutUint16(raw[count2Index+0:count2Index+2], uint16(m+1))
@@ -716,7 +726,7 @@ createPacketLoop:
 
 				hash2Peer.Storing = nil
 
-				for m, peer := range hash2Peer.Closest {
+				for m := range hash2Peer.Closest {
 					if isPacketSizeExceed(packetSize, peerRecordSize) { // check if minimum length is available in packet
 						packetsRaw = append(packetsRaw, raw[:packetSize])
 						hash2Peers = hash2Peers[n:]
@@ -725,13 +735,7 @@ createPacketLoop:
 					}
 
 					index := packetSize
-					copy(raw[index:index+33], peer.PublicKey.SerializeCompressed())
-					copy(raw[index+33:index+33+16], peer.IP.To16())
-					binary.LittleEndian.PutUint16(raw[index+49:index+51], peer.Port)
-					binary.LittleEndian.PutUint16(raw[index+51:index+53], peer.PortReportedInternal)
-					binary.LittleEndian.PutUint16(raw[index+53:index+55], peer.PortReportedExternal)
-					binary.LittleEndian.PutUint32(raw[index+55:index+59], peer.LastContact)
-					raw[index+59] = 0
+					encodePeerRecord(raw[index:index+peerRecordSize], &hash2Peer.Closest[m], 0)
 
 					packetSize += peerRecordSize
 					count2++
@@ -797,6 +801,25 @@ createPacketLoop:
 			return
 		}
 	}
+}
+
+// encodePeerRecord encodes a single peer record and stores it into raw
+func encodePeerRecord(raw []byte, peer *PeerRecord, reason uint8) {
+	copy(raw[0:0+33], peer.PublicKey.SerializeCompressed())
+	binary.LittleEndian.PutUint32(raw[65:65+4], peer.LastContact)
+	raw[69] = reason
+
+	// IPv4
+	copy(raw[33:33+4], peer.IPv4.To4())
+	binary.LittleEndian.PutUint16(raw[37:37+2], peer.IPv4Port)
+	binary.LittleEndian.PutUint16(raw[39:39+2], peer.IPv4PortReportedInternal)
+	binary.LittleEndian.PutUint16(raw[41:41+2], peer.IPv4PortReportedExternal)
+
+	// IPv6
+	copy(raw[43:43+16], peer.IPv6.To16())
+	binary.LittleEndian.PutUint16(raw[59:59+2], peer.IPv6Port)
+	binary.LittleEndian.PutUint16(raw[61:61+2], peer.IPv6PortReportedInternal)
+	binary.LittleEndian.PutUint16(raw[63:63+2], peer.IPv6PortReportedExternal)
 }
 
 // setSelfReportedPorts sets the fields Internal Port and External Port according to the connection details.

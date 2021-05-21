@@ -212,16 +212,11 @@ func records2Nodes(records []PeerRecord, peerSource *PeerInfo) (nodes []*dht.Nod
 			peer = peerSource
 		} else if peer = PeerlistLookup(record.PublicKey); peer == nil {
 			// Create temporary peer which is not added to the global list and not added to Kademlia.
-			var addresses []*peerAddress
-
-			port := record.Port
-			if record.PortReportedExternal > 0 { // Use the external port if available
-				port = record.PortReportedExternal
-			}
-
-			addresses = append(addresses, &peerAddress{IP: record.IP, Port: port, PortInternal: record.PortReportedInternal})
-
 			// traversePeer is set to the peer who provided the node information.
+			addresses := record.ToAddresses()
+			if len(addresses) == 0 {
+				continue
+			}
 
 			peer = &PeerInfo{PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, NodeID: publicKey2NodeID(record.PublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource}
 		}
