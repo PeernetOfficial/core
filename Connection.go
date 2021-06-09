@@ -64,6 +64,11 @@ func (c *Connection) IsBehindNAT() bool {
 	return c.PortInternal > 0 && c.Address.Port != int(c.PortInternal)
 }
 
+// IsPortForward checks if the remote peer uses port forwarding on the connection
+func (c *Connection) IsPortForward() bool {
+	return c.PortExternal > 0
+}
+
 // GetConnections returns the list of connections
 func (peer *PeerInfo) GetConnections(active bool) (connections []*Connection) {
 	peer.RLock()
@@ -277,6 +282,26 @@ func (peer *PeerInfo) IsBehindNAT() (result bool) {
 
 	for _, connection := range peer.connectionInactive {
 		if connection.IsBehindNAT() {
+			return true
+		}
+	}
+
+	return false
+}
+
+// IsPortForward checks if the peer uses port forwarding
+func (peer *PeerInfo) IsPortForward() (result bool) {
+	peer.Lock()
+	defer peer.Unlock()
+
+	for _, connection := range peer.connectionActive {
+		if connection.IsPortForward() {
+			return true
+		}
+	}
+
+	for _, connection := range peer.connectionInactive {
+		if connection.IsPortForward() {
 			return true
 		}
 	}

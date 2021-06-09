@@ -185,6 +185,8 @@ func packetWorker(packets <-chan networkWire) {
 					peer.UserAgent = announce.UserAgent
 				}
 				peer.Features = announce.Features
+				peer.BlockchainHeight = announce.BlockchainHeight
+				peer.BlockchainVersion = announce.BlockchainVersion
 
 				peer.cmdAnouncement(announce)
 			}
@@ -206,6 +208,8 @@ func packetWorker(packets <-chan networkWire) {
 					peer.UserAgent = response.UserAgent
 				}
 				peer.Features = response.Features
+				peer.BlockchainHeight = response.BlockchainHeight
+				peer.BlockchainVersion = response.BlockchainVersion
 
 				peer.cmdResponse(response)
 			}
@@ -216,6 +220,8 @@ func packetWorker(packets <-chan networkWire) {
 					peer.UserAgent = announce.UserAgent
 				}
 				peer.Features = announce.Features
+				peer.BlockchainHeight = announce.BlockchainHeight
+				peer.BlockchainVersion = announce.BlockchainVersion
 
 				peer.cmdLocalDiscovery(announce)
 			}
