@@ -175,9 +175,7 @@ func (peer *PeerInfo) registerConnection(incoming *Connection) (result *Connecti
 	peer.connectionActive = append(peer.connectionActive, incoming)
 	peer.setConnectionLatest(incoming)
 
-	if Filters.NewPeerConnection != nil {
-		Filters.NewPeerConnection(peer, incoming)
-	}
+	Filters.NewPeerConnection(peer, incoming)
 
 	return incoming
 }

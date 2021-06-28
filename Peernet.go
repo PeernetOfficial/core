@@ -8,6 +8,7 @@ package core
 
 // Init initializes the client. The config must be loaded first!
 func Init() {
+	initFilters()
 	initPeerID()
 	initKademlia()
 	initMessageSequence()

@@ -145,12 +145,8 @@ func PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*Connection) (peer *
 		}
 	}
 
-	if Filters.NewPeer != nil {
-		Filters.NewPeer(peer, connections[0])
-	}
-	if Filters.NewPeerConnection != nil {
-		Filters.NewPeerConnection(peer, connections[0])
-	}
+	Filters.NewPeer(peer, connections[0])
+	Filters.NewPeerConnection(peer, connections[0])
 
 	return peer, true
 }
