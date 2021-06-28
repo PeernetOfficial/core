@@ -8,7 +8,6 @@ package core
 
 import (
 	"errors"
-	"log"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -127,8 +126,8 @@ func (network *Network) Listen() {
 				return
 			}
 
-			log.Printf("Listen Error receiving UDP message: %v\n", err) // Only log for debug purposes.
-			time.Sleep(time.Millisecond * 50)                           // In case of endless errors, prevent ddos of CPU.
+			Filters.LogError("Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
+			time.Sleep(time.Millisecond * 50)                              // In case of endless errors, prevent ddos of CPU.
 			continue
 		}
 
@@ -147,7 +146,7 @@ func packetWorker(packets <-chan networkWire) {
 	for packet := range packets {
 		decoded, senderPublicKey, err := PacketDecrypt(packet.raw, packet.receiverPublicKey)
 		if err != nil {
-			//log.Printf("packetWorker Error decrypting packet from '%s': %s\n", packet.sender.String(), err.Error())
+			//Filters.LogError("packetWorker", "decrypting packet from '%s': %s\n", packet.sender.String(), err.Error())  // Only log for debug purposes.
 			continue
 		}
 
@@ -195,7 +194,7 @@ func packetWorker(packets <-chan networkWire) {
 			if response, _ := msgDecodeResponse(raw); response != nil {
 				// Validate sequence number which prevents unsolicited responses.
 				if valid, rtt := msgValidateSequence(raw, response.Actions&(1<<ActionSequenceLast) > 0); !valid {
-					log.Printf("packetWorker message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
+					//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 					continue
 				} else if rtt > 0 {
 					connection.RoundTripTime = rtt
@@ -232,7 +231,7 @@ func packetWorker(packets <-chan networkWire) {
 		case CommandPong: // Ping
 			// Validate sequence number which prevents unsolicited responses.
 			if valid, rtt := msgValidateSequence(raw, true); !valid {
-				log.Printf("packetWorker message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
+				//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 				continue
 			} else if rtt > 0 {
 				connection.RoundTripTime = rtt

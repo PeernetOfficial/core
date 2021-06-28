@@ -10,7 +10,6 @@ package core
 
 import (
 	"encoding/hex"
-	"log"
 	"net"
 	"strconv"
 	"time"
@@ -62,8 +61,8 @@ func (network *Network) BroadcastIPv4Listen() {
 		length, sender, err := network.broadcastSocket.ReadFrom(buffer)
 
 		if err != nil {
-			log.Printf("Listen Error receiving UDP message: %v\n", err) // Only log for debug purposes.
-			time.Sleep(time.Millisecond * 50)                           // In case of endless errors, prevent ddos of CPU.
+			Filters.LogError("BroadcastIPv4Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
+			time.Sleep(time.Millisecond * 50)                                           // In case of endless errors, prevent ddos of CPU.
 			continue
 		}
 
@@ -104,7 +103,7 @@ func (network *Network) BroadcastIPv4Send() (err error) {
 	for _, ip := range network.broadcastIPv4 {
 		err = network.send(ip, ipv4BroadcastPort, raw)
 		if err != nil {
-			log.Printf("Error sending UDP packet: %v\n", err)
+			Filters.LogError("BroadcastIPv4Send", "sending UDP packet: %v\n", err)
 		}
 	}
 

@@ -11,7 +11,6 @@ package core
 
 import (
 	"errors"
-	"log"
 	"math/rand"
 	"net"
 	"strconv"
@@ -60,14 +59,14 @@ func initNetwork() {
 				host = listenA
 				portA = "0"
 			} else if err != nil {
-				log.Printf("initNetwork Error invalid input listen address '%s': %s\n", listenA, err.Error())
+				Filters.LogError("initNetwork", "invalid input listen address '%s': %s\n", listenA, err.Error())
 				continue
 			}
 
 			portI, _ := strconv.Atoi(portA)
 
 			if _, err := networkPrepareListen(host, portI); err != nil {
-				log.Printf("initNetwork Error listen on '%s': %s\n", listenA, err.Error())
+				Filters.LogError("initNetwork", "listen on '%s': %s\n", listenA, err.Error())
 				continue
 			}
 		}
@@ -77,10 +76,10 @@ func initNetwork() {
 
 	// Listen on all IPv4 and IPv6 addresses
 	//if _, err := networkPrepareListen("0.0.0.0", 0); err != nil {
-	//	log.Printf("initNetwork Error listen on all IPv4 addresses (0.0.0.0): %s\n", err.Error())
+	//	Filters.LogError("initNetwork", "listen on all IPv4 addresses (0.0.0.0): %s\n", err.Error())
 	//}
 	//if _, err := networkPrepareListen("::", 0); err != nil {
-	//	log.Printf("initNetwork Error listen on all IPv6 addresses (::): %s\n", err.Error())
+	//	Filters.LogError("initNetwork", "listen on all IPv6 addresses (::): %s\n", err.Error())
 	//}
 
 	// Listen on each network adapter on each IP. This guarantees the highest deliverability, even though it brings on additional challenges such as:
@@ -89,14 +88,14 @@ func initNetwork() {
 	// * Network adapters and IPs might change. Simplest case is if someone changes Wifi network.
 	interfaceList, err := net.Interfaces()
 	if err != nil {
-		log.Printf("initNetwork enumerating network adapters failed: %s\n", err.Error())
+		Filters.LogError("initNetwork", "enumerating network adapters failed: %s\n", err.Error())
 		return
 	}
 
 	for _, iface := range interfaceList {
 		addresses, err := iface.Addrs()
 		if err != nil {
-			log.Printf("initNetwork error enumerating IPs for network adapter '%s': %s\n", iface.Name, err.Error())
+			Filters.LogError("initNetwork", "enumerating IPs for network adapter '%s': %s\n", iface.Name, err.Error())
 			continue
 		}
 
@@ -126,13 +125,13 @@ func networkStart(iface net.Interface, addresses []net.Addr) (networks []*Networ
 				continue
 			}
 
-			log.Printf("initNetwork error listening on network adapter '%s' IPv4 '%s': %s\n", iface.Name, net1.IP.String(), err.Error())
+			Filters.LogError("networkStart", "listening on network adapter '%s' IPv4 '%s': %s\n", iface.Name, net1.IP.String(), err.Error())
 			continue
 		}
 
 		addListenAddress(netw.address)
 
-		log.Printf("Listen on network '%s' UDP %s\n", iface.Name, netw.address.String())
+		Filters.LogError("networkStart", "listen on network '%s' UDP %s\n", iface.Name, netw.address.String())
 
 		networks = append(networks, netw)
 	}

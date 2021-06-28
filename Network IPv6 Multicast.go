@@ -18,7 +18,6 @@ package core
 
 import (
 	"encoding/hex"
-	"log"
 	"net"
 	"strconv"
 	"time"
@@ -68,7 +67,7 @@ func (network *Network) MulticastIPv6Join() (err error) {
 		if loop, err := pc.MulticastLoopback(); err == nil {
 			if !loop {
 				if err := pc.SetMulticastLoopback(true); err != nil {
-					log.Printf("MulticastJoin Error setting multicast loopback status: %v\n", err)
+					Filters.LogError("MulticastIPv6Join", "setting multicast loopback status: %v\n", err)
 				}
 			}
 		}
@@ -107,8 +106,8 @@ func (network *Network) MulticastIPv6Listen() {
 		length, sender, err := network.multicastSocket.ReadFrom(buffer)
 
 		if err != nil {
-			log.Printf("Listen Error receiving UDP message: %v\n", err) // Only log for debug purposes.
-			time.Sleep(time.Millisecond * 50)                           // In case of endless errors, prevent ddos of CPU.
+			Filters.LogError("MulticastIPv6Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
+			time.Sleep(time.Millisecond * 50)                                           // In case of endless errors, prevent ddos of CPU.
 			continue
 		}
 

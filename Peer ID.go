@@ -8,7 +8,6 @@ package core
 
 import (
 	"encoding/hex"
-	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -40,7 +39,7 @@ func initPeerID() {
 			return
 		}
 
-		log.Printf("Private key in config is corrupted! Error: %s\n", err.Error())
+		Filters.LogError("initPeerID", "private key in config is corrupted! Error: %s\n", err.Error())
 		os.Exit(1)
 	}
 
@@ -48,7 +47,7 @@ func initPeerID() {
 	var err error
 	peerPrivateKey, peerPublicKey, err = Secp256k1NewPrivateKey()
 	if err != nil {
-		log.Printf("Error generating public-private key pairs: %s\n", err.Error())
+		Filters.LogError("initPeerID", "generating public-private key pairs: %s\n", err.Error())
 		os.Exit(1)
 	}
 	nodeID = publicKey2NodeID(peerPublicKey)

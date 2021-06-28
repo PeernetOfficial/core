@@ -9,7 +9,6 @@ package core
 import (
 	"bytes"
 	"fmt"
-	"log"
 
 	"github.com/PeernetOfficial/core/dht"
 )
@@ -132,7 +131,7 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 	if msg.sequence == nil || msg.sequence.data == nil {
 		// If there is no sequence data but there were results returned, it means we received unsolicited response data. It will be rejected.
 		if len(msg.HashesNotFound) > 0 || len(msg.Hash2Peers) > 0 || len(msg.FilesEmbed) > 0 {
-			log.Printf("cmdResponse unsolicited response data received from %s\n", msg.connection.Address.String())
+			Filters.LogError("cmdResponse", "unsolicited response data received from %s\n", msg.connection.Address.String())
 		}
 
 		return
@@ -143,7 +142,7 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 		for _, hash2Peer := range msg.Hash2Peers {
 			// Make sure no garbage is returned. The key must be self and only Closest is expected.
 			if !bytes.Equal(hash2Peer.ID.Hash, nodeID) || len(hash2Peer.Closest) == 0 {
-				log.Printf("Incoming response to bootstrap FIND_SELF contains invalid data from %s\n", msg.connection.Address.String())
+				Filters.LogError("cmdResponse", "incoming response to bootstrap FIND_SELF contains invalid data from %s\n", msg.connection.Address.String())
 				return
 			}
 
@@ -207,7 +206,7 @@ func (peer *PeerInfo) cmdLocalDiscovery(msg *MessageAnnouncement) {
 	// only accept local discovery message from private IPs for IPv4
 	// IPv6 DHCP routers typically assign public IPv6s and they can join multicast in the local network.
 	//if msg.connection.IsIPv4() && !msg.connection.IsLocal() {
-	//	log.Printf("cmdLocalDiscovery message received from non-local IP %s peer ID %s\n", msg.connection.Address.String(), hex.EncodeToString(msg.SenderPublicKey.SerializeCompressed()))
+	//	Filters.LogError("cmdLocalDiscovery", "message received from non-local IP %s peer ID %s\n", msg.connection.Address.String(), hex.EncodeToString(msg.SenderPublicKey.SerializeCompressed()))
 	//	return
 	//}
 

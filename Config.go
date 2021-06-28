@@ -105,13 +105,13 @@ func LoadConfigOut(Filename string, ConfigOut interface{}) (status int, err erro
 func saveConfig() {
 	data, err := yaml.Marshal(config)
 	if err != nil {
-		log.Printf("saveConfig Error marshalling config: %v\n", err.Error())
+		Filters.LogError("saveConfig", "marshalling config: %v\n", err.Error())
 		return
 	}
 
 	err = ioutil.WriteFile(configFile, data, 0644)
 	if err != nil {
-		log.Printf("saveConfig Error writing config '%s': %v\n", configFile, err.Error())
+		Filters.LogError("saveConfig", "writing config '%s': %v\n", configFile, err.Error())
 		return
 	}
 }

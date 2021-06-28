@@ -7,7 +7,6 @@ Author:     Peter Kleissner
 package core
 
 import (
-	"log"
 	"net"
 	"strings"
 	"time"
@@ -105,7 +104,7 @@ func networkChangeMonitor() {
 
 		interfaceList, err := net.Interfaces()
 		if err != nil {
-			log.Printf("networkChangeMonitor enumerating network adapters failed: %s\n", err.Error())
+			Filters.LogError("networkChangeMonitor", "enumerating network adapters failed: %s\n", err.Error())
 			continue
 		}
 
@@ -114,7 +113,7 @@ func networkChangeMonitor() {
 		for _, iface := range interfaceList {
 			addressesNew, err := iface.Addrs()
 			if err != nil {
-				log.Printf("initNetwork error enumerating IPs for network adapter '%s': %s\n", iface.Name, err.Error())
+				Filters.LogError("networkChangeMonitor", "enumerating IPs for network adapter '%s': %s\n", iface.Name, err.Error())
 				continue
 			}
 			ifacesNew[iface.Name] = addressesNew
@@ -169,7 +168,7 @@ func networkChangeMonitor() {
 
 // networkChangeInterfaceNew is called when a new interface is detected
 func networkChangeInterfaceNew(iface net.Interface, addresses []net.Addr) {
-	log.Printf("networkChangeInterfaceNew new interface '%s' (%d IPs)\n", iface.Name, len(addresses))
+	Filters.LogError("networkChangeInterfaceNew", "new interface '%s' (%d IPs)\n", iface.Name, len(addresses))
 
 	networks := networkStart(iface, addresses)
 
@@ -185,7 +184,7 @@ func networkChangeInterfaceRemove(iface string, addresses []net.Addr) {
 	networksMutex.RLock()
 	defer networksMutex.RUnlock()
 
-	log.Printf("networkChangeInterfaceRemove removing interface '%s' (%d IPs)\n", iface, len(addresses))
+	Filters.LogError("networkChangeInterfaceRemove", "removing interface '%s' (%d IPs)\n", iface, len(addresses))
 
 	for n, network := range networks6 {
 		if network.iface != nil && network.iface.Name == iface {
@@ -216,7 +215,7 @@ func networkChangeInterfaceRemove(iface string, addresses []net.Addr) {
 
 // networkChangeIPNew is called when an existing interface lists a new IP
 func networkChangeIPNew(iface net.Interface, address net.Addr) {
-	log.Printf("networkChangeIPNew new interface '%s' IP %s\n", iface.Name, address.String())
+	Filters.LogError("networkChangeIPNew", "new interface '%s' IP %s\n", iface.Name, address.String())
 
 	networks := networkStart(iface, []net.Addr{address})
 
@@ -232,7 +231,7 @@ func networkChangeIPRemove(iface net.Interface, address net.Addr) {
 	networksMutex.RLock()
 	defer networksMutex.RUnlock()
 
-	log.Printf("networkChangeIPRemove remove interface '%s' IP %s\n", iface.Name, address.String())
+	Filters.LogError("networkChangeIPRemove", "remove interface '%s' IP %s\n", iface.Name, address.String())
 
 	for n, network := range networks6 {
 		if network.address.IP.Equal(address.(*net.IPNet).IP) {
