@@ -30,7 +30,10 @@ func initFilters() {
 	Filters.NewPeer = func(peer *PeerInfo, connection *Connection) {}
 	Filters.NewPeerConnection = func(peer *PeerInfo, connection *Connection) {}
 
-	Filters.LogError = DefaultLogError
+	// Only set the error function if not already set before init.
+	if Filters.LogError == nil {
+		Filters.LogError = DefaultLogError
+	}
 }
 
 // DefaultLogError is the default error logging function
