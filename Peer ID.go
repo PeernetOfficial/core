@@ -31,7 +31,7 @@ func initPeerID() {
 		configPK, err := hex.DecodeString(config.PrivateKey)
 		if err == nil {
 			peerPrivateKey, peerPublicKey = btcec.PrivKeyFromBytes(btcec.S256(), configPK)
-			nodeID = publicKey2NodeID(peerPublicKey)
+			nodeID = PublicKey2NodeID(peerPublicKey)
 
 			if config.AutoUpdateSeedList {
 				configUpdateSeedList()
@@ -50,7 +50,7 @@ func initPeerID() {
 		Filters.LogError("initPeerID", "generating public-private key pairs: %s\n", err.Error())
 		os.Exit(1)
 	}
-	nodeID = publicKey2NodeID(peerPublicKey)
+	nodeID = PublicKey2NodeID(peerPublicKey)
 
 	// save the newly generated private key into the config
 	config.PrivateKey = hex.EncodeToString(peerPrivateKey.Serialize())
@@ -126,7 +126,7 @@ func PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*Connection) (peer *
 		return peer, false
 	}
 
-	peer = &PeerInfo{PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], NodeID: publicKey2NodeID(PublicKey), messageSequence: rand.Uint32()}
+	peer = &PeerInfo{PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], NodeID: PublicKey2NodeID(PublicKey), messageSequence: rand.Uint32()}
 	_, peer.IsRootPeer = rootPeers[publicKeyCompressed]
 
 	peerList[publicKeyCompressed] = peer
@@ -196,9 +196,8 @@ func publicKey2Compressed(publicKey *btcec.PublicKey) [btcec.PubKeyBytesLenCompr
 	return key
 }
 
-// publicKey2NodeID translates the Public Key into the node ID used in the Kademlia network.
-// This is very important for lookup of data in the DHT.
-func publicKey2NodeID(publicKey *btcec.PublicKey) (nodeID []byte) {
+// PublicKey2NodeID translates the Public Key into the node ID used in the Kademlia network.
+func PublicKey2NodeID(publicKey *btcec.PublicKey) (nodeID []byte) {
 	return hashData(publicKey.SerializeCompressed())
 }
 
@@ -222,7 +221,7 @@ func records2Nodes(records []PeerRecord, peerSource *PeerInfo) (nodes []*dht.Nod
 				continue
 			}
 
-			peer = &PeerInfo{PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, NodeID: publicKey2NodeID(record.PublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource}
+			peer = &PeerInfo{PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, NodeID: PublicKey2NodeID(record.PublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource}
 		}
 
 		nodes = append(nodes, &dht.Node{ID: peer.NodeID, LastSeen: record.LastContactT, Info: peer})
