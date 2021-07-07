@@ -163,3 +163,15 @@ func StoreDataDHT(data []byte) error {
 	}
 	return nodesDHT.Store(key, uint64(len(data)))
 }
+
+// ---- NODE FUNCTIONS ----
+
+// IsNodeContact checks if the node is a contact in the local DHT routing table
+func IsNodeContact(nodeID []byte) (node *dht.Node, peer *PeerInfo) {
+	node = nodesDHT.IsNodeContact(nodeID)
+	if node == nil {
+		return nil, nil
+	}
+
+	return node, node.Info.(*PeerInfo)
+}

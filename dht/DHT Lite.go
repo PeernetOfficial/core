@@ -96,6 +96,11 @@ func (dht *DHT) IsNodeCloser(node1, node2 []byte) bool {
 	return iDist.Cmp(jDist) == -1
 }
 
+// IsNodeContact checks if the given node is in the local routing table
+func (dht *DHT) IsNodeContact(ID []byte) (node *Node) {
+	return dht.ht.doesNodeExist(ID)
+}
+
 // ---- Synchronous network query functions below ----
 
 // Store informs the network about data stored locally.

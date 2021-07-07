@@ -74,15 +74,19 @@ func (ht *hashTable) markNodeAsSeen(index int, ID []byte) {
 	ht.RoutingTable[index] = bucket
 }
 
-func (ht *hashTable) doesNodeExistInBucket(bucket int, node []byte) bool {
+func (ht *hashTable) doesNodeExistInBucket(bucket int, ID []byte) (node *Node) {
 	ht.mutex.RLock()
 	defer ht.mutex.RUnlock()
-	for _, v := range ht.RoutingTable[bucket] {
-		if bytes.Compare(v.ID, node) == 0 {
-			return true
+	for _, node = range ht.RoutingTable[bucket] {
+		if bytes.Compare(node.ID, ID) == 0 {
+			return node
 		}
 	}
-	return false
+	return nil
+}
+
+func (ht *hashTable) doesNodeExist(ID []byte) (node *Node) {
+	return ht.doesNodeExistInBucket(ht.getBucketIndexFromDifferingBit(ID), ID)
 }
 
 // getClosestContacts returns the closest nodes to the target. filterFunc is optional and allows the caller to filter the nodes.
@@ -140,7 +144,7 @@ func (ht *hashTable) insertNode(node *Node, shouldEvict func(nodeOld *Node, node
 	index := ht.getBucketIndexFromDifferingBit(node.ID)
 
 	// If the node already exist, mark it as seen
-	if ht.doesNodeExistInBucket(index, node.ID) {
+	if ht.doesNodeExistInBucket(index, node.ID) != nil {
 		ht.markNodeAsSeen(index, node.ID)
 		return
 	}
