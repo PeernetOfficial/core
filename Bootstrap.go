@@ -43,12 +43,12 @@ loopSeedList:
 		// parse the Public Key
 		publicKeyB, err := hex.DecodeString(seed.PublicKey)
 		if err != nil {
-			Filters.LogError("initSeedList", "public key '%s': %v", seed.PublicKey, err.Error())
+			Filters.LogError("initSeedList", "public key '%s': %v\n", seed.PublicKey, err.Error())
 			continue
 		}
 
 		if peer.publicKey, err = btcec.ParsePubKey(publicKeyB, btcec.S256()); err != nil {
-			Filters.LogError("initSeedList", "public key '%s': %v", seed.PublicKey, err.Error())
+			Filters.LogError("initSeedList", "public key '%s': %v\n", seed.PublicKey, err.Error())
 			continue
 		}
 
@@ -60,7 +60,7 @@ loopSeedList:
 		for _, addressA := range seed.Address {
 			address, err := parseAddress(addressA)
 			if err != nil {
-				Filters.LogError("initSeedList", "public key '%s' address '%s': %v", seed.PublicKey, addressA, err.Error())
+				Filters.LogError("initSeedList", "public key '%s' address '%s': %v\n", seed.PublicKey, addressA, err.Error())
 				continue loopSeedList
 			}
 
@@ -162,13 +162,13 @@ func autoMulticastBroadcast() {
 
 		for _, network := range networks6 {
 			if err := network.MulticastIPv6Send(); err != nil {
-				Filters.LogError("autoMulticastBroadcast", "multicast from network address '%s': %v", network.address.IP.String(), err.Error())
+				Filters.LogError("autoMulticastBroadcast", "multicast from network address '%s': %v\n", network.address.IP.String(), err.Error())
 			}
 		}
 
 		for _, network := range networks4 {
 			if err := network.BroadcastIPv4Send(); err != nil {
-				Filters.LogError("autoMulticastBroadcast", "broadcast from network address '%s': %v", network.address.IP.String(), err.Error())
+				Filters.LogError("autoMulticastBroadcast", "broadcast from network address '%s': %v\n", network.address.IP.String(), err.Error())
 			}
 		}
 	}

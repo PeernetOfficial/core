@@ -69,6 +69,11 @@ func (c *Connection) IsPortForward() bool {
 	return c.PortExternal > 0
 }
 
+// IsVirtual returns true if the peer has not been connected yet. This is the case if another peer responds with peer details, and that peer shall be contacted.
+func (peer *PeerInfo) IsVirtual() bool {
+	return peer.isVirtual
+}
+
 // GetConnections returns the list of connections
 func (peer *PeerInfo) GetConnections(active bool) (connections []*Connection) {
 	peer.RLock()

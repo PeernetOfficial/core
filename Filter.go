@@ -8,7 +8,11 @@ Filters allow the caller to intercept events to log, modify, or prevent.
 
 package core
 
-import "log"
+import (
+	"log"
+
+	"github.com/PeernetOfficial/core/dht"
+)
 
 // Filters contains all functions to install the hook. Use nil for unused.
 // The functions are called sequentially and block execution; if the filter takes a long time it should start a Go routine.
@@ -23,14 +27,25 @@ var Filters struct {
 
 	// LogError is called for any error. If this function is overwritten by the caller, the caller must write errors into the log file if desired, or call DefaultLogError.
 	LogError func(function, format string, v ...interface{})
+
+	// DHTSearchStatus is called with updates of searches in the DHT. It allows to see the live progress of searches.
+	DHTSearchStatus func(client *dht.SearchClient, function, format string, v ...interface{})
 }
 
 func initFilters() {
 	// Set default filters to blank functions so they can be safely called without constant nil checks.
-	Filters.NewPeer = func(peer *PeerInfo, connection *Connection) {}
-	Filters.NewPeerConnection = func(peer *PeerInfo, connection *Connection) {}
+	// Only if not already set before init.
 
-	// Only set the error function if not already set before init.
+	if Filters.NewPeer == nil {
+		Filters.NewPeer = func(peer *PeerInfo, connection *Connection) {}
+	}
+	if Filters.NewPeerConnection == nil {
+		Filters.NewPeerConnection = func(peer *PeerInfo, connection *Connection) {}
+	}
+	if Filters.DHTSearchStatus == nil {
+		Filters.DHTSearchStatus = func(client *dht.SearchClient, function, format string, v ...interface{}) {}
+	}
+
 	if Filters.LogError == nil {
 		Filters.LogError = DefaultLogError
 	}

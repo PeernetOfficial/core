@@ -56,6 +56,8 @@ func initKademlia() {
 			node.Info.(*PeerInfo).sendAnnouncementFindValue(request)
 		}
 	}
+
+	nodesDHT.FilterSearchStatus = Filters.DHTSearchStatus
 }
 
 // autoBucketRefresh refreshes buckets every 5 minutes to meet the alpha nodes per bucket target. Force full refresh every hour.
@@ -174,4 +176,22 @@ func IsNodeContact(nodeID []byte) (node *dht.Node, peer *PeerInfo) {
 	}
 
 	return node, node.Info.(*PeerInfo)
+}
+
+// FindNode finds a node via the DHT
+func FindNode(nodeID []byte, Timeout time.Duration) (node *dht.Node, peer *PeerInfo, err error) {
+	node, err = nodesDHT.FindNode(nodeID)
+	if node == nil {
+		return nil, nil, err
+	}
+
+	return node, node.Info.(*PeerInfo), err
+}
+
+// ---- Asynchronous Search ----
+
+// AsyncSearch creates an async search for the given key in the DHT.
+// Timeout is the total time the search may take, covering all information requests. TimeoutIR is the time an information request may take.
+func AsyncSearch(Action int, Key []byte, Timeout, TimeoutIR time.Duration) (client *dht.SearchClient) {
+	return nodesDHT.NewSearch(Action, Key, Timeout, TimeoutIR)
 }
