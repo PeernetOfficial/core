@@ -127,7 +127,6 @@ type NodeMessage struct {
 	Data     []byte  // FIND_VALUE: Actual data
 	Closest  []*Node // FIND_VALUE, FIND_NODE: Closest nodes to the requested key
 	Storing  []*Node // FIND_VALUE: Nodes known to store the value
-	Error    error   // To be removed
 }
 
 // NodeFilterFunc is called to filter nodes based on the callers choice

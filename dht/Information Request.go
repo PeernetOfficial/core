@@ -19,6 +19,7 @@ type InformationRequest struct {
 	Action          int               // ActionX
 	Key             []byte            // Key that is being queried
 	ResultChan      chan *NodeMessage // Result channel
+	ResultChanExt   chan *NodeMessage // External result channel to use instead
 	ActiveNodes     uint64            // Number of nodes actively handling the request.
 	Nodes           []*Node           // Nodes that are receiving the request.
 	IsTerminated    bool              // If true, it was signaled for termination
@@ -94,12 +95,17 @@ func (ir *InformationRequest) Done() {
 	}
 }
 
-// QueueResult accepts incoming results
+// QueueResult accepts incoming results and queues them to the result channel. Non-blocking.
 func (ir *InformationRequest) QueueResult(message *NodeMessage) {
 	ir.Lock()
 	if !ir.IsTerminated {
+		targetChan := ir.ResultChan
+		if ir.ResultChanExt != nil {
+			targetChan = ir.ResultChanExt
+		}
+
 		select {
-		case ir.ResultChan <- message:
+		case targetChan <- message:
 		default:
 		}
 	}

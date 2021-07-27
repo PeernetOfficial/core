@@ -37,16 +37,28 @@ type DHT struct {
 	// SendRequestFindValue sends an information request to find data. nodes are the nodes to send the request to.
 	SendRequestFindValue func(request *InformationRequest)
 
+	// FilterSearchStatus is called with updates of searches in the DHT
+	FilterSearchStatus func(client *SearchClient, function, format string, v ...interface{})
+
 	// The maximum time to wait for a response to any message in Store, Get, FindNode
 	TMsgTimeout time.Duration
+
+	// TimeoutSearch is the maximum time a search may take.
+	TimeoutSearch time.Duration
+
+	// TimeoutIR is the maximum an information request to a node may take.
+	TimeoutIR time.Duration
 }
 
 // NewDHT initializes a new DHT node with default values.
 func NewDHT(self *Node, bits, bucketSize, alpha int) *DHT {
 	return &DHT{
-		ht:          newHashTable(self, bits, bucketSize),
-		alpha:       alpha,
-		TMsgTimeout: 2 * time.Second,
+		ht:                 newHashTable(self, bits, bucketSize),
+		alpha:              alpha,
+		TMsgTimeout:        2 * time.Second,
+		FilterSearchStatus: func(client *SearchClient, function, format string, v ...interface{}) {},
+		TimeoutSearch:      10 * time.Second,
+		TimeoutIR:          6 * time.Second,
 	}
 }
 
@@ -123,10 +135,6 @@ func (dht *DHT) Store(key []byte, dataSize uint64) (err error) {
 		results := info.CollectResults(dht.TMsgTimeout)
 
 		for _, result := range results {
-			if result.Error != nil {
-				sl.RemoveNode(result.SenderID)
-				continue
-			}
 			sl.AppendUniqueNodes(result.Closest...)
 		}
 
@@ -169,10 +177,6 @@ func (dht *DHT) Get(key []byte) (value []byte, senderID []byte, found bool, err 
 		results := info.CollectResults(dht.TMsgTimeout)
 
 		for _, result := range results {
-			if result.Error != nil {
-				sl.RemoveNode(result.SenderID)
-				continue
-			}
 			if len(result.Data) > 0 {
 				return result.Data, result.SenderID, true, nil
 			}
@@ -191,51 +195,24 @@ func (dht *DHT) Get(key []byte) (value []byte, senderID []byte, found bool, err 
 	}
 }
 
-// FindNode finds the target node in the network
-func (dht *DHT) FindNode(key []byte) (value []byte, found bool, err error) {
+// FindNode finds the target node in the network. Blocking!
+// The caller may use dht.NewSearch directly and take advantage of the asynchronous response and custom timeouts.
+func (dht *DHT) FindNode(key []byte) (node *Node, err error) {
 	if len(key)*8 != dht.ht.bBits {
-		return nil, false, errors.New("invalid key size")
+		return nil, errors.New("invalid key size")
 	}
 
-	// Keep a reference to closestNode. If after performing a search we do not find a closer node, we stop searching.
-	sl := dht.ht.getClosestContacts(dht.alpha, key, nil)
-	if len(sl.Nodes) == 0 {
-		return nil, false, nil
+	search := dht.NewSearch(ActionFindNode, key, dht.TimeoutSearch, dht.TimeoutIR)
+	search.LogStatus = func(function, format string, v ...interface{}) {
+		dht.FilterSearchStatus(search, function, format, v...)
 	}
+	search.SearchAway()
 
-	// According to the Kademlia white paper, after a round of FIND_NODE RPCs fails to provide a node closer than closestNode, we should send a
-	// FIND_NODE RPC to all remaining nodes in the shortlist that have not yet been contacted.
-	queryRest := false
-
-	closestNode := sl.Nodes[0]
-
-	for {
-		info := dht.NewInformationRequest(ActionFindNode, key, sl.GetUncontacted(dht.alpha, !queryRest))
-		dht.SendRequestFindNode(info)
-		results := info.CollectResults(dht.TMsgTimeout)
-
-		for _, result := range results {
-			if result.Error != nil {
-				sl.RemoveNode(result.SenderID)
-				continue
-			}
-			sl.AppendUniqueNodes(result.Closest...)
-
-			// TODO: Check if node was found.
-		}
-
-		sort.Sort(sl)
-
-		// If closestNode is unchanged then we are done
-		if bytes.Equal(sl.Nodes[0].ID, closestNode.ID) || queryRest {
-			if !queryRest {
-				queryRest = true
-				continue
-			}
-			return nil, false, nil
-		}
-
-		closestNode = sl.Nodes[0]
+	select {
+	case <-search.TerminateSignal:
+		return nil, nil
+	case result := <-search.Results:
+		return result.TargetNode, nil
 	}
 }
 
