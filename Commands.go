@@ -36,6 +36,8 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 
 	// FIND_SELF: Requesting peers close to the sender?
 	if msg.Actions&(1<<ActionFindSelf) > 0 {
+		Filters.IncomingRequest(peer, ActionFindSelf, peer.NodeID, nil)
+
 		selfD := Hash2Peer{ID: KeyHash{peer.NodeID}}
 
 		// do not respond the caller's own peer (add to ignore list)
@@ -55,6 +57,8 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 	// FIND_PEER: Find a different peer?
 	if msg.Actions&(1<<ActionFindPeer) > 0 && len(msg.FindPeerKeys) > 0 {
 		for _, findPeer := range msg.FindPeerKeys {
+			Filters.IncomingRequest(peer, ActionFindPeer, findPeer.Hash, nil)
+
 			details := Hash2Peer{ID: findPeer}
 
 			// Same as before, put self as ignoredNodes.
@@ -75,6 +79,8 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 	// Find a value?
 	if msg.Actions&(1<<ActionFindValue) > 0 {
 		for _, findHash := range msg.FindDataKeys {
+			Filters.IncomingRequest(peer, ActionFindValue, findHash.Hash, nil)
+
 			stored, data := announcementGetData(findHash.Hash)
 			if stored && len(data) > 0 {
 				filesEmbed = append(filesEmbed, EmbeddedFileData{ID: findHash, Data: data})
@@ -89,6 +95,10 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 
 	// Information about files stored by the sender?
 	if msg.Actions&(1<<ActionInfoStore) > 0 && len(msg.InfoStoreFiles) > 0 {
+		for n := range msg.InfoStoreFiles {
+			Filters.IncomingRequest(peer, ActionInfoStore, msg.InfoStoreFiles[n].ID.Hash, &msg.InfoStoreFiles[n])
+		}
+
 		peer.announcementStore(msg.InfoStoreFiles)
 	}
 

@@ -30,6 +30,9 @@ var Filters struct {
 
 	// DHTSearchStatus is called with updates of searches in the DHT. It allows to see the live progress of searches.
 	DHTSearchStatus func(client *dht.SearchClient, function, format string, v ...interface{})
+
+	// IncomingRequest receives all incoming information requests. The action field is set accordingly.
+	IncomingRequest func(peer *PeerInfo, Action int, Key []byte, Info interface{})
 }
 
 func initFilters() {
@@ -45,9 +48,11 @@ func initFilters() {
 	if Filters.DHTSearchStatus == nil {
 		Filters.DHTSearchStatus = func(client *dht.SearchClient, function, format string, v ...interface{}) {}
 	}
-
 	if Filters.LogError == nil {
 		Filters.LogError = DefaultLogError
+	}
+	if Filters.IncomingRequest == nil {
+		Filters.IncomingRequest = func(peer *PeerInfo, Action int, Key []byte, Info interface{}) {}
 	}
 }
 

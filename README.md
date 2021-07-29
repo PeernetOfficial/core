@@ -2,7 +2,7 @@
 
 The core library which is needed for any Peernet application. It provides connectivity to the network and all basic functions. For details about Peernet see https://peernet.org/. For the current technical roadmap and upcoming releases see the [Talk forum](https://talk.peernet.org/discussion/10/technical-roadmap).
 
-Current version: Alpha 2
+Current version: Alpha 3
 
 Current development status: Initial connectivity works. DHT functionality is in development.
 
