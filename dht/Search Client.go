@@ -177,7 +177,13 @@ func (client *SearchClient) sendInfoRequest(nodes []*Node, resultChan chan *Node
 
 	info = client.dht.NewInformationRequest(client.Action, client.Key, nodes)
 	info.ResultChanExt = resultChan
-	client.dht.SendRequestFindNode(info)
+
+	switch client.Action {
+	case ActionFindNode:
+		client.dht.SendRequestFindNode(info)
+	case ActionFindValue:
+		client.dht.SendRequestFindValue(info)
+	}
 
 	go func() {
 		select {
