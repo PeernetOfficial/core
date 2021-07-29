@@ -156,14 +156,14 @@ func StoreDataLocal(data []byte) error {
 	return Warehouse.Store(key, data, time.Time{}, time.Time{})
 }
 
-// StoreDataDHT stores data locally and informs peers in the DHT about it.
+// StoreDataDHT stores data locally and informs closestCount peers in the DHT about it.
 // Remote peers may choose to keep a record (in case another peers asks) or mirror the full data.
-func StoreDataDHT(data []byte) error {
+func StoreDataDHT(data []byte, closestCount int) error {
 	key := hashData(data)
 	if err := Warehouse.Store(key, data, time.Time{}, time.Time{}); err != nil {
 		return err
 	}
-	return nodesDHT.Store(key, uint64(len(data)))
+	return nodesDHT.Store(key, uint64(len(data)), closestCount)
 }
 
 // ---- NODE FUNCTIONS ----
@@ -192,6 +192,7 @@ func FindNode(nodeID []byte, Timeout time.Duration) (node *dht.Node, peer *PeerI
 
 // AsyncSearch creates an async search for the given key in the DHT.
 // Timeout is the total time the search may take, covering all information requests. TimeoutIR is the time an information request may take.
-func AsyncSearch(Action int, Key []byte, Timeout, TimeoutIR time.Duration) (client *dht.SearchClient) {
-	return nodesDHT.NewSearch(Action, Key, Timeout, TimeoutIR)
+// Alpha is the number of concurrent requests that will be performed.
+func AsyncSearch(Action int, Key []byte, Timeout, TimeoutIR time.Duration, Alpha int) (client *dht.SearchClient) {
+	return nodesDHT.NewSearch(Action, Key, Timeout, TimeoutIR, Alpha)
 }

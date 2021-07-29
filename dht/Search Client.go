@@ -13,17 +13,10 @@ package dht
 import (
 	"bytes"
 	"encoding/hex"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 )
-
-// MaxConcurrentRequestsPerLevel is the default max count of active concurrent requests per level.
-const MaxConcurrentRequestsPerLevel = 5
-
-// MaxConcurrentRequestKnownStore is the default max count of nodes to request the data for ActionFindValue.
-const MaxConcurrentRequestKnownStore = 7
 
 // MaxAcceptKnownStore is maximum count accepted of known peers that store the value
 const MaxAcceptKnownStore = 10
@@ -47,6 +40,7 @@ type SearchClient struct {
 	dht                 *DHT                                            // DHT used
 	timeoutTotal        time.Duration                                   // Timeout after the entire search will be terminated client-side.
 	timeoutIR           time.Duration                                   // Timeout for information requests (entire roundtrip).
+	alpha               int                                             // Count of concurrent information requests per level.
 	Results             chan *SearchResult                              // Result channel
 	list                *shortList                                      // List of nodes to contact
 	contactedNodesMap   map[string]struct{}                             // List of nodes already contacted
@@ -72,20 +66,21 @@ type SearchResult struct {
 // NewSearch creates a new search client.
 // Action indicates the action to take (from ActionX constants), to either find a node, or a value.
 // Timeout is the total time the search may take, covering all information requests. TimeoutIR is the time an information request may take.
-func (dht *DHT) NewSearch(Action int, Key []byte, Timeout, TimeoutIR time.Duration) (client *SearchClient) {
+// Alpha is the number of concurrent requests that will be performed.
+func (dht *DHT) NewSearch(Action int, Key []byte, Timeout, TimeoutIR time.Duration, Alpha int) (client *SearchClient) {
 	client = &SearchClient{
 		Action:            Action,
 		Key:               Key,
 		dht:               dht,
 		timeoutTotal:      Timeout,
 		timeoutIR:         TimeoutIR,
+		alpha:             Alpha,
 		contactedNodesMap: make(map[string]struct{}),
-		storing:           make(chan []*Node, MaxConcurrentRequestKnownStore*2),
+		storing:           make(chan []*Node, Alpha*2),
 		TerminateSignal:   make(chan struct{}),
 		Results:           make(chan *SearchResult),
 		LogStatus:         func(function, format string, v ...interface{}) {},
 	}
-	fmt.Printf("New search for key %s action %d\n", hex.EncodeToString(Key), Action)
 
 	return
 }
@@ -147,7 +142,7 @@ func (client *SearchClient) SearchAway() {
 	client.timeStart = time.Now()
 
 	// create the first search level and start it
-	client.list = client.dht.ht.getClosestContacts(MaxConcurrentRequestsPerLevel, client.Key, nil)
+	client.list = client.dht.ht.getClosestContacts(client.alpha, client.Key, nil)
 	if len(client.list.Nodes) == 0 {
 		client.Terminate()
 		return
@@ -177,7 +172,7 @@ func (client *SearchClient) sendInfoRequest(nodes []*Node, resultChan chan *Node
 	}
 
 	for _, node := range nodes {
-		client.LogStatus("sendInfoRequest", "contact node %s\n", hex.EncodeToString(node.ID))
+		client.LogStatus("search.sendInfoRequest", "contact node %s\n", hex.EncodeToString(node.ID))
 	}
 
 	info = client.dht.NewInformationRequest(client.Action, client.Key, nodes)
@@ -199,7 +194,7 @@ func (client *SearchClient) sendInfoRequest(nodes []*Node, resultChan chan *Node
 // Returned 'closest nodes' are ignored, as the queried nodes are expected to store the value. This might be adjusted in the future.
 func (client *SearchClient) queryNodesKnownStore() {
 	// all results are redirected to a single channel
-	resultChan := make(chan *NodeMessage, MaxConcurrentRequestKnownStore)
+	resultChan := make(chan *NodeMessage, client.alpha)
 
 	for {
 		select {
@@ -224,18 +219,18 @@ func (client *SearchClient) startSearch(level int) {
 	defer atomic.AddUint64(&client.activeLevels, ^uint64(0))
 	nestedStarted := false
 
-	results := make(chan *NodeMessage, MaxConcurrentRequestsPerLevel*2)
+	results := make(chan *NodeMessage, client.alpha*2)
 
 	closestNode := client.list.Nodes[0]
 
 	// start an info request
 	startInfoRequest := func() (info *InformationRequest) {
-		nodes := client.list.GetUncontacted(MaxConcurrentRequestsPerLevel, true)
+		nodes := client.list.GetUncontacted(client.alpha, true)
 		if len(nodes) == 0 {
-			client.LogStatus("startSearch", "search in level %d aborted, no new nodes to contact\n", level)
+			client.LogStatus("search.startSearch", "search in level %d aborted, no new nodes to contact\n", level)
 			return nil
 		}
-		client.LogStatus("startSearch", "start search in level %d contacting %d nodes\n", level, len(nodes))
+		client.LogStatus("search.startSearch", "start search in level %d contacting %d nodes\n", level, len(nodes))
 		return client.sendInfoRequest(nodes, results)
 	}
 
@@ -247,7 +242,7 @@ func (client *SearchClient) startSearch(level int) {
 	for {
 		select {
 		case <-client.TerminateSignal:
-			client.LogStatus("startSearch", "search in level %d aborted, search client termination signal\n", level)
+			client.LogStatus("search.startSearch", "search in level %d aborted, search client termination signal\n", level)
 			return
 
 		case result := <-results:
@@ -256,7 +251,7 @@ func (client *SearchClient) startSearch(level int) {
 			case ActionFindValue:
 				// search for value and it was found?
 				if len(result.Data) > 0 {
-					client.LogStatus("startSearch", "find value: sender %s: data found (%d bytes)\n", hex.EncodeToString(result.SenderID), len(result.Data))
+					client.LogStatus("search.startSearch", "result: sender %s: data found (%d bytes)\n", hex.EncodeToString(result.SenderID), len(result.Data))
 					client.Results <- &SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, Data: result.Data}
 					client.Terminate()
 					return
@@ -265,7 +260,7 @@ func (client *SearchClient) startSearch(level int) {
 				result.Storing = client.filterUncontactedNodes(result.Storing, MaxAcceptKnownStore)
 				result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
 
-				client.LogStatus("startSearch", "find value: sender %s: %d uncontacted nodes store and %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Storing), len(result.Closest))
+				client.LogStatus("search.startSearch", "result: sender %s: %d uncontacted nodes store and %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Storing), len(result.Closest))
 
 				// Find value: Nodes known to store the value are queried in a separate function.
 				if len(result.Storing) > 0 {
@@ -276,7 +271,7 @@ func (client *SearchClient) startSearch(level int) {
 				// search for node and it was found?
 				for _, closePeer := range result.Closest {
 					if bytes.Equal(closePeer.ID, client.Key) {
-						client.LogStatus("startSearch", "find node: sender %s: node found!\n", hex.EncodeToString(result.SenderID))
+						client.LogStatus("search.startSearch", "result: sender %s: node found!\n", hex.EncodeToString(result.SenderID))
 						client.Results <- &SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, TargetNode: closePeer}
 						client.Terminate()
 						return
@@ -285,7 +280,7 @@ func (client *SearchClient) startSearch(level int) {
 
 				result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
 
-				client.LogStatus("startSearch", "find node: sender %s: %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Closest))
+				client.LogStatus("search.startSearch", "find node: sender %s: %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Closest))
 
 			}
 
@@ -303,17 +298,17 @@ func (client *SearchClient) startSearch(level int) {
 			// This helps against result poisoning.
 
 			if !nestedStarted {
-				client.LogStatus("startSearch", "search in level %d aborted, info request termination signal. Final try.\n", level)
+				client.LogStatus("search.startSearch", "search in level %d aborted, info request termination signal. Final try.\n", level)
 				if info = startInfoRequest(); info != nil {
 					continue
 				}
 			}
 
 			if client.activeLevels == 1 { // if this was the last level, no more results will appear
-				client.LogStatus("startSearch", "level %d last active level, not found, terminate search\n", level)
+				client.LogStatus("search.startSearch", "level %d last active level, not found, terminate search\n", level)
 				client.Terminate()
 			} else {
-				client.LogStatus("startSearch", "level %d end, info request termination signal\n", level)
+				client.LogStatus("search.startSearch", "level %d end, info request termination signal\n", level)
 			}
 			return
 

@@ -9,9 +9,8 @@ A "lite" DHT implementation without any direct network and store code. There is 
 package dht
 
 import (
-	"bytes"
+	"encoding/hex"
 	"errors"
-	"sort"
 	"time"
 )
 
@@ -116,44 +115,32 @@ func (dht *DHT) IsNodeContact(ID []byte) (node *Node) {
 // ---- Synchronous network query functions below ----
 
 // Store informs the network about data stored locally.
-func (dht *DHT) Store(key []byte, dataSize uint64) (err error) {
+// Data size informs how big the data is without sending the actual data. closestCount is the number of closest nodes to contact.
+func (dht *DHT) Store(key []byte, dataSize uint64, closestCount int) (err error) {
 	if len(key)*8 != dht.ht.bBits {
 		return errors.New("invalid key size")
 	}
 
-	// Keep a reference to closestNode. If after performing a search we do not find a closer node, we stop searching.
-	sl := dht.ht.getClosestContacts(dht.alpha, key, nil)
-	if len(sl.Nodes) == 0 {
-		return nil
+	// TODO: Introduce ActionFindClosestNodes?
+
+	search := dht.NewSearch(ActionFindNode, key, dht.TimeoutSearch, dht.TimeoutIR, dht.alpha)
+	search.LogStatus = func(function, format string, v ...interface{}) {
+		dht.FilterSearchStatus(search, function, format, v...)
+	}
+	search.LogStatus("dht.Store", "Search for closest nodes to key %s. Full timeout %s, per node %s. Alpha = %d.\n", hex.EncodeToString(key), dht.TimeoutSearch.String(), dht.TimeoutIR.String(), dht.alpha)
+	search.SearchAway()
+
+	// search.Results channel is ignored here. Only the closest nodes to the key are of interest. It is not expected to find a match of key and node ID.
+	<-search.TerminateSignal
+
+	// Contact the closes nodes found.
+	for n := 0; n < closestCount && n < len(search.list.Nodes); n++ {
+		node := search.list.Nodes[n]
+		search.LogStatus("dht.Store", "Send info-store message to node %s\n", hex.EncodeToString(node.ID))
+		dht.SendRequestStore(node, key, dataSize)
 	}
 
-	closestNode := sl.Nodes[0]
-
-	for {
-		info := dht.NewInformationRequest(ActionFindNode, key, sl.GetUncontacted(dht.alpha, true))
-		dht.SendRequestFindNode(info)
-		results := info.CollectResults(dht.TMsgTimeout)
-
-		for _, result := range results {
-			sl.AppendUniqueNodes(result.Closest...)
-		}
-
-		sort.Sort(sl)
-
-		// If closestNode is unchanged then we are done
-		if bytes.Equal(sl.Nodes[0].ID, closestNode.ID) {
-			for i, node := range sl.Nodes {
-				if i >= dht.ht.bSize {
-					break
-				}
-
-				dht.SendRequestStore(node, key, dataSize)
-			}
-			return nil
-		}
-
-		closestNode = sl.Nodes[0]
-	}
+	return nil
 }
 
 // Get retrieves data from the network using key
@@ -162,36 +149,18 @@ func (dht *DHT) Get(key []byte) (value []byte, senderID []byte, found bool, err 
 		return nil, nil, false, errors.New("invalid key size")
 	}
 
-	// Keep a reference to closestNode. If after performing a search we do not find a closer node, we stop searching.
-	sl := dht.ht.getClosestContacts(dht.alpha, key, nil)
-	if len(sl.Nodes) == 0 {
-		return nil, nil, false, nil
+	search := dht.NewSearch(ActionFindValue, key, dht.TimeoutSearch, dht.TimeoutIR, dht.alpha)
+	search.LogStatus = func(function, format string, v ...interface{}) {
+		dht.FilterSearchStatus(search, function, format, v...)
 	}
+	search.LogStatus("dht.Get", "Search for node %s. Full timeout %s, per node %s. Alpha = %d.\n", hex.EncodeToString(key), dht.TimeoutSearch.String(), dht.TimeoutIR.String(), dht.alpha)
+	search.SearchAway()
 
-	closestNode := sl.Nodes[0]
-
-	// TODO: Limit max amount of iterations to mitigate malicious responses.
-	for {
-		info := dht.NewInformationRequest(ActionFindValue, key, sl.GetUncontacted(dht.alpha, true))
-		dht.SendRequestFindValue(info)
-		results := info.CollectResults(dht.TMsgTimeout)
-
-		for _, result := range results {
-			if len(result.Data) > 0 {
-				return result.Data, result.SenderID, true, nil
-			}
-			sl.AppendUniqueNodes(result.Storing...) // TODO: Assign higher priority, skip closesNode check.
-			sl.AppendUniqueNodes(result.Closest...)
-		}
-
-		sort.Sort(sl)
-
-		// If closestNode is unchanged then we are done
-		if bytes.Equal(sl.Nodes[0].ID, closestNode.ID) {
-			return nil, nil, false, nil
-		}
-
-		closestNode = sl.Nodes[0]
+	select {
+	case <-search.TerminateSignal:
+		return nil, nil, false, nil
+	case result := <-search.Results:
+		return result.Data, result.SenderID, true, nil
 	}
 }
 
@@ -202,10 +171,11 @@ func (dht *DHT) FindNode(key []byte) (node *Node, err error) {
 		return nil, errors.New("invalid key size")
 	}
 
-	search := dht.NewSearch(ActionFindNode, key, dht.TimeoutSearch, dht.TimeoutIR)
+	search := dht.NewSearch(ActionFindNode, key, dht.TimeoutSearch, dht.TimeoutIR, dht.alpha)
 	search.LogStatus = func(function, format string, v ...interface{}) {
 		dht.FilterSearchStatus(search, function, format, v...)
 	}
+	search.LogStatus("dht.FindNode", "Search for node %s. Full timeout %s, per node %s. Alpha = %d.\n", hex.EncodeToString(key), dht.TimeoutSearch.String(), dht.TimeoutIR.String(), dht.alpha)
 	search.SearchAway()
 
 	select {
@@ -218,8 +188,15 @@ func (dht *DHT) FindNode(key []byte) (node *Node, err error) {
 
 // ---- DHT Health ----
 
+// DisableBucketRefresh is an option for debug purposes to reduce noise. It can be useful to disable bucket refresh when debugging outgoing DHT searches.
+var DisableBucketRefresh = false
+
 // RefreshBuckets refreshes all buckets not meeting the target node number. 0 to refresh all.
 func (dht *DHT) RefreshBuckets(target int) {
+	if DisableBucketRefresh {
+		return
+	}
+
 	for bucket, total := range dht.ht.getTotalNodesPerBucket() {
 		if target == 0 || total < target {
 			nodeR := dht.ht.getRandomIDFromBucket(bucket)
@@ -230,6 +207,10 @@ func (dht *DHT) RefreshBuckets(target int) {
 			}
 
 			dht.FindNode(nodeR)
+		}
+
+		if DisableBucketRefresh { // may be disabled while in full refresh which may take some time
+			return
 		}
 	}
 }
