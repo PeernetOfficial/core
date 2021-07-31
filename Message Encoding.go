@@ -974,7 +974,10 @@ func msgEncodeTraverseSetAddress(raw []byte, connectionIPv4, connectionIPv6 *Con
 
 // pingConnection sends a ping to the target peer via the specified connection
 func (peer *PeerInfo) pingConnection(connection *Connection) {
-	err := peer.sendConnection(&PacketRaw{Command: CommandPing, Sequence: peer.msgNewSequence(nil).sequence}, connection)
+	raw := &PacketRaw{Command: CommandPing, Sequence: peer.msgNewSequence(nil).sequence}
+	Filters.MessageOutPing(peer, raw, connection)
+
+	err := peer.sendConnection(raw, connection)
 	connection.LastPingOut = time.Now()
 
 	if (connection.Status == ConnectionActive || connection.Status == ConnectionRedundant) && IsNetworkErrorFatal(err) {
@@ -993,7 +996,9 @@ func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash
 
 	for _, packet := range packets {
 		packet.sequence = peer.msgNewSequence(sequenceData)
-		packet.err = peer.send(&PacketRaw{Command: CommandAnnouncement, Payload: packet.raw, Sequence: packet.sequence.sequence})
+		raw := &PacketRaw{Command: CommandAnnouncement, Payload: packet.raw, Sequence: packet.sequence.sequence}
+		Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, findSelf, findPeer, findValue, files)
+		packet.err = peer.send(raw)
 	}
 
 	return
@@ -1004,7 +1009,9 @@ func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []Ha
 	packets, err := msgEncodeResponse(sendUA, hash2Peers, filesEmbed, hashesNotFound)
 
 	for _, packet := range packets {
-		peer.send(&PacketRaw{Command: CommandResponse, Payload: packet, Sequence: sequence})
+		raw := &PacketRaw{Command: CommandResponse, Payload: packet, Sequence: sequence}
+		Filters.MessageOutResponse(peer, raw, hash2Peers, filesEmbed, hashesNotFound)
+		peer.send(raw)
 	}
 
 	return err
@@ -1026,5 +1033,9 @@ func (peer *PeerInfo) sendTraverse(packet *PacketRaw, receiverEnd *btcec.PublicK
 		return err
 	}
 
-	return peer.send(&PacketRaw{Command: CommandTraverse, Payload: packetRaw})
+	raw := &PacketRaw{Command: CommandTraverse, Payload: packetRaw}
+
+	Filters.MessageOutTraverse(peer, raw, packet, receiverEnd)
+
+	return peer.send(raw)
 }

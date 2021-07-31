@@ -162,6 +162,8 @@ func packetWorker(packets <-chan networkWire) {
 
 		connection := &Connection{Network: packet.network, Address: packet.sender, Status: ConnectionActive}
 
+		Filters.PacketIn(decoded, senderPublicKey, connection)
+
 		// A peer structure will always be returned, even if the peer won't be added to the peer list.
 		peer, added := PeerlistAdd(senderPublicKey, connection)
 		if !added {
@@ -187,6 +189,8 @@ func packetWorker(packets <-chan networkWire) {
 				peer.BlockchainHeight = announce.BlockchainHeight
 				peer.BlockchainVersion = announce.BlockchainVersion
 
+				Filters.MessageIn(peer, raw, announce)
+
 				peer.cmdAnouncement(announce)
 			}
 
@@ -210,6 +214,8 @@ func packetWorker(packets <-chan networkWire) {
 				peer.BlockchainHeight = response.BlockchainHeight
 				peer.BlockchainVersion = response.BlockchainVersion
 
+				Filters.MessageIn(peer, raw, response)
+
 				peer.cmdResponse(response)
 			}
 
@@ -222,10 +228,13 @@ func packetWorker(packets <-chan networkWire) {
 				peer.BlockchainHeight = announce.BlockchainHeight
 				peer.BlockchainVersion = announce.BlockchainVersion
 
+				Filters.MessageIn(peer, raw, announce)
+
 				peer.cmdLocalDiscovery(announce)
 			}
 
 		case CommandPing: // Ping
+			Filters.MessageIn(peer, raw, nil)
 			peer.cmdPing(raw)
 
 		case CommandPong: // Ping
@@ -237,13 +246,17 @@ func packetWorker(packets <-chan networkWire) {
 				connection.RoundTripTime = rtt
 			}
 
+			Filters.MessageIn(peer, raw, nil)
+
 			peer.cmdPong(raw)
 
 		case CommandChat: // Chat [debug]
+			Filters.MessageIn(peer, raw, nil)
 			peer.cmdChat(raw)
 
 		case CommandTraverse:
 			if traverse, _ := msgDecodeTraverse(raw); traverse != nil {
+				Filters.MessageIn(peer, raw, traverse)
 				if traverse.TargetPeer.IsEqual(peerPublicKey) && traverse.AuthorizedRelayPeer.IsEqual(peer.PublicKey) {
 					peer.cmdTraverseReceive(traverse)
 				} else if traverse.AuthorizedRelayPeer.IsEqual(peerPublicKey) {
@@ -252,6 +265,7 @@ func packetWorker(packets <-chan networkWire) {
 			}
 
 		default: // Unknown command
+			Filters.MessageIn(peer, raw, nil)
 
 		}
 

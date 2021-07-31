@@ -39,9 +39,6 @@ type DHT struct {
 	// FilterSearchStatus is called with updates of searches in the DHT
 	FilterSearchStatus func(client *SearchClient, function, format string, v ...interface{})
 
-	// The maximum time to wait for a response to any message in Store, Get, FindNode
-	TMsgTimeout time.Duration
-
 	// TimeoutSearch is the maximum time a search may take.
 	TimeoutSearch time.Duration
 
@@ -54,7 +51,6 @@ func NewDHT(self *Node, bits, bucketSize, alpha int) *DHT {
 	return &DHT{
 		ht:                 newHashTable(self, bits, bucketSize),
 		alpha:              alpha,
-		TMsgTimeout:        2 * time.Second,
 		FilterSearchStatus: func(client *SearchClient, function, format string, v ...interface{}) {},
 		TimeoutSearch:      10 * time.Second,
 		TimeoutIR:          6 * time.Second,

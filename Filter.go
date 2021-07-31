@@ -3,7 +3,7 @@ File Name:  Filter.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
-Filters allow the caller to intercept events to log, modify, or prevent.
+Filters allow the caller to intercept events. The filter functions must not modify any data.
 */
 
 package core
@@ -12,6 +12,7 @@ import (
 	"log"
 
 	"github.com/PeernetOfficial/core/dht"
+	"github.com/btcsuite/btcd/btcec"
 )
 
 // Filters contains all functions to install the hook. Use nil for unused.
@@ -33,6 +34,33 @@ var Filters struct {
 
 	// IncomingRequest receives all incoming information requests. The action field is set accordingly.
 	IncomingRequest func(peer *PeerInfo, Action int, Key []byte, Info interface{})
+
+	// PacketIn is a low-level filter for incoming packets after they are decrypted.
+	// Traverse messages are not covered.
+	PacketIn func(packet *PacketRaw, senderPublicKey *btcec.PublicKey, connection *Connection)
+
+	// PacketOut is a low-level filter for outgoing packets before they are encrypted.
+	// IPv4 broadcast, IPv6 multicast, and Traverse messages are not covered.
+	PacketOut func(packet *PacketRaw, receiverPublicKey *btcec.PublicKey, connection *Connection)
+
+	// MessageIn is a high-level filter for decoded incoming messages. message is of type nil, MessageAnnouncement, MessageResponse, or MessageTraverse
+	MessageIn func(peer *PeerInfo, raw *MessageRaw, message interface{})
+
+	// MessageOutAnnouncement is a high-level filter for outgoing announcements. Peer is nil on first contact.
+	// Broadcast and Multicast messages are not covered.
+	MessageOutAnnouncement func(receiverPublicKey *btcec.PublicKey, peer *PeerInfo, packet *PacketRaw, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore)
+
+	// MessageOutResponse is a high-level filter for outgoing responses.
+	MessageOutResponse func(peer *PeerInfo, packet *PacketRaw, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte)
+
+	// MessageOutTraverse is a high-level filter for outgoing traverse messages.
+	MessageOutTraverse func(peer *PeerInfo, packet *PacketRaw, embeddedPacket *PacketRaw, receiverEnd *btcec.PublicKey)
+
+	// MessageOutPing is a high-level filter for outgoing pings.
+	MessageOutPing func(peer *PeerInfo, packet *PacketRaw, connection *Connection)
+
+	// MessageOutPong is a high-level filter for outgoing pongs.
+	MessageOutPong func(peer *PeerInfo, packet *PacketRaw)
 }
 
 func initFilters() {
@@ -53,6 +81,32 @@ func initFilters() {
 	}
 	if Filters.IncomingRequest == nil {
 		Filters.IncomingRequest = func(peer *PeerInfo, Action int, Key []byte, Info interface{}) {}
+	}
+	if Filters.PacketIn == nil {
+		Filters.PacketIn = func(packet *PacketRaw, senderPublicKey *btcec.PublicKey, c *Connection) {}
+	}
+	if Filters.PacketOut == nil {
+		Filters.PacketOut = func(packet *PacketRaw, receiverPublicKey *btcec.PublicKey, c *Connection) {}
+	}
+	if Filters.MessageIn == nil {
+		Filters.MessageIn = func(peer *PeerInfo, raw *MessageRaw, message interface{}) {}
+	}
+	if Filters.MessageOutAnnouncement == nil {
+		Filters.MessageOutAnnouncement = func(receiverPublicKey *btcec.PublicKey, peer *PeerInfo, packet *PacketRaw, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore) {
+		}
+	}
+	if Filters.MessageOutResponse == nil {
+		Filters.MessageOutResponse = func(peer *PeerInfo, packet *PacketRaw, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte) {
+		}
+	}
+	if Filters.MessageOutTraverse == nil {
+		Filters.MessageOutTraverse = func(peer *PeerInfo, packet *PacketRaw, embeddedPacket *PacketRaw, receiverEnd *btcec.PublicKey) {}
+	}
+	if Filters.MessageOutPing == nil {
+		Filters.MessageOutPing = func(peer *PeerInfo, packet *PacketRaw, connection *Connection) {}
+	}
+	if Filters.MessageOutPong == nil {
+		Filters.MessageOutPong = func(peer *PeerInfo, packet *PacketRaw) {}
 	}
 }
 

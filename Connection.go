@@ -327,6 +327,8 @@ func (c *Connection) send(packet *PacketRaw, receiverPublicKey *btcec.PublicKey,
 	packet.Protocol = ProtocolVersion
 	packet.setSelfReportedPorts(c.Network)
 
+	Filters.PacketOut(packet, receiverPublicKey, c)
+
 	raw, err := PacketEncrypt(peerPrivateKey, receiverPublicKey, packet)
 	if err != nil {
 		return err

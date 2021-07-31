@@ -198,7 +198,11 @@ func (peer *PeerInfo) cmdPing(msg *MessageRaw) {
 		return
 	}
 
-	peer.send(&PacketRaw{Command: CommandPong, Sequence: msg.Sequence})
+	raw := &PacketRaw{Command: CommandPong, Sequence: msg.Sequence}
+
+	Filters.MessageOutPong(peer, raw)
+
+	peer.send(raw)
 }
 
 // cmdPong handles an incoming pong message

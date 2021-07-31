@@ -201,12 +201,16 @@ func contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, rece
 		return false
 	}
 
-	packets := msgEncodeAnnouncement(true, ShouldSendFindSelf(), nil, nil, nil)
+	findSelf := ShouldSendFindSelf()
+	packets := msgEncodeAnnouncement(true, findSelf, nil, nil, nil)
 	if len(packets) == 0 || packets[0].err != nil {
 		return false
 	}
+	raw := &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw}
 
-	sendAllNetworks(publicKey, &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw}, address, receiverPortInternal, nil, &bootstrapFindSelf{})
+	Filters.MessageOutAnnouncement(publicKey, nil, raw, findSelf, nil, nil, nil)
+
+	sendAllNetworks(publicKey, raw, address, receiverPortInternal, nil, &bootstrapFindSelf{})
 
 	return true
 }
