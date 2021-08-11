@@ -44,7 +44,7 @@ var userBlockchainHeader BlockchainHeader
 // If it is corrupted, it will log the error and exit the process.
 func initUserBlockchain() {
 	// open existing blockchain file or create new one
-	blockchain, err := store.NewPebbleStore(filenameUserBlockchain)
+	blockchain, err := store.NewPogrebStore(filenameUserBlockchain)
 	if err != nil {
 		Filters.LogError("initUserBlockchain", "error opening user blockchain: %s\n", err.Error())
 		os.Exit(1)

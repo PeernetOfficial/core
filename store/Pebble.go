@@ -2,10 +2,13 @@
 File Name:  Pebble.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
+
+Note: It turned out that pebble has many dependencies and increases the binary file size by ~6 MB.
 */
 
 package store
 
+/*
 import (
 	"errors"
 	"sync"
@@ -66,3 +69,4 @@ func (store *PebbleStore) Get(key []byte) (data []byte, found bool) {
 func (store *PebbleStore) Delete(key []byte) {
 	store.db.Delete(key, pebble.Sync)
 }
+*/
