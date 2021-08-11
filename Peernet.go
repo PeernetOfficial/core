@@ -10,6 +10,7 @@ package core
 func Init() {
 	initFilters()
 	initPeerID()
+	initUserBlockchain()
 	initKademlia()
 	initMessageSequence()
 	initSeedList()
