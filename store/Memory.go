@@ -39,8 +39,8 @@ func (ms *MemoryStore) ExpireKeys() {
 	}
 }
 
-// Store stores the key/value pair.
-func (ms *MemoryStore) Store(key []byte, data []byte) error {
+// Set stores the key/value pair.
+func (ms *MemoryStore) Set(key []byte, data []byte) error {
 	ms.mutex.Lock()
 	ms.data[string(key)] = data
 	ms.mutex.Unlock()
@@ -56,8 +56,8 @@ func (ms *MemoryStore) StoreExpire(key []byte, data []byte, expiration time.Time
 	return nil
 }
 
-// Retrieve returns the value for the key if present.
-func (ms *MemoryStore) Retrieve(key []byte) (data []byte, found bool) {
+// Get returns the value for the key if present.
+func (ms *MemoryStore) Get(key []byte) (data []byte, found bool) {
 	ms.mutex.Lock()
 	data, found = ms.data[string(key)]
 	ms.mutex.Unlock()

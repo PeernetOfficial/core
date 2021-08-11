@@ -7,9 +7,6 @@ Author:     Peter Kleissner
 package core
 
 import (
-	"encoding/hex"
-	"fmt"
-
 	"github.com/PeernetOfficial/core/store"
 )
 
@@ -25,7 +22,7 @@ func initStore() {
 // announcementGetData returns data for an announcement
 func announcementGetData(hash []byte) (stored bool, data []byte) {
 	// TODO: Create RetrieveIfSize to prevent files larger than EmbeddedFileSizeMax from being loaded
-	data, found := Warehouse.Retrieve(hash)
+	data, found := Warehouse.Get(hash)
 	if !found {
 		return false, nil
 	}
@@ -44,7 +41,10 @@ func (peer *PeerInfo) announcementStore(records []InfoStore) {
 	// - not exceeding record count per peer
 	// - not exceeding total record count limit
 	// - not exceeding record count per CIDR
-	for _, record := range records {
-		fmt.Printf("Remote node %s stores hash %s (size %d type %d)\n", hex.EncodeToString(peer.NodeID), hex.EncodeToString(record.ID.Hash), record.Size, record.Type)
-	}
+	//for _, record := range records {
+	//fmt.Printf("Remote node %s stores hash %s (size %d type %d)\n", hex.EncodeToString(peer.NodeID), hex.EncodeToString(record.ID.Hash), record.Size, record.Type)
+	//Warehouse.Store(record.ID.Hash, )
+	// TODO: Request data from remote node.
+	//peer.sendAnnouncement(false, false, nil, []KeyHash{record.ID}, nil, nil)
+	//}
 }

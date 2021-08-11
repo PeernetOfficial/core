@@ -141,7 +141,7 @@ func GetData(hash []byte) (data []byte, senderNodeID []byte, found bool) {
 
 // GetDataLocal returns data from the local warehouse.
 func GetDataLocal(hash []byte) (data []byte, found bool) {
-	return Warehouse.Retrieve(hash)
+	return Warehouse.Get(hash)
 }
 
 // GetDataDHT requests data via DHT
@@ -153,14 +153,14 @@ func GetDataDHT(hash []byte) (data []byte, senderNodeID []byte, found bool) {
 // StoreDataLocal stores data into the local warehouse.
 func StoreDataLocal(data []byte) error {
 	key := hashData(data)
-	return Warehouse.Store(key, data)
+	return Warehouse.Set(key, data)
 }
 
 // StoreDataDHT stores data locally and informs closestCount peers in the DHT about it.
 // Remote peers may choose to keep a record (in case another peers asks) or mirror the full data.
 func StoreDataDHT(data []byte, closestCount int) error {
 	key := hashData(data)
-	if err := Warehouse.Store(key, data); err != nil {
+	if err := Warehouse.Set(key, data); err != nil {
 		return err
 	}
 	return nodesDHT.Store(key, uint64(len(data)), closestCount)
