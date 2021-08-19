@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"testing"
+
+	"github.com/btcsuite/btcd/btcec"
 )
 
 func TestMessageEncodingAnnouncement(t *testing.T) {
@@ -89,16 +91,26 @@ func TestBlockEncoding(t *testing.T) {
 	}
 
 	file1 := BlockRecordFile{Hash: hashData([]byte("Test data")), Type: TypeText, Format: FormatText, Size: 9, Name: "Filename 1.txt", Directory: "documents\\sub folder"}
+	encoded1, _ := encodeBlockRecordUser(BlockRecordUser{Valid: true, Name: "Test User 1"})
+	encoded2, _ := encodeBlockRecordFiles([]BlockRecordFile{file1})
 
-	block := &Block{BlockchainVersion: 42, Number: 0, User: BlockRecordUser{Valid: true, Name: "Test User 1"}, Files: []BlockRecordFile{file1}}
+	blockE := &Block{BlockchainVersion: 42, Number: 0}
+	blockE.RecordsRaw = append(blockE.RecordsRaw, encoded1...)
+	blockE.RecordsRaw = append(blockE.RecordsRaw, encoded2...)
 
-	raw, err := encodeBlock(block, privateKey)
+	raw, err := encodeBlock(blockE, privateKey)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
 		return
 	}
 
-	block, err = decodeBlock(raw)
+	block, err := decodeBlock(raw)
+	if err != nil {
+		fmt.Printf("Error: %s\n", err.Error())
+		return
+	}
+
+	decoded, err := decodeBlockRecords(block)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
 		return
@@ -107,7 +119,79 @@ func TestBlockEncoding(t *testing.T) {
 	// output the block details
 	fmt.Printf("Block details:\n----------------\nNumber: %d\nVersion: %d\nLast Hash: %s\nPublic Key: %s\n", block.Number, block.BlockchainVersion, hex.EncodeToString(block.LastBlockHash), hex.EncodeToString(block.OwnerPublicKey.SerializeCompressed()))
 
-	for _, file := range block.Files {
+	for _, file := range decoded.Files {
+		fmt.Printf("* File          %s\n", file.Name)
+		fmt.Printf("  Directory     %s\n", file.Directory)
+		fmt.Printf("  Size          %d\n", file.Size)
+		fmt.Printf("  Type          %d\n", file.Type)
+		fmt.Printf("  Format        %d\n", file.Format)
+		fmt.Printf("  Hash          %s\n", hex.EncodeToString(file.Hash))
+		fmt.Printf("  Directory ID  %d\n\n", file.directoryID)
+	}
+}
+
+func initTestPrivateKey() {
+	// use static test key, otherwise tests will be inconsistent (would otherwise fail to open blockchain database)
+	privateKeyTestA := "d65da474861d826edd29c1307f1250d79e9dbf84e3a2449022658445c8d8ed63"
+	privateKeyB, _ := hex.DecodeString(privateKeyTestA)
+	peerPrivateKey, peerPublicKey = btcec.PrivKeyFromBytes(btcec.S256(), privateKeyB)
+	nodeID = PublicKey2NodeID(peerPublicKey)
+
+	fmt.Printf("Loaded public key: %s\n", hex.EncodeToString(peerPublicKey.SerializeCompressed()))
+}
+
+func TestBlockchainAdd(t *testing.T) {
+	initTestPrivateKey()
+	initUserBlockchain()
+
+	file1 := BlockRecordFile{Hash: hashData([]byte("Test data")), Type: TypeText, Format: FormatText, Size: 9, Name: "Filename 1.txt", Directory: "documents\\sub folder"}
+
+	newHeight, status := UserBlockchainAddFiles([]BlockRecordFile{file1})
+
+	switch status {
+	case 0:
+	case 1: // Error previous block not found
+		fmt.Printf("Error adding file to blockchain: Previous block not found.\n")
+	case 2: // Error block encoding
+		fmt.Printf("Error adding file to blockchain: Error block encoding.\n")
+	case 3: // Error block record encoding
+		fmt.Printf("Error adding file to blockchain: Error block record encoding.\n")
+	default:
+		fmt.Printf("Error adding file to blockchain: Unknown status %d\n", status)
+	}
+
+	if status != 0 {
+		return
+	}
+
+	fmt.Printf("Success adding files to blockchain. New blockchain height: %d\n", newHeight)
+}
+
+func TestBlockchainRead(t *testing.T) {
+	initTestPrivateKey()
+	initFilters()
+	initUserBlockchain()
+
+	blockNumber := uint64(0)
+
+	decoded, status := UserBlockchainRead(blockNumber)
+	switch status {
+	case 0:
+	case 1: // Error block not found
+		fmt.Printf("Error reading block %d: Block not found.\n", blockNumber)
+	case 2: // Error block encoding
+		fmt.Printf("Error reading block %d: Block encoding corrupt.\n", blockNumber)
+	case 3: // Error block record encoding
+		fmt.Printf("Error reading block %d: Block record encoding corrupt.\n", blockNumber)
+	default:
+		fmt.Printf("Error reading block %d: Unknown status %d\n", blockNumber, status)
+	}
+
+	if status != 0 {
+		return
+	}
+
+	for _, file := range decoded.Files {
 		fmt.Printf("* File          %s\n", file.Name)
 		fmt.Printf("  Directory     %s\n", file.Directory)
 		fmt.Printf("  Size          %d\n", file.Size)

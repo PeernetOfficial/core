@@ -1,3 +1,4 @@
 *.exe
 log.txt
 *debug_bin
+self.*
