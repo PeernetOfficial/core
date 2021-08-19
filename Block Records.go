@@ -4,6 +4,24 @@ Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
 Encoding of records inside blocks.
+
+File records:
+Offset  Size    Info
+0       32      Hash blake3 of the file content
+32      1       File type (low-level)
+33      2       File format (high-level)
+35      8       File size
+43      2       Directory ID
+45      2       Size of file name in bytes
+47      2       Count of tags
+49      ?       File name
+?       ?       Tags (TBD)
+
+Directory records:
+Offset  Size    Info
+0       2       Directory ID
+2       ?       Directory name
+
 */
 
 package core
@@ -66,27 +84,53 @@ type BlockRecordFile struct {
 func decodeBlockRecords(block *Block) (decoded *BlockDecoded, err error) {
 	decoded = &BlockDecoded{Block: *block}
 
-	for _, record := range block.RecordsRaw {
+	if decoded.Files, decoded.directories, err = decodeBlockRecordFiles(block.RecordsRaw); err != nil {
+		return nil, err
+	}
+	if user := decodeBlockRecordUser(block.RecordsRaw); user != nil {
+		decoded.User = *user
+	}
 
+	return decoded, nil
+}
+
+// decodeBlockRecordUser decodes the username, if available. Otherwise return nil.
+func decodeBlockRecordUser(recordsRaw []BlockRecordRaw) (user *BlockRecordUser) {
+	for _, record := range recordsRaw {
+		if record.Type == RecordTypeUsername {
+			user = &BlockRecordUser{Valid: true, Name: string(record.Data), NameS: sanitize.Username(string(record.Data))}
+			// continue to seek for an overriding username record, even though that would be stupid within the same block
+		}
+	}
+	return
+}
+
+// encodeBlockRecordUser encodes the username
+func encodeBlockRecordUser(user BlockRecordUser) (recordsRaw []BlockRecordRaw, err error) {
+	if user.Valid {
+		recordsRaw = append(recordsRaw, BlockRecordRaw{Type: RecordTypeUsername, Data: []byte(user.Name)})
+	}
+
+	return recordsRaw, nil
+}
+
+// decodeBlockRecordFiles decodes only file records. Other records are ignored
+func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw) (files []BlockRecordFile, directories []BlockRecordDirectory, err error) {
+	for _, record := range recordsRaw {
 		switch record.Type {
-		case RecordTypeUsername:
-			decoded.User.Name = string(record.Data)
-			decoded.User.NameS = sanitize.Username(decoded.User.Name)
-			decoded.User.Valid = true
-
 		case RecordTypeDirectory:
 			if len(record.Data) < 3 {
-				return nil, errors.New("decodeBlockRecord directory record invalid size")
+				return nil, nil, errors.New("decodeBlockRecordFiles directory record invalid size")
 			}
 
 			directory := &BlockRecordDirectory{}
 			directory.ID = binary.LittleEndian.Uint16(record.Data[0 : 0+2])
 			directory.Name = string(record.Data[2:])
-			decoded.directories = append(decoded.directories, *directory)
+			directories = append(directories, *directory)
 
 		case RecordTypeFile:
 			if len(record.Data) < 49 {
-				return nil, errors.New("decodeBlockRecord file record invalid size")
+				return nil, nil, errors.New("decodeBlockRecordFiles file record invalid size")
 			}
 
 			file := BlockRecordFile{}
@@ -100,31 +144,22 @@ func decodeBlockRecords(block *Block) (decoded *BlockDecoded, err error) {
 			//countTags := binary.LittleEndian.Uint16(record.Data[47 : 47+2]) // future implementation of tags
 
 			if len(record.Data) < 49+int(filenameSize) {
-				return nil, errors.New("decodeBlockRecord file record invalid filename size")
+				return nil, nil, errors.New("decodeBlockRecordFiles file record invalid filename size")
 			}
 			file.Name = string(record.Data[49 : 49+filenameSize])
 
-			for n := range decoded.directories {
-				if decoded.directories[n].ID == directoryID {
-					file.Directory = decoded.directories[n].Name
+			for n := range directories {
+				if directories[n].ID == directoryID {
+					file.Directory = directories[n].Name
 					break
 				}
 			}
 
-			decoded.Files = append(decoded.Files, file)
+			files = append(files, file)
 		}
 	}
 
-	return decoded, nil
-}
-
-// encodeBlockRecordUser encodes the username
-func encodeBlockRecordUser(user BlockRecordUser) (recordsRaw []BlockRecordRaw, err error) {
-	if user.Valid {
-		recordsRaw = append(recordsRaw, BlockRecordRaw{Type: RecordTypeUsername, Data: []byte(user.Name)})
-	}
-
-	return recordsRaw, nil
+	return files, directories, err
 }
 
 // encodeBlockRecordFiles encodes files into the block record data

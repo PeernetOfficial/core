@@ -223,3 +223,35 @@ func UserBlockchainAddFiles(files []BlockRecordFile) (newHeight uint64, status i
 
 	return UserBlockchainAppend(encoded)
 }
+
+// UserBlockchainListFiles returns a list of all files
+// If there is a corruption in the blockchain it will reading it but return the files parsed so far.
+// Status: 0 = Success, 1 = Block not found, 2 = Error block encoding, 3 = Error block record encoding
+func UserBlockchainListFiles() (files []BlockRecordFile, status int) {
+	// TODO: Add internal cache of file list for faster subsequent processing?
+	height := userBlockchainHeader.height
+
+	// read all blocks until height is reached
+	for blockN := uint64(0); blockN < height; blockN++ {
+		var target [8]byte
+		binary.LittleEndian.PutUint64(target[:], userBlockchainHeader.height-1)
+		blockRaw, found := userBlockchainDB.Get(target[:])
+		if !found || len(blockRaw) == 0 {
+			return files, 1
+		}
+
+		block, err := decodeBlock(blockRaw)
+		if err != nil {
+			return files, 2
+		}
+
+		filesMore, _, err := decodeBlockRecordFiles(block.RecordsRaw)
+		if err != nil {
+			return nil, 3
+		}
+
+		files = append(files, filesMore...)
+	}
+
+	return files, 0
+}
