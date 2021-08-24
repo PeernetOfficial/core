@@ -8,9 +8,10 @@ The key for the blockchain header is keyHeader and for each block is the block n
 
 Encoding of the blockchain header:
 Offset  Size   Info
-0       8      Height
-8       8      Version
-16      65     Signature
+0       8      Height of the blockchain
+8       8      Version of the blockchain
+16      2      Format of the block data. 0 = Current format. This is for backward compatibility and supporting changes to the block structure in the future.
+18      65     Signature
 
 Encoding of each block (it is the same stored in the database and shared in a message):
 Offset  Size   Info
@@ -58,6 +59,7 @@ const keyHeader = "header blockchain"
 var userBlockchainHeader struct {
 	height    uint64
 	version   uint64
+	format    uint16
 	publicKey *btcec.PublicKey
 	sync.Mutex
 }
@@ -101,26 +103,32 @@ func blockchainHeaderRead(db store.Store) (publicKey *btcec.PublicKey, height, v
 		return nil, 0, 0, false, nil
 	}
 
-	if len(buffer) != 81 {
+	if len(buffer) != 83 {
 		return nil, 0, 0, true, errors.New("blockchain header size mismatch")
 	}
 
 	height = binary.LittleEndian.Uint64(buffer[0:8])
 	version = binary.LittleEndian.Uint64(buffer[8:16])
-	signature := buffer[16 : 16+65]
+	format := binary.LittleEndian.Uint16(buffer[16:18])
+	signature := buffer[18 : 18+65]
 
-	publicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, hashData(buffer[0:16]))
+	if format != 0 {
+		return nil, 0, 0, true, errors.New("future blockchain format not supported. You must go back to the future!")
+	}
+
+	publicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, hashData(buffer[0:18]))
 
 	return
 }
 
 // blockchainHeaderWrite writes the header to the blockchain and signs it.
 func blockchainHeaderWrite(db store.Store, privateKey *btcec.PrivateKey, height, version uint64) (err error) {
-	var buffer [81]byte
+	var buffer [83]byte
 	binary.LittleEndian.PutUint64(buffer[0:8], height)
 	binary.LittleEndian.PutUint64(buffer[8:16], version)
+	binary.LittleEndian.PutUint16(buffer[16:18], 0)
 
-	signature, err := btcec.SignCompact(btcec.S256(), privateKey, hashData(buffer[0:16]), true)
+	signature, err := btcec.SignCompact(btcec.S256(), privateKey, hashData(buffer[0:18]), true)
 
 	if err != nil {
 		return err
@@ -128,7 +136,7 @@ func blockchainHeaderWrite(db store.Store, privateKey *btcec.PrivateKey, height,
 		return errors.New("signature length invalid")
 	}
 
-	copy(buffer[16:16+65], signature)
+	copy(buffer[18:18+65], signature)
 
 	err = db.Set([]byte(keyHeader), buffer[:])
 
