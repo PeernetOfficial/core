@@ -82,18 +82,19 @@ type BlockRecordFileTag struct {
 
 // TagTypeName defines the type of the tag
 const (
-	TagTypeName        = 0 // File name
-	TagTypeDirectory   = 1 // Directory
+	TagTypeName        = 0 // Name of file
+	TagTypeFolder      = 1 // Folder
 	TagTypeDateCreated = 2 // Date when the file was originally created. This may differ from the date in the block record, which indicates when the file was shared.
 	TagTypeDescription = 3 // Arbitrary description of the file. May contain hashtags.
 )
 
-// FileTagDirectory specifies in which directory the file is stored
-type FileTagDirectory struct {
-	Directory string // Directory the file is stored at
+// FileTagFolder specifies in which folder the file is stored.
+// A corresponding TypeFolder file record matching the name may exist to provide additional details about the folder.
+type FileTagFolder struct {
+	Name string // Name of the folder
 }
 
-// FileTagName specifies in which directory the file is stored
+// FileTagName specifies the file name. Empty names are allowed, but not recommended!
 type FileTagName struct {
 	Name string // Name of the file
 }
@@ -208,8 +209,8 @@ func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw) (files []BlockRecordFil
 // decodeFileTag decodes a file tag. If the tag type is not known, it returns nil.
 func decodeFileTag(tag BlockRecordFileTag) (decoded interface{}, err error) {
 	switch tag.Type {
-	case TagTypeDirectory:
-		return FileTagDirectory{Directory: string(tag.Data)}, nil
+	case TagTypeFolder:
+		return FileTagFolder{Name: string(tag.Data)}, nil
 
 	case TagTypeName:
 		return FileTagName{Name: string(tag.Data)}, nil
@@ -233,8 +234,8 @@ func decodeFileTag(tag BlockRecordFileTag) (decoded interface{}, err error) {
 // encodeFileTag encodes a file tag. If the tag type is not known, it returns nil.
 func encodeFileTag(decoded interface{}) (tag BlockRecordFileTag, err error) {
 	switch v := decoded.(type) {
-	case FileTagDirectory:
-		return BlockRecordFileTag{Type: TagTypeDirectory, Data: []byte(v.Directory)}, nil
+	case FileTagFolder:
+		return BlockRecordFileTag{Type: TagTypeFolder, Data: []byte(v.Name)}, nil
 
 	case FileTagName:
 		return BlockRecordFileTag{Type: TagTypeName, Data: []byte(v.Name)}, nil
@@ -253,7 +254,8 @@ func encodeFileTag(decoded interface{}) (tag BlockRecordFileTag, err error) {
 }
 
 // encodeBlockRecordFiles encodes files into the block record data
-// This function should be called grouped with all files in the same directory. The directory name is deduplicated; only unique directory records will be returned.
+// This function should be called grouped with all files in the same folder. The folder name is deduplicated; only unique folder records will be returned.
+// Note that this function only stores the folder names as tags; it does not create separate TypeFolder file records.
 func encodeBlockRecordFiles(files []BlockRecordFile) (recordsRaw []BlockRecordRaw, err error) {
 	uniqueTagDataMap := make(map[string]struct{})
 	duplicateTagDataMap := make(map[string]int) // list of tag data that appeared twice. Number in recordsRaw.

@@ -95,11 +95,11 @@ func TestBlockEncoding(t *testing.T) {
 
 	file1 := BlockRecordFile{Hash: hashData([]byte("Test data")), Type: TypeText, Format: FormatText, Size: 9, ID: uuid.New()}
 	file1.TagsDecoded = append(file1.TagsDecoded, FileTagName{Name: "Filename 1.txt"})
-	file1.TagsDecoded = append(file1.TagsDecoded, FileTagDirectory{Directory: "documents\\sub folder"})
+	file1.TagsDecoded = append(file1.TagsDecoded, FileTagFolder{Name: "documents\\sub folder"})
 
 	file2 := BlockRecordFile{Hash: hashData([]byte("Test data 2")), Type: TypeText, Format: FormatText, Size: 9, ID: uuid.New()}
 	file2.TagsDecoded = append(file2.TagsDecoded, FileTagName{Name: "Filename 2.txt"})
-	file2.TagsDecoded = append(file2.TagsDecoded, FileTagDirectory{Directory: "documents\\sub folder"})
+	file2.TagsDecoded = append(file2.TagsDecoded, FileTagFolder{Name: "documents\\sub folder"})
 
 	encodedFiles, _ := encodeBlockRecordFiles([]BlockRecordFile{file1, file2})
 
@@ -140,8 +140,8 @@ func TestBlockEncoding(t *testing.T) {
 				switch v := decodedT.(type) {
 				case FileTagName:
 					fmt.Printf("  Name          %s\n", v.Name)
-				case FileTagDirectory:
-					fmt.Printf("  Directory     %s\n", v.Directory)
+				case FileTagFolder:
+					fmt.Printf("  Folder        %s\n", v.Name)
 				}
 			}
 		}
@@ -164,7 +164,7 @@ func TestBlockchainAdd(t *testing.T) {
 
 	file1 := BlockRecordFile{Hash: hashData([]byte("Test data")), Type: TypeText, Format: FormatText, Size: 9, ID: uuid.New()}
 	file1.TagsDecoded = append(file1.TagsDecoded, FileTagName{Name: "Filename 1.txt"})
-	file1.TagsDecoded = append(file1.TagsDecoded, FileTagDirectory{Directory: "documents\\sub folder"})
+	file1.TagsDecoded = append(file1.TagsDecoded, FileTagFolder{Name: "documents\\sub folder"})
 
 	newHeight, status := UserBlockchainAddFiles([]BlockRecordFile{file1})
 
@@ -223,8 +223,8 @@ func TestBlockchainRead(t *testing.T) {
 				switch v := decodedT.(type) {
 				case FileTagName:
 					fmt.Printf("  Name          %s\n", v.Name)
-				case FileTagDirectory:
-					fmt.Printf("  Directory     %s\n", v.Directory)
+				case FileTagFolder:
+					fmt.Printf("  Folder        %s\n", v.Name)
 				}
 			}
 		}

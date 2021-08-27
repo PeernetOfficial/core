@@ -19,6 +19,7 @@ const (
 	TypeExecutable        // Any executable file, OS independent
 	TypeContainer         // Container files like ZIP, RAR, TAR
 	TypeCompressed        // Compressed files like GZ, BZ
+	TypeFolder            // Virtual folder
 )
 
 // High-level file types. New ones may be added as required.
@@ -39,6 +40,7 @@ const (
 	FormatDatabase           // Database file
 	FormatEmail              // Single email
 	FormatCSV                // CSV file
+	FormatFolder             // Virtual folder
 )
 
 // Future tags to be defined for audio/video: Artist, Album, Title, Length, Bitrate, Codec
