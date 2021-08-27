@@ -10,23 +10,8 @@ Encoding of the blockchain header:
 Offset  Size   Info
 0       8      Height of the blockchain
 8       8      Version of the blockchain
-16      2      Format of the block data. 0 = Current format. This is for backward compatibility and supporting changes to the block structure in the future.
+16      2      Format of the blockchain. This provides backward compatibility.
 18      65     Signature
-
-Encoding of each block (it is the same stored in the database and shared in a message):
-Offset  Size   Info
-0       65     Signature of entire block
-65      32     Hash (blake3) of last block. 0 for first one.
-97      8      Blockchain version number
-105     4      Block number
-109     4      Size of entire block including this header
-113     2      Count of records that follow
-
-Each record inside the block has this basic structure:
-Offset  Size   Info
-0       1      Record Type
-1       4      Size of data
-5       ?      Data (encoding depends on record type)
 
 */
 
@@ -126,7 +111,7 @@ func blockchainHeaderWrite(db store.Store, privateKey *btcec.PrivateKey, height,
 	var buffer [83]byte
 	binary.LittleEndian.PutUint64(buffer[0:8], height)
 	binary.LittleEndian.PutUint64(buffer[8:16], version)
-	binary.LittleEndian.PutUint16(buffer[16:18], 0)
+	binary.LittleEndian.PutUint16(buffer[16:18], 0) // Current format is 0
 
 	signature, err := btcec.SignCompact(btcec.S256(), privateKey, hashData(buffer[0:18]), true)
 
@@ -195,29 +180,29 @@ func UserBlockchainAppend(RecordsRaw []BlockRecordRaw) (newHeight uint64, status
 // UserBlockchainRead reads the block number from the blockchain.
 // Status: 0 = Success, 1 = Error block not found, 2 = Error block encoding, 3 = Error block record encoding
 // Errors 2 and 3 indicate data corruption.
-func UserBlockchainRead(number uint64) (decoded *BlockDecoded, status int) {
+func UserBlockchainRead(number uint64) (decoded *BlockDecoded, status int, err error) {
 	if number >= userBlockchainHeader.height {
-		return nil, 1
+		return nil, 1, errors.New("block number exceeds blockchain height")
 	}
 
 	var target [8]byte
 	binary.LittleEndian.PutUint64(target[:], userBlockchainHeader.height-1)
 	blockRaw, found := userBlockchainDB.Get(target[:])
 	if !found || len(blockRaw) == 0 {
-		return nil, 1
+		return nil, 1, errors.New("block not found")
 	}
 
 	block, err := decodeBlock(blockRaw)
 	if err != nil {
-		return nil, 2
+		return nil, 2, err
 	}
 
 	decoded, err = decodeBlockRecords(block)
 	if err != nil {
-		return nil, 2
+		return nil, 2, err
 	}
 
-	return decoded, 0
+	return decoded, 0, nil
 }
 
 // UserBlockchainAddFiles adds files to the blockchain
@@ -253,7 +238,7 @@ func UserBlockchainListFiles() (files []BlockRecordFile, status int) {
 			return files, 2
 		}
 
-		filesMore, _, err := decodeBlockRecordFiles(block.RecordsRaw)
+		filesMore, err := decodeBlockRecordFiles(block.RecordsRaw)
 		if err != nil {
 			return nil, 3
 		}

@@ -14,8 +14,8 @@ import (
 
 const PATH_MAX_LENGTH = 32767 // Windows Maximum Path Length for UNC paths
 
-// Path sanitizies the directory and filename.
-func Path(directory, filename string) (string, string) {
+// PathDirectory sanitizes a directory path (without filename)
+func PathDirectory(directory string) string {
 	// Enforced forward slashes as directory separator and clean the path.
 	directory = strings.ReplaceAll(directory, "\\", "/")
 	directory = path.Clean(directory)
@@ -23,14 +23,22 @@ func Path(directory, filename string) (string, string) {
 	// No slash at the beginning and end to save space.
 	directory = strings.Trim(directory, "/")
 
-	// Slashes in filenames are not encouraged, but not removed.
+	// Enforce max length.
+	if len(directory) > PATH_MAX_LENGTH {
+		directory = directory[:PATH_MAX_LENGTH]
+	}
 
+	return directory
+}
+
+// PathFile sanitizes the filename.
+func PathFile(filename string) string {
 	// Enforce max filename length.
 	if len(filename) > PATH_MAX_LENGTH {
 		filename = filename[:PATH_MAX_LENGTH]
 	}
 
-	return directory, filename
+	return filename
 }
 
 // Username sanitizes the username.

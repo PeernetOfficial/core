@@ -3,7 +3,22 @@ File Name:  Block Encoding.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
-Block encoding in messages and local storage.
+Encoding of a block (it is the same stored in the database and shared in a message):
+Offset  Size   Info
+0       65     Signature of entire block
+65      32     Hash (blake3) of last block. 0 for first one.
+97      8      Blockchain version number
+105     4      Block number
+109     4      Size of entire block including this header
+113     2      Count of records that follow
+
+Each record inside the block has this basic structure:
+Offset  Size   Info
+0       1      Record type
+1       8      Date created. This remains the same in case of block refactoring.
+9       4      Size of data
+13      ?      Data (encoding depends on record type)
+
 */
 
 package core
@@ -12,6 +27,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 )
@@ -28,12 +44,13 @@ type Block struct {
 
 // BlockRecordRaw is a single block record (not decoded)
 type BlockRecordRaw struct {
-	Type uint8  // Record Type. See RecordTypeX.
-	Data []byte // Data according to the type
+	Type uint8     // Record Type. See RecordTypeX.
+	Date time.Time // Date created. This remains the same in case of block refactoring.
+	Data []byte    // Data according to the type
 }
 
 const blockHeaderSize = 115
-const blockRecordHeaderSize = 5
+const blockRecordHeaderSize = 13
 
 // decodeBlock decodes a single block
 func decodeBlock(raw []byte) (block *Block, err error) {
@@ -67,18 +84,19 @@ func decodeBlock(raw []byte) (block *Block, err error) {
 
 	for n := uint16(0); n < countRecords; n++ {
 		if index+blockRecordHeaderSize > len(raw) {
-			return nil, errors.New("decodeBlock block record exceeds block size")
+			return nil, errors.New("decodeBlock record exceeds block size")
 		}
 
 		recordType := raw[index]
-		recordSize := binary.LittleEndian.Uint32(raw[index+1 : index+5])
+		recordDate := int64(binary.LittleEndian.Uint64(raw[index+1 : index+9])) // Unix time int64, the number of seconds elapsed since January 1, 1970 UTC
+		recordSize := binary.LittleEndian.Uint32(raw[index+9 : index+9+4])
 		index += blockRecordHeaderSize
 
 		if index+int(recordSize) > len(raw) {
-			return nil, errors.New("decodeBlock block record exceeds block size")
+			return nil, errors.New("decodeBlock record exceeds block size")
 		}
 
-		block.RecordsRaw = append(block.RecordsRaw, BlockRecordRaw{Type: recordType, Data: raw[index : index+int(recordSize)]})
+		block.RecordsRaw = append(block.RecordsRaw, BlockRecordRaw{Type: recordType, Data: raw[index : index+int(recordSize)], Date: time.Unix(recordDate, 0)})
 
 		index += int(recordSize)
 	}
@@ -111,11 +129,17 @@ func encodeBlock(block *Block, ownerPrivateKey *btcec.PrivateKey) (raw []byte, e
 	countRecords := uint16(0)
 
 	for _, record := range block.RecordsRaw {
-		var temp [8]byte
-		binary.LittleEndian.PutUint32(temp[0:4], uint32(len(record.Data)))
+		if record.Date == (time.Time{}) { // Always set date if not already set
+			record.Date = time.Now()
+		}
+
+		var tempSize, tempDate [8]byte
+		binary.LittleEndian.PutUint32(tempSize[0:4], uint32(len(record.Data)))
+		binary.LittleEndian.PutUint64(tempDate[0:8], uint64(record.Date.UTC().Unix()))
 
 		buffer.Write([]byte{record.Type}) // Record Type
-		buffer.Write(temp[:4])            // Size of data
+		buffer.Write(tempDate[:8])        // Date created
+		buffer.Write(tempSize[:4])        // Size of data
 		buffer.Write(record.Data)         // Data
 
 		countRecords++

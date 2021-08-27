@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/google/uuid"
 )
 
 func TestMessageEncodingAnnouncement(t *testing.T) {
@@ -90,13 +91,21 @@ func TestBlockEncoding(t *testing.T) {
 		return
 	}
 
-	file1 := BlockRecordFile{Hash: hashData([]byte("Test data")), Type: TypeText, Format: FormatText, Size: 9, Name: "Filename 1.txt", Directory: "documents\\sub folder"}
-	encoded1, _ := encodeBlockRecordUser(BlockRecordUser{Valid: true, Name: "Test User 1"})
-	encoded2, _ := encodeBlockRecordFiles([]BlockRecordFile{file1})
+	encoded1, _ := encodeBlockRecordUser(BlockRecordUser{Name: "Test User 1"})
+
+	file1 := BlockRecordFile{Hash: hashData([]byte("Test data")), Type: TypeText, Format: FormatText, Size: 9, ID: uuid.New()}
+	file1.TagsDecoded = append(file1.TagsDecoded, FileTagName{Name: "Filename 1.txt"})
+	file1.TagsDecoded = append(file1.TagsDecoded, FileTagDirectory{Directory: "documents\\sub folder"})
+
+	file2 := BlockRecordFile{Hash: hashData([]byte("Test data 2")), Type: TypeText, Format: FormatText, Size: 9, ID: uuid.New()}
+	file2.TagsDecoded = append(file2.TagsDecoded, FileTagName{Name: "Filename 2.txt"})
+	file2.TagsDecoded = append(file2.TagsDecoded, FileTagDirectory{Directory: "documents\\sub folder"})
+
+	encodedFiles, _ := encodeBlockRecordFiles([]BlockRecordFile{file1, file2})
 
 	blockE := &Block{BlockchainVersion: 42, Number: 0}
 	blockE.RecordsRaw = append(blockE.RecordsRaw, encoded1...)
-	blockE.RecordsRaw = append(blockE.RecordsRaw, encoded2...)
+	blockE.RecordsRaw = append(blockE.RecordsRaw, encodedFiles...)
 
 	raw, err := encodeBlock(blockE, privateKey)
 	if err != nil {
@@ -119,14 +128,23 @@ func TestBlockEncoding(t *testing.T) {
 	// output the block details
 	fmt.Printf("Block details:\n----------------\nNumber: %d\nVersion: %d\nLast Hash: %s\nPublic Key: %s\n", block.Number, block.BlockchainVersion, hex.EncodeToString(block.LastBlockHash), hex.EncodeToString(block.OwnerPublicKey.SerializeCompressed()))
 
-	for _, file := range decoded.Files {
-		fmt.Printf("* File          %s\n", file.Name)
-		fmt.Printf("  Directory     %s\n", file.Directory)
-		fmt.Printf("  Size          %d\n", file.Size)
-		fmt.Printf("  Type          %d\n", file.Type)
-		fmt.Printf("  Format        %d\n", file.Format)
-		fmt.Printf("  Hash          %s\n", hex.EncodeToString(file.Hash))
-		fmt.Printf("  Directory ID  %d\n\n", file.directoryID)
+	for _, decodedR := range decoded.RecordsDecoded {
+		if file, ok := decodedR.(BlockRecordFile); ok {
+			fmt.Printf("* File          %s\n", file.ID.String())
+			fmt.Printf("  Size          %d\n", file.Size)
+			fmt.Printf("  Type          %d\n", file.Type)
+			fmt.Printf("  Format        %d\n", file.Format)
+			fmt.Printf("  Hash          %s\n", hex.EncodeToString(file.Hash))
+
+			for _, decodedT := range file.TagsDecoded {
+				switch v := decodedT.(type) {
+				case FileTagName:
+					fmt.Printf("  Name          %s\n", v.Name)
+				case FileTagDirectory:
+					fmt.Printf("  Directory     %s\n", v.Directory)
+				}
+			}
+		}
 	}
 }
 
@@ -144,7 +162,9 @@ func TestBlockchainAdd(t *testing.T) {
 	initTestPrivateKey()
 	initUserBlockchain()
 
-	file1 := BlockRecordFile{Hash: hashData([]byte("Test data")), Type: TypeText, Format: FormatText, Size: 9, Name: "Filename 1.txt", Directory: "documents\\sub folder"}
+	file1 := BlockRecordFile{Hash: hashData([]byte("Test data")), Type: TypeText, Format: FormatText, Size: 9, ID: uuid.New()}
+	file1.TagsDecoded = append(file1.TagsDecoded, FileTagName{Name: "Filename 1.txt"})
+	file1.TagsDecoded = append(file1.TagsDecoded, FileTagDirectory{Directory: "documents\\sub folder"})
 
 	newHeight, status := UserBlockchainAddFiles([]BlockRecordFile{file1})
 
@@ -174,13 +194,13 @@ func TestBlockchainRead(t *testing.T) {
 
 	blockNumber := uint64(0)
 
-	decoded, status := UserBlockchainRead(blockNumber)
+	decoded, status, err := UserBlockchainRead(blockNumber)
 	switch status {
 	case 0:
 	case 1: // Error block not found
 		fmt.Printf("Error reading block %d: Block not found.\n", blockNumber)
 	case 2: // Error block encoding
-		fmt.Printf("Error reading block %d: Block encoding corrupt.\n", blockNumber)
+		fmt.Printf("Error reading block %d: Block encoding corrupt: %s\n", blockNumber, err.Error())
 	case 3: // Error block record encoding
 		fmt.Printf("Error reading block %d: Block record encoding corrupt.\n", blockNumber)
 	default:
@@ -191,13 +211,22 @@ func TestBlockchainRead(t *testing.T) {
 		return
 	}
 
-	for _, file := range decoded.Files {
-		fmt.Printf("* File          %s\n", file.Name)
-		fmt.Printf("  Directory     %s\n", file.Directory)
-		fmt.Printf("  Size          %d\n", file.Size)
-		fmt.Printf("  Type          %d\n", file.Type)
-		fmt.Printf("  Format        %d\n", file.Format)
-		fmt.Printf("  Hash          %s\n", hex.EncodeToString(file.Hash))
-		fmt.Printf("  Directory ID  %d\n\n", file.directoryID)
+	for _, decodedR := range decoded.RecordsDecoded {
+		if file, ok := decodedR.(BlockRecordFile); ok {
+			fmt.Printf("* File          %s\n", file.ID.String())
+			fmt.Printf("  Size          %d\n", file.Size)
+			fmt.Printf("  Type          %d\n", file.Type)
+			fmt.Printf("  Format        %d\n", file.Format)
+			fmt.Printf("  Hash          %s\n", hex.EncodeToString(file.Hash))
+
+			for _, decodedT := range file.TagsDecoded {
+				switch v := decodedT.(type) {
+				case FileTagName:
+					fmt.Printf("  Name          %s\n", v.Name)
+				case FileTagDirectory:
+					fmt.Printf("  Directory     %s\n", v.Directory)
+				}
+			}
+		}
 	}
 }
