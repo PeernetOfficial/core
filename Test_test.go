@@ -91,7 +91,7 @@ func TestBlockEncoding(t *testing.T) {
 		return
 	}
 
-	encoded1, _ := encodeBlockRecordUser(BlockRecordUser{Name: "Test User 1"})
+	encoded1, _ := encodeBlockRecordProfile(BlockRecordProfile{Fields: []BlockRecordProfileField{{Type: ProfileFieldName, Text: "Test User 1"}}})
 
 	file1 := BlockRecordFile{Hash: hashData([]byte("Test data")), Type: TypeText, Format: FormatText, Size: 9, ID: uuid.New()}
 	file1.TagsDecoded = append(file1.TagsDecoded, FileTagName{Name: "Filename 1.txt"})
@@ -129,7 +129,9 @@ func TestBlockEncoding(t *testing.T) {
 	fmt.Printf("Block details:\n----------------\nNumber: %d\nVersion: %d\nLast Hash: %s\nPublic Key: %s\n", block.Number, block.BlockchainVersion, hex.EncodeToString(block.LastBlockHash), hex.EncodeToString(block.OwnerPublicKey.SerializeCompressed()))
 
 	for _, decodedR := range decoded.RecordsDecoded {
-		if file, ok := decodedR.(BlockRecordFile); ok {
+		switch record := decodedR.(type) {
+		case BlockRecordFile:
+			file := record
 			fmt.Printf("* File          %s\n", file.ID.String())
 			fmt.Printf("  Size          %d\n", file.Size)
 			fmt.Printf("  Type          %d\n", file.Type)
@@ -144,7 +146,16 @@ func TestBlockEncoding(t *testing.T) {
 					fmt.Printf("  Folder        %s\n", v.Name)
 				}
 			}
+
+		case BlockRecordProfile:
+			profile := record
+			fmt.Printf("* Profile\n")
+			for _, field := range profile.Fields {
+				fmt.Printf("  %d = %s\n", field.Type, field.Text)
+			}
+
 		}
+
 	}
 }
 
