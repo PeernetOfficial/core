@@ -71,6 +71,8 @@ func initUserBlockchain() {
 		// First run: create header signature!
 		userBlockchainHeader.height = 0
 		userBlockchainHeader.version = 0
+		userBlockchainHeader.publicKey = peerPublicKey
+
 		if err := blockchainHeaderWrite(userBlockchainDB, peerPrivateKey, userBlockchainHeader.height, userBlockchainHeader.version); err != nil {
 			Filters.LogError("initUserBlockchain", "initializing user blockchain: %s", err.Error())
 			os.Exit(1)

@@ -380,6 +380,8 @@ const (
 	ProfileFieldAddress = 5 // Physical address
 )
 
+// BlockRecordProfileBlob is similar to BlockRecordProfileField but contains binary objects instead of text.
+// It can be used for example to store a profile picture on the blockchain.
 type BlockRecordProfileBlob struct {
 	Type uint16 // See ProfileBlobX constants.
 	Data []byte // The data
