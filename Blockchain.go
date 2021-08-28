@@ -188,7 +188,7 @@ func UserBlockchainRead(number uint64) (decoded *BlockDecoded, status int, err e
 	}
 
 	var target [8]byte
-	binary.LittleEndian.PutUint64(target[:], userBlockchainHeader.height-1)
+	binary.LittleEndian.PutUint64(target[:], number)
 	blockRaw, found := userBlockchainDB.Get(target[:])
 	if !found || len(blockRaw) == 0 {
 		return nil, 1, errors.New("block not found")
@@ -229,7 +229,7 @@ func UserBlockchainListFiles() (files []BlockRecordFile, status int) {
 	// read all blocks until height is reached
 	for blockN := uint64(0); blockN < height; blockN++ {
 		var target [8]byte
-		binary.LittleEndian.PutUint64(target[:], userBlockchainHeader.height-1)
+		binary.LittleEndian.PutUint64(target[:], blockN)
 		blockRaw, found := userBlockchainDB.Get(target[:])
 		if !found || len(blockRaw) == 0 {
 			return files, 1
