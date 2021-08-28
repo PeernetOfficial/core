@@ -79,6 +79,7 @@ const (
 	TagTypeFolder      = 1 // Folder
 	TagTypeDateCreated = 2 // Date when the file was originally created. This may differ from the date in the block record, which indicates when the file was shared.
 	TagTypeDescription = 3 // Arbitrary description of the file. May contain hashtags.
+	TagTypeDateShared  = 4 // When the file was published on the blockchain. Cannot be set manually (virtual read-only tag).
 )
 
 // FileTagFolder specifies in which folder the file is stored.
@@ -97,9 +98,14 @@ type FileTagDescription struct {
 	Description string
 }
 
-// FileTagCreated is the date when the file was originally created
-type FileTagCreated struct {
+// FileTagDateCreated is the date when the file was originally created
+type FileTagDateCreated struct {
 	Date time.Time // Created time
+}
+
+// FileTagDateShared is the date when the file was shared on the blockchain
+type FileTagDateShared struct {
+	Date time.Time // Shared time
 }
 
 // ---- low-level encoding ----
@@ -174,6 +180,8 @@ func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw) (files []BlockRecordFil
 				index += 6 + int(tagSize)
 			}
 
+			file.TagsDecoded = append(file.TagsDecoded, FileTagDateShared{Date: record.Date})
+
 			files = append(files, file)
 		}
 	}
@@ -199,7 +207,7 @@ func decodeFileTag(tag BlockRecordFileTag) (decoded interface{}, err error) {
 		}
 
 		timeB := int64(binary.LittleEndian.Uint64(tag.Data[0:8]))
-		return FileTagCreated{Date: time.Unix(timeB, 0)}, nil
+		return FileTagDateCreated{Date: time.Unix(timeB, 0)}, nil
 
 	}
 
@@ -218,7 +226,7 @@ func encodeFileTag(decoded interface{}) (tag BlockRecordFileTag, err error) {
 	case FileTagDescription:
 		return BlockRecordFileTag{Type: TagTypeDescription, Data: []byte(v.Description)}, nil
 
-	case FileTagCreated:
+	case FileTagDateCreated:
 		var tempDate [8]byte
 		binary.LittleEndian.PutUint64(tempDate[0:8], uint64(v.Date.UTC().Unix()))
 		return BlockRecordFileTag{Type: TagTypeDateCreated, Data: tempDate[:]}, nil
@@ -272,6 +280,11 @@ func encodeBlockRecordFiles(files []BlockRecordFile) (recordsRaw []BlockRecordRa
 		binary.LittleEndian.PutUint16(data[59:59+2], uint16(len(files[n].TagsRaw)))
 
 		for _, tagRaw := range files[n].TagsRaw {
+			// Some tags are virtual and never stored on the blockchain. If attempted to write, ignore.
+			if tagRaw.Type == TagTypeDateShared {
+				continue
+			}
+
 			if len(tagRaw.Data) > 4 {
 				if refNumber, ok := duplicateTagDataMap[string(tagRaw.Data)]; ok {
 					// In case the data is duplicated, use reference to the RecordTypeTagData instead
