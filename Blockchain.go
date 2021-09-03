@@ -130,12 +130,48 @@ func blockchainHeaderWrite(db store.Store, privateKey *btcec.PrivateKey, height,
 	return err
 }
 
+// BlockchainStatusX provides information about the blockchain status. Some errors codes indicate a corruption.
+const (
+	BlockchainStatusOK                 = 0 // No problems in the blockchain detected.
+	BlockchainStatusBlockNotFound      = 1 // Missing block in the blockchain.
+	BlockchainStatusCorruptBlock       = 2 // Error block encoding
+	BlockchainStatusCorruptBlockRecord = 3 // Error block record encoding
+	BlockchainStatusDataNotFound       = 4 // Requested data not available in the blockchain
+)
+
+// blockchainIterate iterates over the blockchain. Status is BlockchainStatusX.
+// If the callback returns non-zero, the function aborts and returns the inner status code.
+func blockchainIterate(callback func(block *Block) int) (status int) {
+	// read all blocks until height is reached
+	height := userBlockchainHeader.height
+
+	for blockN := uint64(0); blockN < height; blockN++ {
+		var target [8]byte
+		binary.LittleEndian.PutUint64(target[:], blockN)
+		blockRaw, found := userBlockchainDB.Get(target[:])
+		if !found || len(blockRaw) == 0 {
+			return BlockchainStatusBlockNotFound
+		}
+
+		block, err := decodeBlock(blockRaw)
+		if err != nil {
+			return BlockchainStatusCorruptBlock
+		}
+
+		if statusI := callback(block); statusI != BlockchainStatusOK {
+			return statusI
+		}
+	}
+
+	return BlockchainStatusOK
+}
+
+// ---- blockchain manipulation functions ----
+
 // UserBlockchainHeader returns the users blockchain header which stores the height and version number.
 func UserBlockchainHeader() (publicKey *btcec.PublicKey, height uint64, version uint64) {
 	return userBlockchainHeader.publicKey, userBlockchainHeader.height, userBlockchainHeader.version
 }
-
-// ---- low-level blockchain manipulation functions ----
 
 // UserBlockchainAppend appends a new block to the blockchain based on the provided raw records.
 // Status: 0 = Success, 1 = Error previous block not found, 2 = Error block encoding
@@ -213,40 +249,134 @@ func UserBlockchainRead(number uint64) (decoded *BlockDecoded, status int, err e
 func UserBlockchainAddFiles(files []BlockRecordFile) (newHeight uint64, status int) {
 	encoded, err := encodeBlockRecordFiles(files)
 	if err != nil {
-		return 0, 3
+		return 0, BlockchainStatusCorruptBlockRecord
 	}
 
 	return UserBlockchainAppend(encoded)
 }
 
-// UserBlockchainListFiles returns a list of all files
-// If there is a corruption in the blockchain it will reading it but return the files parsed so far.
-// Status: 0 = Success, 1 = Block not found, 2 = Error block encoding, 3 = Error block record encoding
+// UserBlockchainListFiles returns a list of all files. Status is BlockchainStatusX.
+// If there is a corruption in the blockchain it will stop reading but return the files parsed so far.
 func UserBlockchainListFiles() (files []BlockRecordFile, status int) {
-	// TODO: Add internal cache of file list for faster subsequent processing?
-	height := userBlockchainHeader.height
-
-	// read all blocks until height is reached
-	for blockN := uint64(0); blockN < height; blockN++ {
-		var target [8]byte
-		binary.LittleEndian.PutUint64(target[:], blockN)
-		blockRaw, found := userBlockchainDB.Get(target[:])
-		if !found || len(blockRaw) == 0 {
-			return files, 1
-		}
-
-		block, err := decodeBlock(blockRaw)
-		if err != nil {
-			return files, 2
-		}
-
+	status = blockchainIterate(func(block *Block) (statusI int) {
 		filesMore, err := decodeBlockRecordFiles(block.RecordsRaw)
 		if err != nil {
-			return nil, 3
+			return BlockchainStatusCorruptBlockRecord
+		}
+		files = append(files, filesMore...)
+
+		return BlockchainStatusOK
+	})
+
+	return files, status
+}
+
+// UserProfileReadField reads the specified profile field. See core.ProfileFieldX for the full list. The returned text is UTF-8 text encoded. Status is BlockchainStatusX.
+func UserProfileReadField(index uint16) (text string, status int) {
+	found := false
+
+	status = blockchainIterate(func(block *Block) (statusI int) {
+		profile, err := decodeBlockRecordProfile(block.RecordsRaw)
+		if err != nil {
+			return BlockchainStatusCorruptBlockRecord
+		} else if profile == nil {
+			return BlockchainStatusOK
 		}
 
-		files = append(files, filesMore...)
+		// Check if the field is available in the profile record. If there are multiple records, only return the latest one.
+		for n := range profile.Fields {
+			if profile.Fields[n].Type == index {
+				text = profile.Fields[n].Text
+				found = true
+			}
+		}
+
+		return BlockchainStatusOK
+	})
+
+	if status != BlockchainStatusOK {
+		return "", status
+	} else if !found {
+		return "", BlockchainStatusDataNotFound
 	}
 
-	return files, 0
+	return text, BlockchainStatusOK
+}
+
+// UserProfileReadBlob reads a specific profile blob. A blob is binary data. See core.ProfileBlobX. Status is BlockchainStatusX.
+func UserProfileReadBlob(index uint16) (blob []byte, status int) {
+	found := false
+
+	status = blockchainIterate(func(block *Block) (statusI int) {
+		profile, err := decodeBlockRecordProfile(block.RecordsRaw)
+		if err != nil {
+			return BlockchainStatusCorruptBlockRecord
+		} else if profile == nil {
+			return BlockchainStatusOK
+		}
+
+		// Check if the blob is available in the profile record. If there are multiple records, only return the latest one.
+		for n := range profile.Blobs {
+			if profile.Blobs[n].Type == index {
+				blob = profile.Blobs[n].Data
+				found = true
+			}
+		}
+
+		return BlockchainStatusOK
+	})
+
+	if status != BlockchainStatusOK {
+		return nil, status
+	} else if !found {
+		return nil, BlockchainStatusDataNotFound
+	}
+
+	return blob, BlockchainStatusOK
+}
+
+// UserProfileList lists all profile fields and blobs. Status is BlockchainStatusX.
+func UserProfileList() (fields []BlockRecordProfileField, blobs []BlockRecordProfileBlob, status int) {
+	uniqueFields := make(map[uint16]string)
+	uniqueBlobs := make(map[uint16][]byte)
+
+	status = blockchainIterate(func(block *Block) (statusI int) {
+		profile, err := decodeBlockRecordProfile(block.RecordsRaw)
+		if err != nil {
+			return BlockchainStatusCorruptBlockRecord
+		} else if profile == nil {
+			return BlockchainStatusOK
+		}
+
+		for n := range profile.Fields {
+			uniqueFields[profile.Fields[n].Type] = profile.Fields[n].Text
+		}
+
+		for n := range profile.Blobs {
+			uniqueBlobs[profile.Blobs[n].Type] = profile.Blobs[n].Data
+		}
+
+		return BlockchainStatusOK
+	})
+
+	for key, value := range uniqueFields {
+		fields = append(fields, BlockRecordProfileField{Type: key, Text: value})
+	}
+
+	for key, value := range uniqueBlobs {
+		blobs = append(blobs, BlockRecordProfileBlob{Type: key, Data: value})
+	}
+
+	return fields, blobs, status
+}
+
+// UserProfileWrite writes profile fields and blobs to the blockchain
+// Status: 0 = Success, 1 = Error previous block not found, 2 = Error block encoding, 3 = Error block record encoding
+func UserProfileWrite(profile BlockRecordProfile) (newHeight uint64, status int) {
+	encoded, err := encodeBlockRecordProfile(profile)
+	if err != nil {
+		return 0, BlockchainStatusCorruptBlockRecord
+	}
+
+	return UserBlockchainAppend(encoded)
 }

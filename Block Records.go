@@ -368,11 +368,10 @@ func decodeBlockRecords(block *Block) (decoded *BlockDecoded, err error) {
 
 // ---- Profile data ----
 
-// BlockRecordProfile provides information about the end user
-// Multiple profile records extend each others field, or overwrite the field.
+// BlockRecordProfile provides information about the end user.
 type BlockRecordProfile struct {
 	Fields []BlockRecordProfileField // All fields
-	Blobs  []BlockRecordProfileBlob  // Blobs
+	Blobs  []BlockRecordProfileBlob  // All blobs
 }
 
 // BlockRecordProfileField contains a single information about the end user. The data is always UTF8 text encoded.
