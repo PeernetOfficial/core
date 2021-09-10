@@ -181,6 +181,7 @@ type apiBlockRecordFile struct {
 	Folder      string            `json:"folder"`      // Folder, optional
 	Name        string            `json:"name"`        // Name of the file
 	Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
+	Date        time.Time         `json:"date"`        // Date of the virtual file
 	Metadata    []apiFileMetadata `json:"metadata"`    // Metadata. These are decoded tags.
 	TagsRaw     []apiFileTagRaw   `json:"tagsraw"`     // All tags encoded that were not recognized as metadata.
 
@@ -203,7 +204,7 @@ type apiFileTagRaw struct {
 
 ### Blockchain Add File
 
-This adds a file with the provided information to the blockchain.
+This adds a file with the provided information to the blockchain. The date field cannot be set by the caller and is ignored.
 
 ```
 Request:    POST /blockchain/self/add/file with JSON structure apiBlockAddFiles
@@ -254,7 +255,7 @@ Another example to create a new file but with a new arbitrary tag with type numb
         "folder": "sample directory/sub folder",
         "description": "Example description\nThis can be any text #newfile #2021.",
         "metadata": [{
-        "type": 2,
+            "type": 2,
             "value": "2021-08-28 00:00:00"
         }],
         "tagsraw":  [{
@@ -287,11 +288,8 @@ Example output:
         "folder": "sample directory/sub folder",
         "name": "Test.txt",
         "description": "",
-        "metadata": [{
-            "type": 4,
-            "name": "Date Shared",
-            "value": "2021-08-27 16:59:13"
-        }],
+        "date": "2021-08-27T16:59:13+02:00",
+        "metadata": [],
         "tagsraw": []
     }],
     "status": 0

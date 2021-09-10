@@ -129,6 +129,7 @@ type apiBlockRecordFile struct {
 	Folder      string            `json:"folder"`      // Folder, optional
 	Name        string            `json:"name"`        // Name of the file
 	Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
+	Date        time.Time         `json:"date"`        // Date of the virtual file
 	Metadata    []apiFileMetadata `json:"metadata"`    // Metadata. These are decoded tags.
 	TagsRaw     []apiFileTagRaw   `json:"tagsraw"`     // All tags encoded that were not recognized as metadata.
 
@@ -267,7 +268,7 @@ func blockRecordFileToAPI(input core.BlockRecordFile) (output apiBlockRecordFile
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: core.TagTypeDateCreated, Name: "Date Created", Value: v.Date.Format(dateFormat)})
 
 		case core.FileTagDateShared:
-			output.Metadata = append(output.Metadata, apiFileMetadata{Type: core.TagTypeDateShared, Name: "Date Shared", Value: v.Date.Format(dateFormat)})
+			output.Date = v.Date
 
 		}
 	}
