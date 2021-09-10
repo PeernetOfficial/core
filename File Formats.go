@@ -24,23 +24,23 @@ const (
 
 // High-level file types. New ones may be added as required.
 const (
-	FormatUnspecified = iota // Unspecified
-	FormatPDF                // PDF document
-	FormatWord               // Word document
-	FormatExcel              // Excel
-	FormatPowerpoint         // Powerpoint
-	FormatPicture            // Pictures (including GIF, excluding icons)
-	FormatAudio              // Audio files
-	FormatVideo              // Video files
-	FormatContainer          // Compressed files including ZIP, RAR, TAR and others
-	FormatHTML               // HTML file
-	FormatText               // Text file
-	FormatEbook              // Ebook file
-	FormatCompressed         // Compressed file.
-	FormatDatabase           // Database file
-	FormatEmail              // Single email
-	FormatCSV                // CSV file
-	FormatFolder             // Virtual folder
+	FormatBinary     = iota // Binary/unspecified
+	FormatPDF               // PDF document
+	FormatWord              // Word document
+	FormatExcel             // Excel
+	FormatPowerpoint        // Powerpoint
+	FormatPicture           // Pictures (including GIF, excluding icons)
+	FormatAudio             // Audio files
+	FormatVideo             // Video files
+	FormatContainer         // Compressed files including ZIP, RAR, TAR and others
+	FormatHTML              // HTML file
+	FormatText              // Text file
+	FormatEbook             // Ebook file
+	FormatCompressed        // Compressed file.
+	FormatDatabase          // Database file
+	FormatEmail             // Single email
+	FormatCSV               // CSV file
+	FormatFolder            // Virtual folder
 )
 
 // Future tags to be defined for audio/video: Artist, Album, Title, Length, Bitrate, Codec
