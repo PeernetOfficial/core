@@ -79,7 +79,8 @@ func startWebServer(WebListen string, UseSSL bool, CertificateFile, CertificateK
 	}
 }
 
-func apiEncodeJSON(w http.ResponseWriter, r *http.Request, data interface{}) (err error) {
+// EncodeJSON encodes the data as JSON
+func EncodeJSON(w http.ResponseWriter, r *http.Request, data interface{}) (err error) {
 	w.Header().Set("Content-Type", "application/json")
 
 	err = json.NewEncoder(w).Encode(data)
@@ -90,9 +91,9 @@ func apiEncodeJSON(w http.ResponseWriter, r *http.Request, data interface{}) (er
 	return err
 }
 
-// apiDecodeJSON decodes input JSON data server side sent either via GET or POST. It does not limit the maximum amount to read.
+// DecodeJSON decodes input JSON data server side sent either via GET or POST. It does not limit the maximum amount to read.
 // In case of error it will automatically send an error to the client.
-func apiDecodeJSON(w http.ResponseWriter, r *http.Request, data interface{}) (err error) {
+func DecodeJSON(w http.ResponseWriter, r *http.Request, data interface{}) (err error) {
 	if r.Body == nil {
 		http.Error(w, "", http.StatusBadRequest)
 		return errors.New("no data")

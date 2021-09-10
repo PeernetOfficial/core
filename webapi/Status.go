@@ -36,7 +36,7 @@ func apiStatus(w http.ResponseWriter, r *http.Request) {
 	// Instead, the core should keep a count of "active peers".
 	status.IsConnected = status.CountPeerList >= 2
 
-	apiEncodeJSON(w, r, status)
+	EncodeJSON(w, r, status)
 }
 
 type apiResponsePeerSelf struct {
@@ -56,5 +56,5 @@ func apiPeerSelf(w http.ResponseWriter, r *http.Request) {
 	_, publicKey := core.ExportPrivateKey()
 	response.PeerID = hex.EncodeToString(publicKey.SerializeCompressed())
 
-	apiEncodeJSON(w, r, response)
+	EncodeJSON(w, r, response)
 }

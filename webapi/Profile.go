@@ -37,7 +37,7 @@ func apiProfileList(w http.ResponseWriter, r *http.Request) {
 		result.Blobs = append(result.Blobs, apiBlockRecordProfileBlob{Type: blobs[n].Type, Data: blobs[n].Data})
 	}
 
-	apiEncodeJSON(w, r, result)
+	EncodeJSON(w, r, result)
 }
 
 /*
@@ -71,7 +71,7 @@ func apiProfileRead(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	apiEncodeJSON(w, r, result)
+	EncodeJSON(w, r, result)
 }
 
 /*
@@ -83,7 +83,7 @@ Response:   200 with JSON structure apiBlockchainBlockStatus
 */
 func apiProfileWrite(w http.ResponseWriter, r *http.Request) {
 	var input apiProfileData
-	if err := apiDecodeJSON(w, r, &input); err != nil {
+	if err := DecodeJSON(w, r, &input); err != nil {
 		return
 	}
 
@@ -98,7 +98,7 @@ func apiProfileWrite(w http.ResponseWriter, r *http.Request) {
 
 	newHeight, status := core.UserProfileWrite(profile)
 
-	apiEncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight})
+	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight})
 }
 
 // --- conversion from core to API data ---

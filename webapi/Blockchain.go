@@ -33,7 +33,7 @@ Result:     200 with JSON structure apiResponsePeerSelf
 func apiBlockchainSelfHeader(w http.ResponseWriter, r *http.Request) {
 	publicKey, height, version := core.UserBlockchainHeader()
 
-	apiEncodeJSON(w, r, apiBlockchainHeader{Version: version, Height: height, PeerID: hex.EncodeToString(publicKey.SerializeCompressed())})
+	EncodeJSON(w, r, apiBlockchainHeader{Version: version, Height: height, PeerID: hex.EncodeToString(publicKey.SerializeCompressed())})
 }
 
 type apiBlockRecordRaw struct {
@@ -60,7 +60,7 @@ Response:   200 with JSON structure apiBlockchainBlockStatus
 */
 func apiBlockchainSelfAppend(w http.ResponseWriter, r *http.Request) {
 	var input apiBlockchainBlockRaw
-	if err := apiDecodeJSON(w, r, &input); err != nil {
+	if err := DecodeJSON(w, r, &input); err != nil {
 		return
 	}
 
@@ -72,7 +72,7 @@ func apiBlockchainSelfAppend(w http.ResponseWriter, r *http.Request) {
 
 	newHeight, status := core.UserBlockchainAppend(records)
 
-	apiEncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight})
+	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight})
 }
 
 type apiBlockchainBlock struct {
@@ -174,7 +174,7 @@ func apiBlockchainSelfRead(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	apiEncodeJSON(w, r, result)
+	EncodeJSON(w, r, result)
 }
 
 // apiBlockAddFiles contains the file metadata to add to the blockchain
@@ -191,7 +191,7 @@ Response:   200 with JSON structure apiBlockchainBlockStatus
 */
 func apiBlockchainSelfAddFile(w http.ResponseWriter, r *http.Request) {
 	var input apiBlockAddFiles
-	if err := apiDecodeJSON(w, r, &input); err != nil {
+	if err := DecodeJSON(w, r, &input); err != nil {
 		return
 	}
 
@@ -207,7 +207,7 @@ func apiBlockchainSelfAddFile(w http.ResponseWriter, r *http.Request) {
 
 	newHeight, status := core.UserBlockchainAddFiles(filesAdd)
 
-	apiEncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight})
+	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight})
 }
 
 /*
@@ -227,7 +227,7 @@ func apiBlockchainSelfListFile(w http.ResponseWriter, r *http.Request) {
 
 	result.Status = status
 
-	apiEncodeJSON(w, r, result)
+	EncodeJSON(w, r, result)
 }
 
 // --- conversion from core to API data ---
