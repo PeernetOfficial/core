@@ -8,7 +8,7 @@ Definition of all recognized file formats. This file is likely being updated mor
 
 package core
 
-// Low-level content types of file data. This is a copy from Intelligence X.
+// General content types of data.
 const (
 	TypeBinary     = iota // Binary/unspecified
 	TypeText              // Plain text
@@ -20,9 +20,10 @@ const (
 	TypeContainer         // Container files like ZIP, RAR, TAR
 	TypeCompressed        // Compressed files like GZ, BZ
 	TypeFolder            // Virtual folder
+	TypeEbook             // Ebook
 )
 
-// High-level file types. New ones may be added as required.
+// File formats. New ones may be added to the list as required.
 const (
 	FormatBinary     = iota // Binary/unspecified
 	FormatPDF               // PDF document

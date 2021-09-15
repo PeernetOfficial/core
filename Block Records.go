@@ -9,8 +9,8 @@ File records:
 Offset  Size    Info
 0       32      Hash blake3 of the file content
 32      16      File ID
-48      1       File Type (low-level)
-49      2       File Format (high-level)
+48      1       File Type
+49      2       File Format
 51      8       File Size
 59      2       Count of Tags
 61      ?       Tags
@@ -54,8 +54,8 @@ const (
 type BlockRecordFile struct {
 	Hash        []byte               // Hash of the file data
 	ID          uuid.UUID            // ID
-	Type        uint8                // Type (low-level)
-	Format      uint16               // Format (high-level)
+	Type        uint8                // File Type
+	Format      uint16               // File Format
 	Size        uint64               // Size of the file data
 	TagsRaw     []BlockRecordFileTag // Tags to provide additional metadata
 	TagsDecoded []interface{}        // Decoded tags. See FileTagX structures.

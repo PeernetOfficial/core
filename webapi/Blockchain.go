@@ -123,8 +123,8 @@ type apiFileTagRaw struct {
 type apiBlockRecordFile struct {
 	ID          uuid.UUID         `json:"id"`          // Unique ID.
 	Hash        []byte            `json:"hash"`        // Blake3 hash of the file data
-	Type        uint8             `json:"type"`        // Type (low-level)
-	Format      uint16            `json:"format"`      // Format (high-level)
+	Type        uint8             `json:"type"`        // File Type. For example audio or document. See TypeX.
+	Format      uint16            `json:"format"`      // File Format. This is more granular, for example PDF or Word file. See FormatX.
 	Size        uint64            `json:"size"`        // Size of the file
 	Folder      string            `json:"folder"`      // Folder, optional
 	Name        string            `json:"name"`        // Name of the file
