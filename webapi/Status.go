@@ -13,6 +13,11 @@ import (
 	"github.com/PeernetOfficial/core"
 )
 
+func apiTest(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ok"))
+}
+
 type apiResponseStatus struct {
 	Status        int  `json:"status"`        // Status code: 0 = Ok.
 	IsConnected   bool `json:"isconnected"`   // Whether connected to Peernet.

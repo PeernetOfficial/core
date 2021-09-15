@@ -21,17 +21,20 @@ import (
 // Router can be used to register additional API functions
 var Router *mux.Router
 
-// WSUpgrader can be used to provide web sockets. It uses all default options and allows all requests.
-var WSUpgrader = websocket.Upgrader{}
+// WSUpgrader is used for websocket functionality. It allows all requests.
+var WSUpgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		// allow all connections by default
+		return true
+	},
+}
 
 // Start starts the API. ListenAddresses is a list of IP:Ports
 func Start(ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKey string, TimeoutRead, TimeoutWrite time.Duration) {
 	if len(ListenAddresses) == 0 {
 		return
-	}
-
-	WSUpgrader.CheckOrigin = func(r *http.Request) bool {
-		return true
 	}
 
 	Router = mux.NewRouter()
@@ -106,9 +109,4 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, data interface{}) (err e
 	}
 
 	return nil
-}
-
-func apiTest(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ok"))
 }
