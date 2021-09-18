@@ -26,6 +26,7 @@ import (
 
 	"github.com/PeernetOfficial/core/store"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/google/uuid"
 )
 
 // BlockchainHeight is the current count of blocks
@@ -139,6 +140,14 @@ const (
 	BlockchainStatusDataNotFound       = 4 // Requested data not available in the blockchain
 )
 
+// blockNumberToKey returns the database key for the given block number
+func blockNumberToKey(number uint64) (key []byte) {
+	var target [8]byte
+	binary.LittleEndian.PutUint64(target[:], number)
+
+	return target[:]
+}
+
 // blockchainIterate iterates over the blockchain. Status is BlockchainStatusX.
 // If the callback returns non-zero, the function aborts and returns the inner status code.
 func blockchainIterate(callback func(block *Block) int) (status int) {
@@ -146,9 +155,7 @@ func blockchainIterate(callback func(block *Block) int) (status int) {
 	height := userBlockchainHeader.height
 
 	for blockN := uint64(0); blockN < height; blockN++ {
-		var target [8]byte
-		binary.LittleEndian.PutUint64(target[:], blockN)
-		blockRaw, found := userBlockchainDB.Get(target[:])
+		blockRaw, found := userBlockchainDB.Get(blockNumberToKey(blockN))
 		if !found || len(blockRaw) == 0 {
 			return BlockchainStatusBlockNotFound
 		}
@@ -166,6 +173,89 @@ func blockchainIterate(callback func(block *Block) int) (status int) {
 	return BlockchainStatusOK
 }
 
+// blockchainIterateDeleteRecord iterates over the blockchain to find records to delete. Status is BlockchainStatusX.
+// If the callback returns true, the record will be deleted. The blockchain will be automatically refactored and height and version updated.
+func blockchainIterateDeleteRecord(callback func(record *BlockRecordRaw) (delete, corrupt bool)) (newHeight, newVersion uint64, status int) {
+	userBlockchainHeader.Lock()
+	defer userBlockchainHeader.Unlock()
+
+	// New blockchain keeps track of the new blocks. If anything changes in the blockchain, it must be recalculated and the version number increased.
+	var blockchainNew []Block
+	refactorBlockchain := false
+	refactorVersion := userBlockchainHeader.version + 1
+
+	// Read all blocks until height is reached. At the end the height and version might be different if blocks are deleted.
+	height := userBlockchainHeader.height
+
+	for blockN := uint64(0); blockN < height; blockN++ {
+		blockRaw, found := userBlockchainDB.Get(blockNumberToKey(blockN))
+		if !found || len(blockRaw) == 0 {
+			return 0, 0, BlockchainStatusBlockNotFound
+		}
+
+		block, err := decodeBlock(blockRaw)
+		if err != nil {
+			return 0, 0, BlockchainStatusCorruptBlock
+		}
+
+		// loop through all records in this block
+		refactorBlock := false
+		var newRecordsRaw []BlockRecordRaw
+
+		for n := range block.RecordsRaw {
+			// delete the block?
+			if delete, corrupt := callback(&block.RecordsRaw[n]); corrupt {
+				return 0, 0, BlockchainStatusCorruptBlockRecord
+			} else if delete {
+				refactorBlock = true
+				refactorBlockchain = true
+			} else {
+				newRecordsRaw = append(newRecordsRaw, block.RecordsRaw[n])
+			}
+		}
+
+		// If refactor, re-calculate the block. All later blocks need to be re-encoded due to change of previous block hash. The version number needs to change.
+		if refactorBlock {
+			if len(newRecordsRaw) > 0 {
+				blockchainNew = append(blockchainNew, Block{OwnerPublicKey: peerPublicKey, RecordsRaw: newRecordsRaw, BlockchainVersion: refactorVersion, Number: uint64(len(blockchainNew))})
+			}
+		} else {
+			blockchainNew = append(blockchainNew, Block{OwnerPublicKey: peerPublicKey, RecordsRaw: block.RecordsRaw, BlockchainVersion: refactorVersion, Number: uint64(len(blockchainNew))})
+		}
+	}
+
+	if refactorBlockchain {
+		var lastBlockHash []byte
+
+		for _, block := range blockchainNew {
+			block.LastBlockHash = lastBlockHash
+
+			raw, err := encodeBlock(&block, peerPrivateKey)
+			if err != nil {
+				return 0, 0, BlockchainStatusCorruptBlock
+			}
+
+			// store the block
+			userBlockchainDB.Set(blockNumberToKey(block.Number), raw)
+
+			lastBlockHash = hashData(raw)
+		}
+
+		userBlockchainHeader.height = uint64(len(blockchainNew))
+		userBlockchainHeader.version = refactorVersion
+
+		// update the blockchain header in the database
+		blockchainHeaderWrite(userBlockchainDB, peerPrivateKey, userBlockchainHeader.height, userBlockchainHeader.version)
+
+		// delete orphaned blocks
+		for n := userBlockchainHeader.height; n < height; n++ {
+			userBlockchainDB.Delete(blockNumberToKey(n))
+		}
+	}
+
+	return userBlockchainHeader.height, userBlockchainHeader.version, BlockchainStatusOK
+}
+
 // ---- blockchain manipulation functions ----
 
 // UserBlockchainHeader returns the users blockchain header which stores the height and version number.
@@ -174,8 +264,8 @@ func UserBlockchainHeader() (publicKey *btcec.PublicKey, height uint64, version 
 }
 
 // UserBlockchainAppend appends a new block to the blockchain based on the provided raw records.
-// Status: 0 = Success, 1 = Error previous block not found, 2 = Error block encoding
-func UserBlockchainAppend(RecordsRaw []BlockRecordRaw) (newHeight uint64, status int) {
+// Status: BlockchainStatusX (0-2): 0 = Success, 1 = Error block not found, 2 = Error block encoding
+func UserBlockchainAppend(RecordsRaw []BlockRecordRaw) (newHeight, newVersion uint64, status int) {
 	userBlockchainHeader.Lock()
 	defer userBlockchainHeader.Unlock()
 
@@ -183,11 +273,9 @@ func UserBlockchainAppend(RecordsRaw []BlockRecordRaw) (newHeight uint64, status
 
 	// set the last block hash first
 	if userBlockchainHeader.height > 0 {
-		var target [8]byte
-		binary.LittleEndian.PutUint64(target[:], userBlockchainHeader.height-1)
-		previousBlockRaw, found := userBlockchainDB.Get(target[:])
+		previousBlockRaw, found := userBlockchainDB.Get(blockNumberToKey(userBlockchainHeader.height - 1))
 		if !found || len(previousBlockRaw) == 0 {
-			return 0, 1
+			return 0, 0, BlockchainStatusBlockNotFound
 		}
 
 		block.LastBlockHash = hashData(previousBlockRaw)
@@ -198,21 +286,19 @@ func UserBlockchainAppend(RecordsRaw []BlockRecordRaw) (newHeight uint64, status
 
 	raw, err := encodeBlock(block, peerPrivateKey)
 	if err != nil {
-		return 0, 2
+		return 0, 0, BlockchainStatusCorruptBlock
 	}
 
 	// increase blockchain height
 	userBlockchainHeader.height++
 
 	// store the block
-	var numberB [8]byte
-	binary.LittleEndian.PutUint64(numberB[:], block.Number)
-	userBlockchainDB.Set(numberB[:], raw)
+	userBlockchainDB.Set(blockNumberToKey(block.Number), raw)
 
 	// update the blockchain header in the database
 	blockchainHeaderWrite(userBlockchainDB, peerPrivateKey, userBlockchainHeader.height, userBlockchainHeader.version)
 
-	return userBlockchainHeader.height, 0
+	return userBlockchainHeader.height, userBlockchainHeader.version, BlockchainStatusOK
 }
 
 // UserBlockchainRead reads the block number from the blockchain.
@@ -223,9 +309,7 @@ func UserBlockchainRead(number uint64) (decoded *BlockDecoded, status int, err e
 		return nil, 1, errors.New("block number exceeds blockchain height")
 	}
 
-	var target [8]byte
-	binary.LittleEndian.PutUint64(target[:], number)
-	blockRaw, found := userBlockchainDB.Get(target[:])
+	blockRaw, found := userBlockchainDB.Get(blockNumberToKey(number))
 	if !found || len(blockRaw) == 0 {
 		return nil, 1, errors.New("block not found")
 	}
@@ -246,10 +330,10 @@ func UserBlockchainRead(number uint64) (decoded *BlockDecoded, status int, err e
 // UserBlockchainAddFiles adds files to the blockchain
 // Status: 0 = Success, 1 = Error previous block not found, 2 = Error block encoding, 3 = Error block record encoding
 // It makes sense to group all files in the same directory into one call, since only one directory record will be created per unique directory per block.
-func UserBlockchainAddFiles(files []BlockRecordFile) (newHeight uint64, status int) {
+func UserBlockchainAddFiles(files []BlockRecordFile) (newHeight, newVersion uint64, status int) {
 	encoded, err := encodeBlockRecordFiles(files)
 	if err != nil {
-		return 0, BlockchainStatusCorruptBlockRecord
+		return 0, 0, BlockchainStatusCorruptBlockRecord
 	}
 
 	return UserBlockchainAppend(encoded)
@@ -372,11 +456,34 @@ func UserProfileList() (fields []BlockRecordProfileField, blobs []BlockRecordPro
 
 // UserProfileWrite writes profile fields and blobs to the blockchain
 // Status: 0 = Success, 1 = Error previous block not found, 2 = Error block encoding, 3 = Error block record encoding
-func UserProfileWrite(profile BlockRecordProfile) (newHeight uint64, status int) {
+func UserProfileWrite(profile BlockRecordProfile) (newHeight, newVersion uint64, status int) {
 	encoded, err := encodeBlockRecordProfile(profile)
 	if err != nil {
-		return 0, BlockchainStatusCorruptBlockRecord
+		return 0, 0, BlockchainStatusCorruptBlockRecord
 	}
 
 	return UserBlockchainAppend(encoded)
+}
+
+// UserBlockchainDeleteFiles deletes files from the blockchain. Status is BlockchainStatusX.
+func UserBlockchainDeleteFiles(IDs []uuid.UUID) (newHeight, newVersion uint64, status int) {
+	return blockchainIterateDeleteRecord(func(record *BlockRecordRaw) (delete, corrupt bool) {
+		if record.Type != RecordTypeFile {
+			return false, false
+		}
+
+		filesDecoded, err := decodeBlockRecordFiles([]BlockRecordRaw{*record})
+		if err != nil || len(filesDecoded) != 1 {
+			// corruption
+			return false, true
+		}
+
+		for _, id := range IDs {
+			if id == filesDecoded[0].ID { // found a file ID to delete?
+				return true, false
+			}
+		}
+
+		return false, false
+	})
 }

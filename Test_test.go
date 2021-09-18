@@ -131,21 +131,7 @@ func TestBlockEncoding(t *testing.T) {
 	for _, decodedR := range decoded.RecordsDecoded {
 		switch record := decodedR.(type) {
 		case BlockRecordFile:
-			file := record
-			fmt.Printf("* File          %s\n", file.ID.String())
-			fmt.Printf("  Size          %d\n", file.Size)
-			fmt.Printf("  Type          %d\n", file.Type)
-			fmt.Printf("  Format        %d\n", file.Format)
-			fmt.Printf("  Hash          %s\n", hex.EncodeToString(file.Hash))
-
-			for _, decodedT := range file.TagsDecoded {
-				switch v := decodedT.(type) {
-				case FileTagName:
-					fmt.Printf("  Name          %s\n", v.Name)
-				case FileTagFolder:
-					fmt.Printf("  Folder        %s\n", v.Name)
-				}
-			}
+			printFile(record)
 
 		case BlockRecordProfile:
 			profile := record
@@ -177,7 +163,7 @@ func TestBlockchainAdd(t *testing.T) {
 	file1.TagsDecoded = append(file1.TagsDecoded, FileTagName{Name: "Filename 1.txt"})
 	file1.TagsDecoded = append(file1.TagsDecoded, FileTagFolder{Name: "documents\\sub folder"})
 
-	newHeight, status := UserBlockchainAddFiles([]BlockRecordFile{file1})
+	newHeight, newVersion, status := UserBlockchainAddFiles([]BlockRecordFile{file1})
 
 	switch status {
 	case 0:
@@ -195,7 +181,7 @@ func TestBlockchainAdd(t *testing.T) {
 		return
 	}
 
-	fmt.Printf("Success adding files to blockchain. New blockchain height: %d\n", newHeight)
+	fmt.Printf("Success adding files to blockchain. New blockchain height %d version %d\n", newHeight, newVersion)
 }
 
 func TestBlockchainRead(t *testing.T) {
@@ -224,20 +210,56 @@ func TestBlockchainRead(t *testing.T) {
 
 	for _, decodedR := range decoded.RecordsDecoded {
 		if file, ok := decodedR.(BlockRecordFile); ok {
-			fmt.Printf("* File          %s\n", file.ID.String())
-			fmt.Printf("  Size          %d\n", file.Size)
-			fmt.Printf("  Type          %d\n", file.Type)
-			fmt.Printf("  Format        %d\n", file.Format)
-			fmt.Printf("  Hash          %s\n", hex.EncodeToString(file.Hash))
-
-			for _, decodedT := range file.TagsDecoded {
-				switch v := decodedT.(type) {
-				case FileTagName:
-					fmt.Printf("  Name          %s\n", v.Name)
-				case FileTagFolder:
-					fmt.Printf("  Folder        %s\n", v.Name)
-				}
-			}
+			printFile(file)
 		}
+	}
+}
+
+func printFile(file BlockRecordFile) {
+	fmt.Printf("* File          %s\n", file.ID.String())
+	fmt.Printf("  Size          %d\n", file.Size)
+	fmt.Printf("  Type          %d\n", file.Type)
+	fmt.Printf("  Format        %d\n", file.Format)
+	fmt.Printf("  Hash          %s\n", hex.EncodeToString(file.Hash))
+
+	for _, decodedT := range file.TagsDecoded {
+		switch v := decodedT.(type) {
+		case FileTagName:
+			fmt.Printf("  Name          %s\n", v.Name)
+		case FileTagFolder:
+			fmt.Printf("  Folder        %s\n", v.Name)
+		}
+	}
+}
+
+func TestBlockchainDelete(t *testing.T) {
+	initTestPrivateKey()
+	initFilters()
+	initUserBlockchain()
+
+	// test add file
+	file1 := BlockRecordFile{Hash: hashData([]byte("Test data")), Type: TypeText, Format: FormatText, Size: 9, ID: uuid.New()}
+	file1.TagsDecoded = append(file1.TagsDecoded, FileTagName{Name: "Test file to be deleted.txt"})
+	file1.TagsDecoded = append(file1.TagsDecoded, FileTagFolder{Name: "documents\\sub folder"})
+
+	newHeight, newVersion, status := UserBlockchainAddFiles([]BlockRecordFile{file1})
+	fmt.Printf("Added file: Status %d height %d version %d\n", status, newHeight, newVersion)
+
+	// list files
+	files, _ := UserBlockchainListFiles()
+	for _, file := range files {
+		printFile(file)
+	}
+
+	fmt.Printf("----------------\n")
+
+	// delete the file
+	newHeight, newVersion, status = UserBlockchainDeleteFiles([]uuid.UUID{file1.ID})
+	fmt.Printf("Deleted file: Status %d height %d version %d\n", status, newHeight, newVersion)
+
+	// list all files
+	files, _ = UserBlockchainListFiles()
+	for _, file := range files {
+		printFile(file)
 	}
 }
