@@ -96,9 +96,9 @@ func apiProfileWrite(w http.ResponseWriter, r *http.Request) {
 		profile.Blobs = append(profile.Blobs, core.BlockRecordProfileBlob{Type: input.Blobs[n].Type, Data: input.Blobs[n].Data})
 	}
 
-	newHeight, status := core.UserProfileWrite(profile)
+	newHeight, newVersion, status := core.UserProfileWrite(profile)
 
-	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight})
+	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 // --- conversion from core to API data ---

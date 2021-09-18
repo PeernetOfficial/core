@@ -124,8 +124,8 @@ type apiBlockchainBlockRaw struct {
 
 type apiBlockchainBlockStatus struct {
 	Status  int    `json:"status"`  // Status: 0 = Success, 1 = Error invalid data
-	Version uint64 `json:"version"` // Current version number of the blockchain.
 	Height  uint64 `json:"height"`  // Height of the blockchain (number of blocks).
+	Version uint64 `json:"version"` // Version of the blockchain.
 }
 ```
 
@@ -202,9 +202,15 @@ type apiFileTagRaw struct {
 }
 ```
 
-### Blockchain Add File
+## File Functions
+
+These functions allow adding, deleting, and listing files stored on the users blockchain. Only metadata is actually stored on the blockchain.
+
+### Add File
 
 This adds a file with the provided information to the blockchain. The date field cannot be set by the caller and is ignored.
+
+Any file added is publicly accessible. The user should be informed about this fact in advance. The user is responsible and liable for any files shared.
 
 ```
 Request:    POST /blockchain/self/add/file with JSON structure apiBlockAddFiles
@@ -214,11 +220,6 @@ Response:   200 with JSON structure apiBlockchainBlockStatus
 ```go
 type apiBlockAddFiles struct {
 	Files []apiBlockRecordFile `json:"files"`
-}
-
-type apiBlockchainBlockStatus struct {
-	Status int    `json:"status"` // Status: 0 = Success, 1 = Error invalid data
-	Height uint64 `json:"height"` // New height of the blockchain (number of blocks).
 }
 ```
 
@@ -241,7 +242,7 @@ Example POST request to `http://127.0.0.1:112/blockchain/self/add/file`:
 }
 ```
 
-Another example to create a new file but with a new arbitrary tag with type number 100 set to "test" and setting the metadata field "Date Created" (which is type 2 = `core.TagTypeDateCreated`):
+Another payload example to create a new file but with a new arbitrary tag with type number 100 set to "test" and setting the metadata field "Date Created" (which is type 2 = `core.TagTypeDateCreated`):
 
 ```json
 {
@@ -266,7 +267,7 @@ Another example to create a new file but with a new arbitrary tag with type numb
 }
 ```
 
-### Blockchain List Files
+### List Files
 
 This lists all files stored on the blockchain.
 
@@ -275,7 +276,7 @@ Request:    GET /blockchain/self/list/file
 Response:   200 with JSON structure apiBlockAddFiles
 ```
 
-Example output:
+Example response:
 
 ```json
 {
@@ -293,6 +294,35 @@ Example output:
         "tagsraw": []
     }],
     "status": 0
+}
+```
+
+### Delete File
+
+This deletes files from the blockchain with the provided IDs. The blockchain will be refactored, which means it is recalculated without the specified files. The blockchains version number might be increased.
+
+```
+Request:    POST /blockchain/self/delete/file with JSON structure apiBlockAddFiles
+Response:   200 with JSON structure apiBlockchainBlockStatus
+```
+
+Example POST request to `http://127.0.0.1:112/blockchain/self/delete/file`:
+
+```json
+{
+    "files": [{
+        "id": "236de31d-f402-4389-bdd1-56463abdc309"
+    }]
+}
+```
+
+Example response:
+
+```json
+{
+    "status": 0,
+    "height": 7,
+    "version": 1
 }
 ```
 
@@ -404,7 +434,8 @@ Example response:
 ```json
 {
     "status": 0,
-    "height": 1
+    "height": 1,
+    "version": 0
 }
 ```
 

@@ -47,8 +47,9 @@ type apiBlockchainBlockRaw struct {
 }
 
 type apiBlockchainBlockStatus struct {
-	Status int    `json:"status"` // Status: 0 = Success, 1 = Error invalid data
-	Height uint64 `json:"height"` // New height of the blockchain (number of blocks).
+	Status  int    `json:"status"`  // Status: 0 = Success, 1 = Error invalid data
+	Height  uint64 `json:"height"`  // Height of the blockchain (number of blocks).
+	Version uint64 `json:"version"` // Version of the blockchain.
 }
 
 /*
@@ -70,9 +71,9 @@ func apiBlockchainSelfAppend(w http.ResponseWriter, r *http.Request) {
 		records = append(records, core.BlockRecordRaw{Type: record.Type, Data: record.Data})
 	}
 
-	newHeight, status := core.UserBlockchainAppend(records)
+	newHeight, newVersion, status := core.UserBlockchainAppend(records)
 
-	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight})
+	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 type apiBlockchainBlock struct {
@@ -205,9 +206,9 @@ func apiBlockchainSelfAddFile(w http.ResponseWriter, r *http.Request) {
 		filesAdd = append(filesAdd, blockRecordFileFromAPI(file))
 	}
 
-	newHeight, status := core.UserBlockchainAddFiles(filesAdd)
+	newHeight, newVersion, status := core.UserBlockchainAddFiles(filesAdd)
 
-	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight})
+	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 /*
@@ -228,6 +229,29 @@ func apiBlockchainSelfListFile(w http.ResponseWriter, r *http.Request) {
 	result.Status = status
 
 	EncodeJSON(w, r, result)
+}
+
+/*
+apiBlockchainSelfDeleteFile deletes files with the provided IDs. Other fields are ignored.
+
+Request:    POST /blockchain/self/delete/file with JSON structure apiBlockAddFiles
+Response:   200 with JSON structure apiBlockchainBlockStatus
+*/
+func apiBlockchainSelfDeleteFile(w http.ResponseWriter, r *http.Request) {
+	var input apiBlockAddFiles
+	if err := DecodeJSON(w, r, &input); err != nil {
+		return
+	}
+
+	var deleteIDs []uuid.UUID
+
+	for n := range input.Files {
+		deleteIDs = append(deleteIDs, input.Files[n].ID)
+	}
+
+	newHeight, newVersion, status := core.UserBlockchainDeleteFiles(deleteIDs)
+
+	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 // --- conversion from core to API data ---
