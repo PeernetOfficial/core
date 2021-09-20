@@ -27,18 +27,20 @@ webapi.Router.HandleFunc("/newfunction", newFunction).Methods("GET")
 These are the functions provided by the API:
 
 ```
-/status                     Provides current connectivity status to the network
-/peer/self                  Provides information about the self peer details
+/status                         Provides current connectivity status to the network
+/peer/self                      Provides information about the self peer details
 
-/blockchain/self/header     Header of the blockchain
-/blockchain/self/append     Append a block to the blockchain
-/blockchain/self/read       Read a block of the blockchain
-/blockchain/self/add/file   Add file to the blockchain
-/blockchain/self/list/file  List all files stored on the blockchain
+/blockchain/self/header         Header of the blockchain
+/blockchain/self/append         Append a block to the blockchain
+/blockchain/self/read           Read a block of the blockchain
+/blockchain/self/add/file       Add file to the blockchain
+/blockchain/self/list/file      List all files stored on the blockchain
+/blockchain/self/delete/file    Deletes files from the blockchain
 
-/profile/list               List all users profile fields and blobs
-/profile/read               Reads a specific users profile field or blob
-/profile/write              Writes a specific users profile field or blob
+/profile/list                   List all users profile fields and blobs
+/profile/read                   Reads a specific users profile field or blob
+/profile/write                  Writes a specific users profile field or blob
+/profile/delete                 Deletes profile fields or blobs
 ```
 
 # API Documentation
@@ -328,6 +330,23 @@ Example response:
 
 ## Profile Functions
 
+User profile data such as the username, email address, and picture are stored on the blockchain. The Profile API distinguishes between text data (= fields) and binary data (= blobs). Text is UTF-8 encoded.
+
+Below is the current list of well known profile information. Clients may define additional fields. The purpose of this defined list is to provide a common mapping across different client software. In the Go code they are defined as constants starting with `ProfileField` and `ProfileBlob`.
+
+| Field Identifier | Purpose                    |
+|------------------|----------------------------|
+| 0                | Username, arbitrary        |
+| 1                | Email address              |
+| 2                | Website address            |
+| 3                | Twitter account with the @ |
+| 4                | YouTube channel URL        |
+| 5                | Physical address           |
+
+| Blob Identifier  | Purpose                    |
+|------------------|----------------------------|
+| 0                | Profile picture, unspecified size |
+
 ### Profile List
 
 ```
@@ -378,24 +397,6 @@ Request:    GET /profile/read?field=[index] or &blob=[index]
 Response:   200 with JSON structure apiProfileData
 ```
 
-```go
-// ProfileFieldX constants define well known profile information
-const (
-	ProfileFieldName    = 0 // Arbitrary username
-	ProfileFieldEmail   = 1 // Email address
-	ProfileFieldWebsite = 2 // Website address
-	ProfileFieldTwitter = 3 // Twitter account without the @
-	ProfileFieldYouTube = 4 // YouTube channel URL
-	ProfileFieldAddress = 5 // Physical address
-)
-
-// ProfileBlobX constants define well known blobs
-// Pictures should be in JPEG or PNG format.
-const (
-	ProfileBlobPicture = 0 // Profile picture, unspecified size
-)
-```
-
 Example request to read the users username: `http://127.0.0.1:112/profile/read?field=0`
 
 Example response:
@@ -441,16 +442,28 @@ Example response:
 
 ### Profile Delete
 
+This function allows to delete profile data (both fields and blobs). Only the type number in the fields and blobs are required. Multiple fields and blobs can be deleted at the same time.
+
 ```
 Request:    POST /profile/delete with JSON structure apiProfileData
 Response:   200 with JSON structure apiBlockchainBlockStatus
 ```
 
-Example POST request to `http://127.0.0.1:112/profile/delete`:
+Example POST request to `http://127.0.0.1:112/profile/delete` (deleting the profile name):
 
 ```json
 {
     "fields": [{
+        "type": 0
+    }]
+}
+```
+
+One practical use case is deleting the profile picture (by specifying blob 0) with the following payload:
+
+```json
+{
+    "blobs": [{
         "type": 0
     }]
 }
