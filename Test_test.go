@@ -263,3 +263,47 @@ func TestBlockchainDelete(t *testing.T) {
 		printFile(file)
 	}
 }
+
+func TestBlockchainProfile(t *testing.T) {
+	initTestPrivateKey()
+	initFilters()
+	initUserBlockchain()
+
+	// write some test profile data
+	newHeight, newVersion, status := UserProfileWrite(BlockRecordProfile{Fields: []BlockRecordProfileField{{Type: ProfileFieldName, Text: "Test User 1"}, {Type: ProfileFieldEmail, Text: "test@test.com"}},
+		Blobs: []BlockRecordProfileBlob{{Type: 100, Data: []byte{0, 1, 2, 3}}}})
+
+	fmt.Printf("Write profile data: Status %d height %d version %d\n", status, newHeight, newVersion)
+
+	// list all profile info
+	printProfileData()
+
+	fmt.Printf("----------------\n")
+
+	// delete profile info
+	newHeight, newVersion, status = UserProfileDelete([]uint16{ProfileFieldEmail}, nil)
+	fmt.Printf("Deleted profile email: Status %d height %d version %d\n", status, newHeight, newVersion)
+
+	printProfileData()
+}
+
+func printProfileData() {
+	fields, blobs, status := UserProfileList()
+	if status != BlockchainStatusOK {
+		fmt.Printf("Reading profile data error status: %d\n", status)
+		return
+	}
+
+	if len(fields) == 0 && len(blobs) == 0 {
+		fmt.Printf("No profile data to visualize.\n")
+		return
+	}
+
+	for _, field := range fields {
+		fmt.Printf("* Field  %d  =  %s\n", field.Type, field.Text)
+	}
+
+	for _, blob := range blobs {
+		fmt.Printf("* Blob   %d  =  %s\n", blob.Type, hex.EncodeToString(blob.Data))
+	}
+}

@@ -174,8 +174,9 @@ func blockchainIterate(callback func(block *Block) int) (status int) {
 }
 
 // blockchainIterateDeleteRecord iterates over the blockchain to find records to delete. Status is BlockchainStatusX.
+// deleteAction is 0 = no action on record, 1 = delete record, 2 = replace record, 3 = error blockchain corrupt
 // If the callback returns true, the record will be deleted. The blockchain will be automatically refactored and height and version updated.
-func blockchainIterateDeleteRecord(callback func(record *BlockRecordRaw) (delete, corrupt bool)) (newHeight, newVersion uint64, status int) {
+func blockchainIterateDeleteRecord(callback func(record *BlockRecordRaw) (deleteAction int)) (newHeight, newVersion uint64, status int) {
 	userBlockchainHeader.Lock()
 	defer userBlockchainHeader.Unlock()
 
@@ -203,14 +204,21 @@ func blockchainIterateDeleteRecord(callback func(record *BlockRecordRaw) (delete
 		var newRecordsRaw []BlockRecordRaw
 
 		for n := range block.RecordsRaw {
-			// delete the block?
-			if delete, corrupt := callback(&block.RecordsRaw[n]); corrupt {
-				return 0, 0, BlockchainStatusCorruptBlockRecord
-			} else if delete {
+			switch callback(&block.RecordsRaw[n]) {
+			case 0: // no action on record
+				newRecordsRaw = append(newRecordsRaw, block.RecordsRaw[n])
+
+			case 1: // delete record
 				refactorBlock = true
 				refactorBlockchain = true
-			} else {
+
+			case 2: // replace record
 				newRecordsRaw = append(newRecordsRaw, block.RecordsRaw[n])
+				refactorBlock = true
+				refactorBlockchain = true
+
+			case 3: // error blockchain corrupt
+				return 0, 0, BlockchainStatusCorruptBlockRecord
 			}
 		}
 
@@ -301,34 +309,31 @@ func UserBlockchainAppend(RecordsRaw []BlockRecordRaw) (newHeight, newVersion ui
 	return userBlockchainHeader.height, userBlockchainHeader.version, BlockchainStatusOK
 }
 
-// UserBlockchainRead reads the block number from the blockchain.
-// Status: 0 = Success, 1 = Error block not found, 2 = Error block encoding, 3 = Error block record encoding
-// Errors 2 and 3 indicate data corruption.
+// UserBlockchainRead reads the block number from the blockchain. Status is BlockchainStatusX.
 func UserBlockchainRead(number uint64) (decoded *BlockDecoded, status int, err error) {
 	if number >= userBlockchainHeader.height {
-		return nil, 1, errors.New("block number exceeds blockchain height")
+		return nil, BlockchainStatusBlockNotFound, errors.New("block number exceeds blockchain height")
 	}
 
 	blockRaw, found := userBlockchainDB.Get(blockNumberToKey(number))
 	if !found || len(blockRaw) == 0 {
-		return nil, 1, errors.New("block not found")
+		return nil, BlockchainStatusBlockNotFound, errors.New("block not found")
 	}
 
 	block, err := decodeBlock(blockRaw)
 	if err != nil {
-		return nil, 2, err
+		return nil, BlockchainStatusCorruptBlock, err
 	}
 
 	decoded, err = decodeBlockRecords(block)
 	if err != nil {
-		return nil, 2, err
+		return nil, BlockchainStatusCorruptBlock, err
 	}
 
-	return decoded, 0, nil
+	return decoded, BlockchainStatusOK, nil
 }
 
-// UserBlockchainAddFiles adds files to the blockchain
-// Status: 0 = Success, 1 = Error previous block not found, 2 = Error block encoding, 3 = Error block record encoding
+// UserBlockchainAddFiles adds files to the blockchain. Status is BlockchainStatusX.
 // It makes sense to group all files in the same directory into one call, since only one directory record will be created per unique directory per block.
 func UserBlockchainAddFiles(files []BlockRecordFile) (newHeight, newVersion uint64, status int) {
 	encoded, err := encodeBlockRecordFiles(files)
@@ -454,8 +459,7 @@ func UserProfileList() (fields []BlockRecordProfileField, blobs []BlockRecordPro
 	return fields, blobs, status
 }
 
-// UserProfileWrite writes profile fields and blobs to the blockchain
-// Status: 0 = Success, 1 = Error previous block not found, 2 = Error block encoding, 3 = Error block record encoding
+// UserProfileWrite writes profile fields and blobs to the blockchain. Status is BlockchainStatusX.
 func UserProfileWrite(profile BlockRecordProfile) (newHeight, newVersion uint64, status int) {
 	encoded, err := encodeBlockRecordProfile(profile)
 	if err != nil {
@@ -465,25 +469,81 @@ func UserProfileWrite(profile BlockRecordProfile) (newHeight, newVersion uint64,
 	return UserBlockchainAppend(encoded)
 }
 
+// UserProfileDelete deletes fields and blobs from the blockchain. Status is BlockchainStatusX.
+func UserProfileDelete(fields, blobs []uint16) (newHeight, newVersion uint64, status int) {
+	return blockchainIterateDeleteRecord(func(record *BlockRecordRaw) (deleteAction int) {
+		if record.Type != RecordTypeProfile {
+			return 0 // no action
+		}
+
+		profile, err := decodeBlockRecordProfile([]BlockRecordRaw{*record})
+		if err != nil || profile == nil {
+			return 3 // error blockchain corrupt
+		}
+
+		// process all blobs and fields
+		var newFields []BlockRecordProfileField
+		var newBlobs []BlockRecordProfileBlob
+		refactorRecord := false
+
+	parseFields:
+		for n := range profile.Fields {
+			for _, i := range fields {
+				if profile.Fields[n].Type == i {
+					refactorRecord = true
+					continue parseFields
+				}
+			}
+			newFields = append(newFields, profile.Fields[n])
+		}
+
+	parseBlobs:
+		for n := range profile.Blobs {
+			for _, i := range blobs {
+				if profile.Blobs[n].Type == i {
+					refactorRecord = true
+					continue parseBlobs
+				}
+			}
+			newBlobs = append(newBlobs, profile.Blobs[n])
+		}
+
+		if len(newFields) == 0 && len(newBlobs) == 0 { // delete the entire record in case no fields and blobs are left
+			return 1 // delete record
+		} else if refactorRecord {
+			// refactor
+			encoded, err := encodeBlockRecordProfile(BlockRecordProfile{Fields: newFields, Blobs: newBlobs})
+			if err != nil || len(encoded) != 1 {
+				return 3
+			}
+
+			record.Data = encoded[0].Data
+
+			return 2 // replace record
+		}
+
+		return 0 // no action on record
+	})
+}
+
 // UserBlockchainDeleteFiles deletes files from the blockchain. Status is BlockchainStatusX.
 func UserBlockchainDeleteFiles(IDs []uuid.UUID) (newHeight, newVersion uint64, status int) {
-	return blockchainIterateDeleteRecord(func(record *BlockRecordRaw) (delete, corrupt bool) {
+	return blockchainIterateDeleteRecord(func(record *BlockRecordRaw) (deleteAction int) {
 		if record.Type != RecordTypeFile {
-			return false, false
+			return 0 // no action on record
 		}
 
 		filesDecoded, err := decodeBlockRecordFiles([]BlockRecordRaw{*record})
 		if err != nil || len(filesDecoded) != 1 {
-			// corruption
-			return false, true
+			return 3 // error blockchain corrupt
 		}
 
 		for _, id := range IDs {
 			if id == filesDecoded[0].ID { // found a file ID to delete?
-				return true, false
+				return 1 // delete record
 			}
 		}
 
-		return false, false
+		return 0 // no action on record
 	})
 }
