@@ -439,3 +439,19 @@ Example response:
 }
 ```
 
+### Profile Delete
+
+```
+Request:    POST /profile/delete with JSON structure apiProfileData
+Response:   200 with JSON structure apiBlockchainBlockStatus
+```
+
+Example POST request to `http://127.0.0.1:112/profile/delete`:
+
+```json
+{
+    "fields": [{
+        "type": 0
+    }]
+}
+```

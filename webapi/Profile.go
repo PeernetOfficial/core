@@ -101,6 +101,33 @@ func apiProfileWrite(w http.ResponseWriter, r *http.Request) {
 	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
+/*
+apiProfileDelete deletes profile fields or blobs identified by the types.
+For the index see core.ProfileFieldX and core.ProfileBlobX constants.
+
+Request:    POST /profile/delete with JSON structure apiProfileData
+Response:   200 with JSON structure apiBlockchainBlockStatus
+*/
+func apiProfileDelete(w http.ResponseWriter, r *http.Request) {
+	var input apiProfileData
+	if err := DecodeJSON(w, r, &input); err != nil {
+		return
+	}
+
+	var fields, blobs []uint16
+
+	for n := range input.Fields {
+		fields = append(fields, input.Fields[n].Type)
+	}
+	for n := range input.Blobs {
+		blobs = append(blobs, input.Blobs[n].Type)
+	}
+
+	newHeight, newVersion, status := core.UserProfileDelete(fields, blobs)
+
+	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
+}
+
 // --- conversion from core to API data ---
 
 func blockRecordProfileToAPI(input core.BlockRecordProfile) (output apiBlockRecordProfile) {
