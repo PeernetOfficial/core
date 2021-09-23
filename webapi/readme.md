@@ -45,6 +45,8 @@ These are the functions provided by the API:
 /search                         Submit a search request
 /search/result                  Return search results
 /search/terminate               Terminate a search
+
+/explore                        List recently shared files
 ```
 
 # API Documentation
@@ -572,3 +574,18 @@ The user can terminate a search early using this function. This helps save syste
 Request:    GET /search/terminate?id=[UUID]
 Response:   204 Empty
 ```
+
+## Explore
+
+### List Recently Shared Files
+
+This returns recently shared files in Peernet. Results are returned in real-time. The file type is an optional filter.
+
+```
+Request:    GET /explore?limit=[max records]&type=[file type]
+Result:     200 with JSON structure SearchResult. Check the field status.
+```
+
+Example request to list 20 recently shared files (all file types): `http://127.0.0.1:112/explore&limit=20`
+
+Example request to list 10 recent documents: `http://127.0.0.1:112/explore?type=5&limit=10`

@@ -9,6 +9,8 @@ Author:     Peter Kleissner
 /search/result/ws       Websocket to return search results as stream (future)
 /search/statistic       Statistics about the results (future)
 
+/explore                List recently shared files
+
 */
 
 package webapi
@@ -210,4 +212,39 @@ func apiSearchTerminate(w http.ResponseWriter, r *http.Request) {
 	job.Remove()
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+/*
+apiExplore returns recently shared files in Peernet. Results are returned in real-time. The file type is an optional filter.
+Request:    GET /explore?limit=[max records]&type=[file type]
+Result:     200 with JSON structure SearchResult. Check the field status.
+*/
+func apiExplore(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	limit, err := strconv.Atoi(r.Form.Get("limit"))
+	if err != nil {
+		limit = 100
+	}
+	fileType, err := strconv.Atoi(r.Form.Get("type"))
+	if err != nil {
+		fileType = -1
+	}
+
+	resultFiles := queryRecentShared(fileType, limit)
+
+	var result SearchResult
+	result.Files = []apiBlockRecordFile{}
+
+	// loop over results
+	for n := range resultFiles {
+		result.Files = append(result.Files, blockRecordFileToAPI(*resultFiles[n]))
+	}
+
+	if len(result.Files) == 0 {
+		result.Status = 3 // No results yet available keep trying
+	}
+
+	result.Status = 1 // No more results to expect
+
+	EncodeJSON(w, r, result)
 }

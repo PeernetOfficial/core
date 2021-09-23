@@ -38,7 +38,7 @@ func dispatchSearch(input SearchRequest) (job *SearchJob) {
 		job.ResultSync.Lock()
 
 		for n := 0; n < countResults; n++ {
-			newFile := createTestResult()
+			newFile := createTestResult(-1)
 			job.filesCurrent = append(job.filesCurrent, &newFile)
 		}
 
@@ -149,8 +149,8 @@ func (job *SearchJob) ReturnNext(Limit int) (Result []*core.BlockRecordFile) {
 	return job.ReturnResult(Limit)
 }
 
-// createTestResult creates a test file
-func createTestResult() (file core.BlockRecordFile) {
+// createTestResult creates a test file. fileType = -1 for any.
+func createTestResult(fileType int) (file core.BlockRecordFile) {
 	randomData := make([]byte, 10)
 	rand.Read(randomData)
 
@@ -159,40 +159,81 @@ func createTestResult() (file core.BlockRecordFile) {
 	file.ID = uuid.New()
 	file.Size = uint64(len(randomData))
 
-	switch file.Format {
-	case core.FormatCSV, core.FormatEmail, core.FormatText, core.FormatHTML:
-		file.Type = core.TypeText
+	if fileType == -1 {
+		switch file.Format {
+		case core.FormatCSV, core.FormatEmail, core.FormatText, core.FormatHTML:
+			file.Type = core.TypeText
 
-	case core.FormatDatabase:
-		file.Type = core.TypeBinary
+		case core.FormatDatabase:
+			file.Type = core.TypeBinary
 
-	case core.FormatCompressed:
-		file.Type = core.TypeCompressed
+		case core.FormatCompressed:
+			file.Type = core.TypeCompressed
 
-	case core.FormatContainer:
-		file.Type = core.TypeContainer
+		case core.FormatContainer:
+			file.Type = core.TypeContainer
 
-	case core.FormatEbook:
-		file.Type = core.TypeEbook
+		case core.FormatEbook:
+			file.Type = core.TypeEbook
 
-	case core.FormatVideo:
-		file.Type = core.TypeVideo
+		case core.FormatVideo:
+			file.Type = core.TypeVideo
 
-	case core.FormatAudio:
-		file.Type = core.TypeAudio
+		case core.FormatAudio:
+			file.Type = core.TypeAudio
 
-	case core.FormatPicture:
-		file.Type = core.TypePicture
+		case core.FormatPicture:
+			file.Type = core.TypePicture
 
-	case core.FormatPowerpoint, core.FormatExcel, core.FormatWord, core.FormatPDF:
-		file.Type = core.TypeDocument
+		case core.FormatPowerpoint, core.FormatExcel, core.FormatWord, core.FormatPDF:
+			file.Type = core.TypeDocument
 
-	case core.FormatFolder:
-		file.Type = core.TypeFolder
+		case core.FormatFolder:
+			file.Type = core.TypeFolder
 
-	default:
-		file.Type = core.TypeBinary
+		default:
+			file.Type = core.TypeBinary
 
+		}
+	} else {
+		file.Type = uint8(fileType)
+		switch file.Type {
+		case core.TypeBinary:
+			file.Format = core.FormatBinary
+
+		case core.TypeText:
+			file.Format = core.FormatText
+
+		case core.TypePicture:
+			file.Format = core.FormatPicture
+
+		case core.TypeVideo:
+			file.Format = core.FormatVideo
+
+		case core.TypeAudio:
+			file.Format = core.FormatAudio
+
+		case core.TypeDocument:
+			file.Format = core.FormatPDF
+
+		case core.TypeExecutable:
+			file.Format = core.FormatExecutable
+
+		case core.TypeContainer:
+			file.Format = core.FormatContainer
+
+		case core.TypeCompressed:
+			file.Format = core.FormatCompressed
+
+		case core.TypeFolder:
+			file.Format = core.FormatFolder
+
+		case core.TypeEbook:
+			file.Format = core.FormatEbook
+
+		default:
+			file.Format = core.FormatBinary
+		}
 	}
 
 	var extension string
@@ -246,4 +287,14 @@ func TempFileName(prefix, suffix string) string {
 	randBytes := make([]byte, 16)
 	rand.Read(randBytes)
 	return prefix + hex.EncodeToString(randBytes) + "." + suffix
+}
+
+// queryRecentShared returns recently shared files on the network. fileType = -1 for any.
+func queryRecentShared(fileType, limit int) (files []*core.BlockRecordFile) {
+	for n := 0; n < limit; n++ {
+		newFile := createTestResult(fileType)
+		files = append(files, &newFile)
+	}
+
+	return
 }
