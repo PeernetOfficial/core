@@ -37,11 +37,12 @@ const (
 	FormatHTML              // HTML file
 	FormatText              // Text file
 	FormatEbook             // Ebook file
-	FormatCompressed        // Compressed file.
+	FormatCompressed        // Compressed file
 	FormatDatabase          // Database file
 	FormatEmail             // Single email
 	FormatCSV               // CSV file
 	FormatFolder            // Virtual folder
+	FormatExecutable        // Executable file
 )
 
 // Future tags to be defined for audio/video: Artist, Album, Title, Length, Bitrate, Codec

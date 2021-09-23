@@ -41,6 +41,10 @@ These are the functions provided by the API:
 /profile/read                   Reads a specific users profile field or blob
 /profile/write                  Writes a specific users profile field or blob
 /profile/delete                 Deletes profile fields or blobs
+
+/search                         Submit a search request
+/search/result                  Return search results
+/search/terminate               Terminate a search
 ```
 
 # API Documentation
@@ -467,4 +471,104 @@ One practical use case is deleting the profile picture (by specifying blob 0) wi
         "type": 0
     }]
 }
+```
+
+## Search API
+
+The search API provides a high-level function to search for files in Peernet. Searching is always asynchronous. `/search` returns an UUID which is used to loop over `/search/result` until the search is terminated.
+
+The current implementation of the underlying search algorithm only searches file names. Optional filters are supported.
+
+### Submitting a Search Request
+
+```
+Request:    POST /search with JSON SearchRequest
+Response:   200 on success with JSON SearchRequestResponse
+```
+
+```go
+type SearchRequest struct {
+	Term        string        `json:"term"`       // Search term.
+	Timeout     time.Duration `json:"timeout"`    // Timeout in seconds. 0 means default. This is the entire time the search may take. Found results are still available after this timeout.
+	MaxResults  int           `json:"maxresults"` // Total number of max results. 0 means default.
+	DateFrom    string        `json:"datefrom"`   // Date from, both from/to are required if set.
+	DateTo      string        `json:"dateto"`     // Date to, both from/to are required if set.
+	Sort        int           `json:"sort"`       // Sort order: 0 = No sorting, 1 = Relevance ASC, 2 = Relevance DESC (this should be default), 3 = Date ASC, 4 = Date DESC
+	TerminateID []uuid.UUID   `json:"terminate"`  // Optional: Previous search IDs to terminate. This is if the user makes a new search from the same tab. Same as first calling /search/terminate.
+	TypeFilter  int           `json:"typefilter"` // 0 = No filters used, 1 = Use file type filter, 2 = Use file format filter.
+	FileType    int           `json:"filetype"`   // File type such as binary, text document etc. See core.TypeX.
+	FileFormat  int           `json:"fileformat"` // File format such as PDF, Word, Ebook, etc. See core.FormatX.
+}
+
+type SearchRequestResponse struct {
+	ID     uuid.UUID `json:"id"`     // ID of the search job. This is used to get the results.
+	Status int       `json:"status"` // Status of the search: 0 = Success (ID valid), 1 = Invalid Term, 2 = Error Max Concurrent Searches
+}
+```
+
+Example POST request to `http://127.0.0.1:112/search`:
+
+```json
+{
+    "term": "Test Search",
+    "timeout": 10,
+    "maxresults": 1000
+}
+```
+
+Example response:
+
+```json
+{
+    "id": "ac5efa64-d403-4a57-8259-c7b7dfb09667",
+    "status": 0
+}
+```
+
+### Returning Search Results
+
+This function returns search results.
+
+```
+Request:    GET /search/result?id=[UUID]&limit=[max records]
+Result:     200 with JSON structure SearchResult. Check the field status.
+```
+
+```go
+type SearchResult struct {
+	Status int                  `json:"status"` // Status: 0 = Success with results, 1 = No more results available, 2 = Search ID not found, 3 = No results yet available keep trying
+	Files  []apiBlockRecordFile `json:"files"`  // List of files found
+}
+```
+
+Example request: `http://127.0.0.1:112/search/result?id=ac5efa64-d403-4a57-8259-c7b7dfb09667&limit=10`
+
+Example response with dummy data:
+
+```json
+{
+    "status": 1,
+    "files": [{
+        "id": "b5b0706c-817c-492f-8203-5005c59f110c",
+        "hash": "Mv6O773ytkJ5jSjLoy2EvHQaM5KfVppJHeTppMc7alA=",
+        "type": 1,
+        "format": 14,
+        "size": 10,
+        "folder": "",
+        "name": "88d8cc57d5c2a5fea881ceea09503ee4.txt",
+        "description": "",
+        "date": "2021-09-23T00:00:00Z",
+        "metadata": [],
+        "tagsraw": []
+    }]
+}
+```
+
+### Terminating a Search
+
+The user can terminate a search early using this function. This helps save system resources and should be considered best practice once a search is no longer needed (for example when the user closes the tab or window that shows the results).
+
+```
+Request:    GET /search/terminate?id=[UUID]
+Response:   204 Empty
 ```

@@ -52,6 +52,10 @@ func Start(ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKe
 	Router.HandleFunc("/profile/read", apiProfileRead).Methods("GET")
 	Router.HandleFunc("/profile/write", apiProfileWrite).Methods("POST")
 	Router.HandleFunc("/profile/delete", apiProfileDelete).Methods("POST")
+	Router.HandleFunc("/search", apiSearch).Methods("POST")
+	Router.HandleFunc("/search/result", apiSearchResult).Methods("GET")
+	//Router.HandleFunc("/search/result/ws", apiSearchResultStream).Methods("GET")
+	Router.HandleFunc("/search/terminate", apiSearchTerminate).Methods("GET")
 
 	for _, listen := range ListenAddresses {
 		go startWebServer(listen, UseSSL, CertificateFile, CertificateKey, Router, "API", TimeoutRead, TimeoutWrite)
