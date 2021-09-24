@@ -174,12 +174,11 @@ func (dht *DHT) FindNode(key []byte) (node *Node, err error) {
 	search.LogStatus("dht.FindNode", "Search for node %s. Full timeout %s, per node %s. Alpha = %d.\n", hex.EncodeToString(key), dht.TimeoutSearch.String(), dht.TimeoutIR.String(), dht.alpha)
 	search.SearchAway()
 
-	select {
-	case <-search.TerminateSignal:
+	result, ok := <-search.Results
+	if !ok { // Check if closed channel. Redundant with checking <-search.TerminateSignal.
 		return nil, nil
-	case result := <-search.Results:
-		return result.TargetNode, nil
 	}
+	return result.TargetNode, nil
 }
 
 // ---- DHT Health ----
