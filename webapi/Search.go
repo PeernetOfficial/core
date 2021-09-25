@@ -215,7 +215,9 @@ func apiSearchTerminate(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
-apiExplore returns recently shared files in Peernet. Results are returned in real-time. The file type is an optional filter.
+apiExplore returns recently shared files in Peernet. Results are returned in real-time. The file type is an optional filter. See TypeX.
+Special type -2 = Binary, Compressed, Container, Executable. This special type includes everything except Documents, Video, Audio, Ebooks, Picture, Text.
+
 Request:    GET /explore?limit=[max records]&type=[file type]
 Result:     200 with JSON structure SearchResult. Check the field status.
 */

@@ -196,6 +196,12 @@ func createTestResult(fileType int) (file core.BlockRecordFile) {
 
 		}
 	} else {
+		if fileType == -2 {
+			// Binary, Compressed, Container, Executable
+			otherList := []int{core.TypeBinary, core.TypeCompressed, core.TypeContainer, core.TypeExecutable}
+			fileType = otherList[rand.Intn(len(otherList))]
+		}
+
 		file.Type = uint8(fileType)
 		switch file.Type {
 		case core.TypeBinary:
