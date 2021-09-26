@@ -17,7 +17,7 @@ const (
 	TypeAudio             // Audio
 	TypeDocument          // Any document file, including office documents, PDFs, power point, spreadsheets
 	TypeExecutable        // Any executable file, OS independent
-	TypeContainer         // Container files like ZIP, RAR, TAR
+	TypeContainer         // Container files like ZIP, RAR, TAR, ISO
 	TypeCompressed        // Compressed files like GZ, BZ
 	TypeFolder            // Virtual folder
 	TypeEbook             // Ebook
@@ -43,6 +43,9 @@ const (
 	FormatCSV               // CSV file
 	FormatFolder            // Virtual folder
 	FormatExecutable        // Executable file
+	FormatInstaller         // Installer
+	FormatAPK               // APK
+	FormatISO               // ISO
 )
 
 // Future tags to be defined for audio/video: Artist, Album, Title, Length, Bitrate, Codec

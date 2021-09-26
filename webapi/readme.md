@@ -35,18 +35,20 @@ These are the functions provided by the API:
 /blockchain/self/read           Read a block of the blockchain
 /blockchain/self/add/file       Add file to the blockchain
 /blockchain/self/list/file      List all files stored on the blockchain
-/blockchain/self/delete/file    Deletes files from the blockchain
+/blockchain/self/delete/file    Delete files from the blockchain
 
 /profile/list                   List all users profile fields and blobs
-/profile/read                   Reads a specific users profile field or blob
-/profile/write                  Writes a specific users profile field or blob
-/profile/delete                 Deletes profile fields or blobs
+/profile/read                   Read a profile field or blob
+/profile/write                  Write profile fields or blobs
+/profile/delete                 Delete profile fields or blobs
 
 /search                         Submit a search request
 /search/result                  Return search results
 /search/terminate               Terminate a search
 
 /explore                        List recently shared files
+
+/file/format                    Detect file type and format
 ```
 
 # API Documentation
@@ -420,6 +422,8 @@ Example response:
 
 ### Profile Write
 
+This writes profile fields and blobs. It can write multiple fields and blobs at once.
+
 ```
 Request:    POST /profile/write with JSON structure apiProfileData
 Response:   200 with JSON structure apiBlockchainBlockStatus
@@ -589,3 +593,36 @@ Result:     200 with JSON structure SearchResult. Check the field status.
 Example request to list 20 recently shared files (all file types): `http://127.0.0.1:112/explore&limit=20`
 
 Example request to list 10 recent documents: `http://127.0.0.1:112/explore?type=5&limit=10`
+
+## Helper Functions
+
+These helper functions are usually not needed, but can be useful in special cases.
+
+### Detect file type and file format
+
+This function detects the file type and file format of the specified file. It will primarily use the file extension for detection. If unavailable, it uses the first 512 bytes of the file data to detect the type.
+
+```
+Request:    GET /file/format?path=[file path on disk]
+Result:     200 with JSON structure apiResponseFileFormat
+```
+
+```go
+type apiResponseFileFormat struct {
+	Status     int    `json:"status"`     // Status: 0 = Success, 1 = Error reading file
+	FileType   uint16 `json:"filetype"`   // File Type.
+	FileFormat uint16 `json:"fileformat"` // File Format.
+}
+```
+
+Example request: `http://127.0.0.1:112/file/format?path=test.txt`
+
+Example response:
+
+```json
+{
+    "status": 0,
+    "filetype": 1,
+    "fileformat": 10
+}
+```

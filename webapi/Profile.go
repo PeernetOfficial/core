@@ -75,7 +75,7 @@ func apiProfileRead(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
-apiProfileWrite writes a specific users profile field or blob.
+apiProfileWrite writes profile fields or blobs.
 For the index see core.ProfileFieldX and core.ProfileBlobX constants.
 
 Request:    POST /profile/write with JSON structure apiProfileData
