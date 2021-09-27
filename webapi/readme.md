@@ -46,6 +46,9 @@ These are the functions provided by the API:
 /search/result                  Return search results
 /search/terminate               Terminate a search
 
+/download/start                 Start the download of a file
+/download/status                Get the status of a download
+
 /explore                        List recently shared files
 
 /file/format                    Detect file type and format
@@ -577,6 +580,31 @@ The user can terminate a search early using this function. This helps save syste
 ```
 Request:    GET /search/terminate?id=[UUID]
 Response:   204 Empty
+```
+
+### Start Download
+
+This starts the download of a file. The path is the full path on disk to store the file.
+The hash parameter identifies the file to download. The blockchain parameter is the node ID of the peer who shared the file on its blockchain (i.e., the "owner" of the file).
+
+```
+Request:    GET /download/start?path=[target path on disk]&hash=[file hash to download]&blockchain=[node ID]
+Result:     200 with JSON structure apiResponseDownloadStatus
+```
+
+```go
+type apiResponseDownloadStatus struct {
+	Status int `json:"status"` // Status: 0 = Success, 1 = Error download not found
+}
+```
+
+### Get Download Status
+
+This returns the status of an active download. The hash and blockchain parameters must be the same as `/download/start`.
+
+```
+Request:    GET /download/status?hash=[file hash]&blockchain=[node ID]
+Result:     200 with JSON structure apiResponseDownloadStatus
 ```
 
 ## Explore
