@@ -36,6 +36,7 @@ import (
 // It has no upper size limit, although a soft limit of 64 KB - overhead is encouraged for efficiency.
 type Block struct {
 	OwnerPublicKey    *btcec.PublicKey // Owner Public Key, ECDSA (secp256k1) 257-bit
+	NodeID            []byte           // Node ID of the owner (derived from the public key)
 	LastBlockHash     []byte           // Hash of the last block. Blake3.
 	BlockchainVersion uint64           // Blockchain version
 	Number            uint64           // Block number
@@ -66,6 +67,8 @@ func decodeBlock(raw []byte) (block *Block, err error) {
 	if err != nil {
 		return nil, err
 	}
+
+	block.NodeID = PublicKey2NodeID(block.OwnerPublicKey)
 
 	block.LastBlockHash = make([]byte, hashSize)
 	copy(block.LastBlockHash, raw[65:65+hashSize])

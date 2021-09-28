@@ -57,10 +57,11 @@ const (
 // BlockRecordFile is the metadata of a file published on the blockchain
 type BlockRecordFile struct {
 	Hash   []byte               // Hash of the file data
-	ID     uuid.UUID            // ID
+	ID     uuid.UUID            // ID of the file
 	Type   uint8                // File Type
 	Format uint16               // File Format
 	Size   uint64               // Size of the file data
+	NodeID []byte               // Node ID, owner of the file
 	Tags   []BlockRecordFileTag // Tags provide additional metadata
 }
 
@@ -76,7 +77,7 @@ type BlockRecordFileTag struct {
 // ---- low-level encoding ----
 
 // decodeBlockRecordFiles decodes only file records. Other records are ignored.
-func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw) (files []BlockRecordFile, err error) {
+func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw, nodeID []byte) (files []BlockRecordFile, err error) {
 	for i, record := range recordsRaw {
 		switch record.Type {
 		case RecordTypeFile:
@@ -84,7 +85,7 @@ func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw) (files []BlockRecordFil
 				return nil, errors.New("file record invalid size")
 			}
 
-			file := BlockRecordFile{}
+			file := BlockRecordFile{NodeID: nodeID}
 			file.Hash = make([]byte, hashSize)
 			copy(file.Hash, record.Data[0:0+hashSize])
 			copy(file.ID[:], record.Data[32:32+16])
@@ -243,7 +244,7 @@ type BlockDecoded struct {
 func decodeBlockRecords(block *Block) (decoded *BlockDecoded, err error) {
 	decoded = &BlockDecoded{Block: *block}
 
-	files, err := decodeBlockRecordFiles(block.RecordsRaw)
+	files, err := decodeBlockRecordFiles(block.RecordsRaw, block.NodeID)
 	if err != nil {
 		return nil, err
 	}

@@ -106,7 +106,8 @@ type apiBlockRecordFile struct {
 	Folder      string            `json:"folder"`      // Folder, optional
 	Name        string            `json:"name"`        // Name of the file
 	Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
-	Date        time.Time         `json:"date"`        // Date of the virtual file
+	Date        time.Time         `json:"date"`        // Date shared
+	NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file
 	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
 }
 
@@ -228,7 +229,7 @@ func apiBlockchainSelfDeleteFile(w http.ResponseWriter, r *http.Request) {
 // --- conversion from core to API data ---
 
 func blockRecordFileToAPI(input core.BlockRecordFile) (output apiBlockRecordFile) {
-	output = apiBlockRecordFile{ID: input.ID, Hash: input.Hash, Type: input.Type, Format: input.Format, Size: input.Size, Metadata: []apiFileMetadata{}}
+	output = apiBlockRecordFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Metadata: []apiFileMetadata{}}
 
 	for _, tag := range input.Tags {
 		switch tag.Type {

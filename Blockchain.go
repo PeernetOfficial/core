@@ -348,7 +348,7 @@ func UserBlockchainAddFiles(files []BlockRecordFile) (newHeight, newVersion uint
 // If there is a corruption in the blockchain it will stop reading but return the files parsed so far.
 func UserBlockchainListFiles() (files []BlockRecordFile, status int) {
 	status = blockchainIterate(func(block *Block) (statusI int) {
-		filesMore, err := decodeBlockRecordFiles(block.RecordsRaw)
+		filesMore, err := decodeBlockRecordFiles(block.RecordsRaw, block.NodeID)
 		if err != nil {
 			return BlockchainStatusCorruptBlockRecord
 		}
@@ -455,7 +455,7 @@ func UserBlockchainDeleteFiles(IDs []uuid.UUID) (newHeight, newVersion uint64, s
 			return 0 // no action on record
 		}
 
-		filesDecoded, err := decodeBlockRecordFiles([]BlockRecordRaw{*record})
+		filesDecoded, err := decodeBlockRecordFiles([]BlockRecordRaw{*record}, nil)
 		if err != nil || len(filesDecoded) != 1 {
 			return 3 // error blockchain corrupt
 		}

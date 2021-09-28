@@ -159,6 +159,9 @@ func createTestResult(fileType int) (file core.BlockRecordFile) {
 	file.ID = uuid.New()
 	file.Size = uint64(len(randomData))
 
+	file.NodeID = make([]byte, 32) // node ID = blake3 hash of peer ID
+	rand.Read(file.NodeID)
+
 	if fileType == -1 {
 		switch file.Format {
 		case core.FormatCSV, core.FormatEmail, core.FormatText, core.FormatHTML:

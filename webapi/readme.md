@@ -181,7 +181,7 @@ The array `RecordsDecoded` will contain any present record of the following:
 
 ## File Functions
 
-These functions allow adding, deleting, and listing files stored on the users blockchain. Only metadata is actually stored on the blockchain.
+These functions allow adding, deleting, and listing files stored on the users blockchain. Only metadata is actually stored on the blockchain. To download a remote file both the file hash and the node ID are required. The node ID specifies the owner of the file.
 
 ```go
 type apiBlockRecordFile struct {
@@ -193,7 +193,8 @@ type apiBlockRecordFile struct {
 	Folder      string            `json:"folder"`      // Folder, optional
 	Name        string            `json:"name"`        // Name of the file
 	Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
-	Date        time.Time         `json:"date"`        // Date of the virtual file
+	Date        time.Time         `json:"date"`        // Date shared
+	NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file
 	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
 }
 
@@ -296,6 +297,7 @@ Example response:
         "name": "Test.txt",
         "description": "",
         "date": "2021-08-27T14:59:13Z",
+        "nodeid": "0Zo9QHCF06Nrbxgg9s4Q4wYpcHzsQhSMsmftQqjanVI=",
         "metadata": []
     }, {
         "id": "bc32cbae-011d-4f0b-80a8-281ca9369211",
@@ -307,6 +309,7 @@ Example response:
         "name": "Test 2.txt",
         "description": "Example description\nThis can be any text #newfile #2021.",
         "date": "2021-09-27T23:33:37Z",
+        "nodeid": "0Zo9QHCF06Nrbxgg9s4Q4wYpcHzsQhSMsmftQqjanVI=",
         "metadata": [{
             "type": 2,
             "name": "Date Created",
@@ -566,6 +569,7 @@ Example response with dummy data:
         "name": "88d8cc57d5c2a5fea881ceea09503ee4.txt",
         "description": "",
         "date": "2021-09-23T00:00:00Z",
+        "nodeid": "j4yHzmCXiXqg4DPhowj0DIOuuyJxQflo2QSNG3yhCK8=",
         "metadata": []
     }]
 }
