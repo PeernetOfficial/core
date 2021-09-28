@@ -32,7 +32,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -52,60 +51,21 @@ const (
 
 // BlockRecordFile is the metadata of a file published on the blockchain
 type BlockRecordFile struct {
-	Hash        []byte               // Hash of the file data
-	ID          uuid.UUID            // ID
-	Type        uint8                // File Type
-	Format      uint16               // File Format
-	Size        uint64               // Size of the file data
-	TagsRaw     []BlockRecordFileTag // Tags to provide additional metadata
-	TagsDecoded []interface{}        // Decoded tags. See FileTagX structures.
+	Hash   []byte               // Hash of the file data
+	ID     uuid.UUID            // ID
+	Type   uint8                // File Type
+	Format uint16               // File Format
+	Size   uint64               // Size of the file data
+	Tags   []BlockRecordFileTag // Tags provide additional metadata
 }
 
-// ---- Tag structures ----
-
-// BlockRecordFileTag provides additional metadata about the file.
-// New tags can be defines in the future without breaking support.
+// BlockRecordFileTag provides metadata about the file.
 type BlockRecordFileTag struct {
-	Type uint16 // See TagTypeX constants.
-	Data []byte // Actual data of the tag, decoded into FileTagX structures.
+	Type uint16 // See TagX constants.
+	Data []byte // Data
 
 	// If top bit of Type is set, then Data must be 2, 4, or 8 bytes representing the distance number (positive or negative) of raw record in the block that will be used as data.
 	// This is an embedded basic compression algorithm for repetitive tag. For example directory tags or album tags might be heavily repetitive among files.
-}
-
-// TagTypeName defines the type of the tag
-const (
-	TagTypeName        = 0 // Name of file
-	TagTypeFolder      = 1 // Folder
-	TagTypeDateCreated = 2 // Date when the file was originally created. This may differ from the date in the block record, which indicates when the file was shared.
-	TagTypeDescription = 3 // Arbitrary description of the file. May contain hashtags.
-	TagTypeDateShared  = 4 // When the file was published on the blockchain. Cannot be set manually (virtual read-only tag).
-)
-
-// FileTagFolder specifies in which folder the file is stored.
-// A corresponding TypeFolder file record matching the name may exist to provide additional details about the folder.
-type FileTagFolder struct {
-	Name string // Name of the folder
-}
-
-// FileTagName specifies the file name. Empty names are allowed, but not recommended!
-type FileTagName struct {
-	Name string // Name of the file
-}
-
-// FileTagDescription is an arbitrary of the description of the file. It may contain hashtags to help tagging and searching.
-type FileTagDescription struct {
-	Description string
-}
-
-// FileTagDateCreated is the date when the file was originally created
-type FileTagDateCreated struct {
-	Date time.Time // Created time
-}
-
-// FileTagDateShared is the date when the file was shared on the blockchain
-type FileTagDateShared struct {
-	Date time.Time // Shared time
 }
 
 // ---- low-level encoding ----
@@ -169,71 +129,18 @@ func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw) (files []BlockRecordFil
 					tag.Data = record.Data[index+6 : index+6+int(tagSize)]
 				}
 
-				file.TagsRaw = append(file.TagsRaw, tag)
-
-				if decoded, err := decodeFileTag(tag); err != nil {
-					return nil, err
-				} else if decoded != nil {
-					file.TagsDecoded = append(file.TagsDecoded, decoded)
-				}
+				file.Tags = append(file.Tags, tag)
 
 				index += 6 + int(tagSize)
 			}
 
-			file.TagsDecoded = append(file.TagsDecoded, FileTagDateShared{Date: record.Date})
+			file.Tags = append(file.Tags, TagFromDate(TagDateShared, record.Date))
 
 			files = append(files, file)
 		}
 	}
 
 	return files, err
-}
-
-// decodeFileTag decodes a file tag. If the tag type is not known, it returns nil.
-func decodeFileTag(tag BlockRecordFileTag) (decoded interface{}, err error) {
-	switch tag.Type {
-	case TagTypeFolder:
-		return FileTagFolder{Name: string(tag.Data)}, nil
-
-	case TagTypeName:
-		return FileTagName{Name: string(tag.Data)}, nil
-
-	case TagTypeDescription:
-		return FileTagDescription{Description: string(tag.Data)}, nil
-
-	case TagTypeDateCreated:
-		if len(tag.Data) != 8 {
-			return nil, errors.New("file tag date invalid size")
-		}
-
-		timeB := int64(binary.LittleEndian.Uint64(tag.Data[0:8]))
-		return FileTagDateCreated{Date: time.Unix(timeB, 0)}, nil
-
-	}
-
-	return nil, nil
-}
-
-// encodeFileTag encodes a file tag. If the tag type is not known, it returns nil.
-func encodeFileTag(decoded interface{}) (tag BlockRecordFileTag, err error) {
-	switch v := decoded.(type) {
-	case FileTagFolder:
-		return BlockRecordFileTag{Type: TagTypeFolder, Data: []byte(v.Name)}, nil
-
-	case FileTagName:
-		return BlockRecordFileTag{Type: TagTypeName, Data: []byte(v.Name)}, nil
-
-	case FileTagDescription:
-		return BlockRecordFileTag{Type: TagTypeDescription, Data: []byte(v.Description)}, nil
-
-	case FileTagDateCreated:
-		var tempDate [8]byte
-		binary.LittleEndian.PutUint64(tempDate[0:8], uint64(v.Date.UTC().Unix()))
-		return BlockRecordFileTag{Type: TagTypeDateCreated, Data: tempDate[:]}, nil
-
-	}
-
-	return tag, errors.New("encodeFileTag unknown tag type")
 }
 
 // encodeBlockRecordFiles encodes files into the block record data
@@ -245,13 +152,7 @@ func encodeBlockRecordFiles(files []BlockRecordFile) (recordsRaw []BlockRecordRa
 
 	// loop through all tags to encode them and create list of duplicates that will be replaced by references
 	for n := range files {
-		for m := range files[n].TagsDecoded {
-			tag, err := encodeFileTag(files[n].TagsDecoded[m])
-			if err != nil {
-				return nil, err
-			}
-			files[n].TagsRaw = append(files[n].TagsRaw, tag)
-
+		for _, tag := range files[n].Tags {
 			if len(tag.Data) > 4 {
 				if _, ok := uniqueTagDataMap[string(tag.Data)]; !ok {
 					uniqueTagDataMap[string(tag.Data)] = struct{}{}
@@ -277,29 +178,29 @@ func encodeBlockRecordFiles(files []BlockRecordFile) (recordsRaw []BlockRecordRa
 		data[48] = files[n].Type
 		binary.LittleEndian.PutUint16(data[49:49+2], files[n].Format)
 		binary.LittleEndian.PutUint64(data[51:51+8], files[n].Size)
-		binary.LittleEndian.PutUint16(data[59:59+2], uint16(len(files[n].TagsRaw)))
+		binary.LittleEndian.PutUint16(data[59:59+2], uint16(len(files[n].Tags)))
 
-		for _, tagRaw := range files[n].TagsRaw {
+		for _, tag := range files[n].Tags {
 			// Some tags are virtual and never stored on the blockchain. If attempted to write, ignore.
-			if tagRaw.Type == TagTypeDateShared {
+			if tag.IsVirtual() {
 				continue
 			}
 
-			if len(tagRaw.Data) > 4 {
-				if refNumber, ok := duplicateTagDataMap[string(tagRaw.Data)]; ok {
+			if len(tag.Data) > 4 {
+				if refNumber, ok := duplicateTagDataMap[string(tag.Data)]; ok {
 					// In case the data is duplicated, use reference to the RecordTypeTagData instead
-					tagRaw.Type |= 0x8000
-					tagRaw.Data = intToBytes(-(len(recordsRaw) - refNumber))
+					tag.Type |= 0x8000
+					tag.Data = intToBytes(-(len(recordsRaw) - refNumber))
 				}
 			}
 
 			var tempTag [6]byte
 
-			binary.LittleEndian.PutUint16(tempTag[0:2], tagRaw.Type)
-			binary.LittleEndian.PutUint32(tempTag[2:2+4], uint32(len(tagRaw.Data)))
+			binary.LittleEndian.PutUint16(tempTag[0:2], tag.Type)
+			binary.LittleEndian.PutUint32(tempTag[2:2+4], uint32(len(tag.Data)))
 
 			data = append(data, tempTag[:]...)
-			data = append(data, tagRaw.Data...)
+			data = append(data, tag.Data...)
 		}
 
 		recordsRaw = append(recordsRaw, BlockRecordRaw{Type: RecordTypeFile, Data: data})
@@ -322,17 +223,6 @@ func intToBytes(number int) (buffer []byte) {
 
 	binary.LittleEndian.PutUint64(buffer[0:8], uint64(number))
 	return buffer[0:8]
-}
-
-// TagRawToText returns the tag text of the given tag, if available. Empty if not.
-func (file *BlockRecordFile) TagRawToText(tagType uint16) string {
-	for m := range file.TagsRaw {
-		if file.TagsRaw[m].Type == tagType {
-			return string(file.TagsRaw[m].Data)
-		}
-	}
-
-	return ""
 }
 
 // ---- high-level decoding ----

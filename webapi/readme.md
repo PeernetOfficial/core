@@ -184,6 +184,10 @@ type apiBlockRecordProfileBlob struct {
 }
 ```
 
+## File Functions
+
+These functions allow adding, deleting, and listing files stored on the users blockchain. Only metadata is actually stored on the blockchain.
+
 ```go
 type apiBlockRecordFile struct {
 	ID          uuid.UUID         `json:"id"`          // Unique ID.
@@ -195,29 +199,28 @@ type apiBlockRecordFile struct {
 	Name        string            `json:"name"`        // Name of the file
 	Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
 	Date        time.Time         `json:"date"`        // Date of the virtual file
-	Metadata    []apiFileMetadata `json:"metadata"`    // Metadata. These are decoded tags.
-	TagsRaw     []apiFileTagRaw   `json:"tagsraw"`     // All tags encoded that were not recognized as metadata.
-
-	// The following known tags from the core library are decoded into metadata or other fields in above structure; everything else is a raw tag:
-	// TagTypeName, TagTypeFolder, TagTypeDescription, TagTypeDateCreated
-	// The caller can specify its own metadata fields and fill the TagsRaw structure when creating a new file. It will be returned when reading the files' data.
+	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
 }
 
 type apiFileMetadata struct {
-	Type  uint16 `json:"type"`  // See core.TagTypeX constants.
-	Name  string `json:"name"`  // User friendly name of the tag. Use the Type fields to identify the metadata as this name may change.
-	Value string `json:"value"` // Text value of the tag.
-}
-
-type apiFileTagRaw struct {
-	Type uint16 `json:"type"` // See core.TagTypeX constants.
-	Data []byte `json:"data"` // Data
+	Type uint16 `json:"type"` // See core.TagX constants.
+	Name string `json:"name"` // User friendly name of the metadata type. Use the Type fields to identify the metadata as this name may change.
+	// Depending on the exact type, one of the below fields is used for proper encoding:
+	Text string    `json:"text"` // Text value. UTF-8 encoding.
+	Blob []byte    `json:"blob"` // Binary data
+	Date time.Time `json:"date"` // Date
 }
 ```
 
-## File Functions
+Below is the list of defined metadata types. Undefined types may be used by clients, but are always mapped into the `blob` field.
 
-These functions allow adding, deleting, and listing files stored on the users blockchain. Only metadata is actually stored on the blockchain.
+| Type | Constant       | Encoding | Info                                                                                                                   |
+|------|----------------|----------|------------------------------------------------------------------------------------------------------------------------|
+| 0    | TagName        | Text     | Mapped into Name field. Name of file.                                                                                  |
+| 1    | TagFolder      | Text     | Mapped into Folder field. Folder name.                                                                                 |
+| 2    | TagDescription | Text     | Mapped into Description field. Arbitrary description of the file. May contain hashtags.                                |
+| 3    | TagDateShared  | Date     | Mapped into Date field. When the file was published on the blockchain. Cannot be set manually (virtual read-only tag). |
+| 4    | TagDateCreated | Date     | Date when the file was originally created.                                                                             |
 
 ### Add File
 
@@ -249,8 +252,7 @@ Example POST request to `http://127.0.0.1:112/blockchain/self/add/file`:
         "name": "Test.txt",
         "folder": "sample directory/sub folder",
         "description": "",
-        "metadata": [],
-        "tagsraw": []
+        "metadata": []
     }]
 }
 ```
@@ -270,11 +272,7 @@ Another payload example to create a new file but with a new arbitrary tag with t
         "description": "Example description\nThis can be any text #newfile #2021.",
         "metadata": [{
             "type": 2,
-            "value": "2021-08-28 00:00:00"
-        }],
-        "tagsraw":  [{
-            "type": 100,
-            "data": "dGVzdA=="
+            "date": "2021-08-28T00:00:00Z"
         }]
     }]
 }
@@ -302,9 +300,25 @@ Example response:
         "folder": "sample directory/sub folder",
         "name": "Test.txt",
         "description": "",
-        "date": "2021-08-27T16:59:13+02:00",
-        "metadata": [],
-        "tagsraw": []
+        "date": "2021-08-27T14:59:13Z",
+        "metadata": []
+    }, {
+        "id": "bc32cbae-011d-4f0b-80a8-281ca9369211",
+        "hash": "aFad3zRACbk44dsOw5sVGxYmz+Rqh8ORDcGJNqIz+Ss=",
+        "type": 1,
+        "format": 10,
+        "size": 4,
+        "folder": "sample directory/sub folder",
+        "name": "Test 2.txt",
+        "description": "Example description\nThis can be any text #newfile #2021.",
+        "date": "2021-09-27T23:33:37Z",
+        "metadata": [{
+            "type": 2,
+            "name": "Date Created",
+            "text": "",
+            "blob": null,
+            "date": "2021-08-28T00:00:00Z"
+        }]
     }],
     "status": 0
 }
@@ -567,8 +581,7 @@ Example response with dummy data:
         "name": "88d8cc57d5c2a5fea881ceea09503ee4.txt",
         "description": "",
         "date": "2021-09-23T00:00:00Z",
-        "metadata": [],
-        "tagsraw": []
+        "metadata": []
     }]
 }
 ```

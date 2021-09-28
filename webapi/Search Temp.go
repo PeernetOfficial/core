@@ -281,9 +281,9 @@ func createTestResult(fileType int) (file core.BlockRecordFile) {
 		extension = ".bin"
 	}
 
-	file.TagsDecoded = append(file.TagsDecoded, core.FileTagName{Name: TempFileName("", extension)})
-	//file.TagsDecoded = append(file.TagsDecoded, core.FileTagFolder{Name: "not set"})
-	file.TagsDecoded = append(file.TagsDecoded, core.FileTagDateShared{Date: time.Now().UTC()})
+	file.Tags = append(file.Tags, core.TagFromText(core.TagName, TempFileName("", extension)))
+	//file.Tags = append(file.Tags, core.TagFromText(core.TagFolder, "not set"))
+	file.Tags = append(file.Tags, core.TagFromDate(core.TagDateShared, time.Now().UTC()))
 
 	return
 }

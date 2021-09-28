@@ -47,5 +47,3 @@ const (
 	FormatAPK               // APK
 	FormatISO               // ISO
 )
-
-// Future tags to be defined for audio/video: Artist, Album, Title, Length, Bitrate, Codec

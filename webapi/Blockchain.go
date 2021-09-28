@@ -107,17 +107,14 @@ type apiBlockRecordProfileBlob struct {
 	Data []byte `json:"data"` // The data
 }
 
-// apiFileMetadata describes recognized metadata that is decoded into text.
+// apiFileMetadata contains metadata information.
 type apiFileMetadata struct {
-	Type  uint16 `json:"type"`  // See core.TagTypeX constants.
-	Name  string `json:"name"`  // User friendly name of the tag. Use the Type fields to identify the metadata as this name may change.
-	Value string `json:"value"` // Text value of the tag.
-}
-
-// apiFileTagRaw describes a raw tag. This allows to support future metadata that is not yet defined in the core library.
-type apiFileTagRaw struct {
-	Type uint16 `json:"type"` // See core.TagTypeX constants.
-	Data []byte `json:"data"` // Data
+	Type uint16 `json:"type"` // See core.TagX constants.
+	Name string `json:"name"` // User friendly name of the metadata type. Use the Type fields to identify the metadata as this name may change.
+	// Depending on the exact type, one of the below fields is used for proper encoding:
+	Text string    `json:"text"` // Text value. UTF-8 encoding.
+	Blob []byte    `json:"blob"` // Binary data
+	Date time.Time `json:"date"` // Date
 }
 
 // apiBlockRecordFile is the metadata of a file published on the blockchain
@@ -131,12 +128,7 @@ type apiBlockRecordFile struct {
 	Name        string            `json:"name"`        // Name of the file
 	Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
 	Date        time.Time         `json:"date"`        // Date of the virtual file
-	Metadata    []apiFileMetadata `json:"metadata"`    // Metadata. These are decoded tags.
-	TagsRaw     []apiFileTagRaw   `json:"tagsraw"`     // All tags encoded that were not recognized as metadata.
-
-	// The following known tags from the core library are decoded into metadata or other fields in above structure; everything else is a raw tag:
-	// TagTypeName, TagTypeFolder, TagTypeDescription, TagTypeDateCreated
-	// The caller can specify its own metadata fields and fill the TagsRaw structure when creating a new file. It will be returned when reading the files' data.
+	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
 }
 
 /*
@@ -256,44 +248,29 @@ func apiBlockchainSelfDeleteFile(w http.ResponseWriter, r *http.Request) {
 
 // --- conversion from core to API data ---
 
-func isFileTagKnownMetadata(tagType uint16) bool {
-	switch tagType {
-	case core.TagTypeName, core.TagTypeFolder, core.TagTypeDescription, core.TagTypeDateCreated, core.TagTypeDateShared:
-		return true
-
-	default:
-		return false
-	}
-}
-
 func blockRecordFileToAPI(input core.BlockRecordFile) (output apiBlockRecordFile) {
-	output = apiBlockRecordFile{ID: input.ID, Hash: input.Hash, Type: input.Type, Format: input.Format, Size: input.Size, TagsRaw: []apiFileTagRaw{}, Metadata: []apiFileMetadata{}}
+	output = apiBlockRecordFile{ID: input.ID, Hash: input.Hash, Type: input.Type, Format: input.Format, Size: input.Size, Metadata: []apiFileMetadata{}}
 
-	// Copy all raw tags. This allows the API caller to decode any future tags that are not defined yet.
-	for n := range input.TagsRaw {
-		if !isFileTagKnownMetadata(input.TagsRaw[n].Type) {
-			output.TagsRaw = append(output.TagsRaw, apiFileTagRaw{Type: input.TagsRaw[n].Type, Data: input.TagsRaw[n].Data})
-		}
-	}
+	for _, tag := range input.Tags {
+		switch tag.Type {
+		case core.TagName:
+			output.Name = tag.Text()
 
-	// Try to decode tags into known metadata.
-	for _, tagDecoded := range input.TagsDecoded {
-		switch v := tagDecoded.(type) {
-		case core.FileTagName:
-			output.Name = v.Name
+		case core.TagFolder:
+			output.Folder = tag.Text()
 
-		case core.FileTagFolder:
-			output.Folder = v.Name
+		case core.TagDescription:
+			output.Description = tag.Text()
 
-		case core.FileTagDescription:
-			output.Description = v.Description
+		case core.TagDateShared:
+			output.Date, _ = tag.Date()
 
-		case core.FileTagDateCreated:
-			output.Metadata = append(output.Metadata, apiFileMetadata{Type: core.TagTypeDateCreated, Name: "Date Created", Value: v.Date.Format(dateFormat)})
+		case core.TagDateCreated:
+			date, _ := tag.Date()
+			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Date Created", Date: date})
 
-		case core.FileTagDateShared:
-			output.Date = v.Date
-
+		default:
+			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Blob: tag.Data})
 		}
 	}
 
@@ -304,27 +281,24 @@ func blockRecordFileFromAPI(input apiBlockRecordFile) (output core.BlockRecordFi
 	output = core.BlockRecordFile{ID: input.ID, Hash: input.Hash, Type: input.Type, Format: input.Format, Size: input.Size}
 
 	if input.Name != "" {
-		output.TagsDecoded = append(output.TagsDecoded, core.FileTagName{Name: input.Name})
+		output.Tags = append(output.Tags, core.TagFromText(core.TagName, input.Name))
 	}
 	if input.Folder != "" {
-		output.TagsDecoded = append(output.TagsDecoded, core.FileTagFolder{Name: input.Folder})
+		output.Tags = append(output.Tags, core.TagFromText(core.TagFolder, input.Folder))
 	}
 	if input.Description != "" {
-		output.TagsDecoded = append(output.TagsDecoded, core.FileTagDescription{Description: input.Description})
+		output.Tags = append(output.Tags, core.TagFromText(core.TagDescription, input.Description))
 	}
 
-	for _, tag := range input.Metadata {
-		switch tag.Type {
-		case core.TagTypeDateCreated:
-			if dateF, err := time.Parse(dateFormat, tag.Value); err == nil {
-				output.TagsDecoded = append(output.TagsDecoded, core.FileTagDateCreated{Date: dateF})
-			}
-		}
-	}
+	for _, meta := range input.Metadata {
+		switch meta.Type {
+		case core.TagName, core.TagFolder, core.TagDescription, core.TagDateShared:
 
-	for n := range input.TagsRaw {
-		if !isFileTagKnownMetadata(input.TagsRaw[n].Type) {
-			output.TagsRaw = append(output.TagsRaw, core.BlockRecordFileTag{Type: input.TagsRaw[n].Type, Data: input.TagsRaw[n].Data})
+		case core.TagDateCreated:
+			output.Tags = append(output.Tags, core.TagFromDate(meta.Type, meta.Date))
+
+		default:
+			output.Tags = append(output.Tags, core.BlockRecordFileTag{Type: meta.Type, Data: meta.Blob})
 		}
 	}
 
