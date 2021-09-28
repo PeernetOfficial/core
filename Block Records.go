@@ -24,6 +24,11 @@ Offset  Size    Info
 Tag data record contains only raw data and may be referenced by Tags in File records.
 This is a basic embedded way of compression when tags are repetitive in multiple files within the same block.
 
+Profile records:
+Offset  Size    Info
+0       2       Type
+2       ?       Data according to the type
+
 */
 
 package core
@@ -40,10 +45,10 @@ import (
 
 // RecordTypeX defines the type of the record
 const (
-	RecordTypeProfile       = 0 // Profile data about the end user
+	RecordTypeProfile       = 0 // Profile data about the end user.
 	RecordTypeTagData       = 1 // Tag data record to be referenced by one or multiple tags. Only valid in the context of the current block.
 	RecordTypeFile          = 2 // File
-	RecordTypeDelete        = 3 // Delete previous record by ID.
+	RecordTypeInvalid1      = 3 // Do not use.
 	RecordTypeCertificate   = 4 // Certificate to certify provided information in the blockchain issued by a trusted 3rd party.
 	RecordTypeContentRating = 5 // Content rating (positive).
 	RecordTypeContentReport = 6 // Content report (negative).
@@ -247,10 +252,10 @@ func decodeBlockRecords(block *Block) (decoded *BlockDecoded, err error) {
 		decoded.RecordsDecoded = append(decoded.RecordsDecoded, file)
 	}
 
-	if profile, err := decodeBlockRecordProfile(block.RecordsRaw); err != nil {
+	if profileFields, err := decodeBlockRecordProfile(block.RecordsRaw); err != nil {
 		return nil, err
-	} else if profile != nil {
-		decoded.RecordsDecoded = append(decoded.RecordsDecoded, *profile)
+	} else if len(profileFields) > 0 {
+		decoded.RecordsDecoded = append(decoded.RecordsDecoded, profileFields)
 	}
 
 	return decoded, nil
@@ -260,152 +265,51 @@ func decodeBlockRecords(block *Block) (decoded *BlockDecoded, err error) {
 
 // BlockRecordProfile provides information about the end user.
 type BlockRecordProfile struct {
-	Fields []BlockRecordProfileField // All fields
-	Blobs  []BlockRecordProfileBlob  // All blobs
+	Type uint16 // See ProfileX constants.
+	Data []byte // Data
 }
-
-// BlockRecordProfileField contains a single information about the end user. The data is always UTF8 text encoded.
-// Note that all profile data is arbitrary and shall be considered untrusted and unverified.
-// To establish trust, the user must load Certificates into the blockchain that validate certain data.
-type BlockRecordProfileField struct {
-	Type uint16 // See ProfileFieldX constants.
-	Text string // The data
-}
-
-// ProfileFieldX constants define well known profile information
-const (
-	ProfileFieldName    = 0 // Arbitrary username
-	ProfileFieldEmail   = 1 // Email address
-	ProfileFieldWebsite = 2 // Website address
-	ProfileFieldTwitter = 3 // Twitter account without the @
-	ProfileFieldYouTube = 4 // YouTube channel URL
-	ProfileFieldAddress = 5 // Physical address
-)
-
-// BlockRecordProfileBlob is similar to BlockRecordProfileField but contains binary objects instead of text.
-// It can be used for example to store a profile picture on the blockchain.
-type BlockRecordProfileBlob struct {
-	Type uint16 // See ProfileBlobX constants.
-	Data []byte // The data
-}
-
-// ProfileBlobX constants define well known blobs
-// Pictures should be in JPEG or PNG format.
-const (
-	ProfileBlobPicture = 0 // Profile picture, unspecified size
-)
 
 // decodeBlockRecordProfile decodes only profile records. Other records are ignored.
-func decodeBlockRecordProfile(recordsRaw []BlockRecordRaw) (profile *BlockRecordProfile, err error) {
-	fields := make(map[uint16]string)
-	blobs := make(map[uint16][]byte)
+func decodeBlockRecordProfile(recordsRaw []BlockRecordRaw) (fields []BlockRecordProfile, err error) {
+	fieldMap := make(map[uint16][]byte)
 
 	for _, record := range recordsRaw {
 		if record.Type != RecordTypeProfile {
 			continue
 		}
 
-		// header: 4 bytes
-		if len(record.Data) < 4 {
+		if len(record.Data) < 2 {
 			return nil, errors.New("profile record invalid size")
 		}
-		countFields := binary.LittleEndian.Uint16(record.Data[0:2])
-		countBlobs := binary.LittleEndian.Uint16(record.Data[2:4])
 
-		index := 4
-
-		for n := 0; n < int(countFields); n++ {
-			if index+4 > len(record.Data) {
-				return nil, errors.New("profile record field invalid size")
-			}
-
-			fieldType := binary.LittleEndian.Uint16(record.Data[index : index+2])
-			fieldSize := binary.LittleEndian.Uint32(record.Data[index+2 : index+2+4])
-
-			if index+6+int(fieldSize) > len(record.Data) {
-				return nil, errors.New("profile record field data invalid size")
-			}
-
-			fields[fieldType] = string(record.Data[index+6 : index+6+int(fieldSize)])
-
-			index += 6 + int(fieldSize)
-		}
-
-		for n := 0; n < int(countBlobs); n++ {
-			if index+4 > len(record.Data) {
-				return nil, errors.New("profile record field invalid size")
-			}
-
-			blobType := binary.LittleEndian.Uint16(record.Data[index : index+2])
-			blobSize := binary.LittleEndian.Uint32(record.Data[index+2 : index+2+4])
-
-			if index+6+int(blobSize) > len(record.Data) {
-				return nil, errors.New("profile record field data invalid size")
-			}
-
-			blobs[blobType] = record.Data[index+6 : index+6+int(blobSize)]
-
-			index += 6 + int(blobSize)
-		}
+		fieldType := binary.LittleEndian.Uint16(record.Data[0:2])
+		fieldMap[fieldType] = record.Data[2:]
 	}
 
-	if len(fields) == 0 && len(blobs) == 0 {
-		return nil, nil
+	for fieldType, fieldData := range fieldMap {
+		fields = append(fields, BlockRecordProfile{Type: fieldType, Data: fieldData})
 	}
 
-	profile = &BlockRecordProfile{}
-
-	for fieldType, fieldText := range fields {
-		profile.Fields = append(profile.Fields, BlockRecordProfileField{Type: fieldType, Text: fieldText})
-	}
-
-	for blobType, blobData := range blobs {
-		profile.Blobs = append(profile.Blobs, BlockRecordProfileBlob{Type: blobType, Data: blobData})
-	}
-
-	return profile, nil
+	return fields, nil
 }
 
 // encodeBlockRecordProfile encodes the profile record.
-func encodeBlockRecordProfile(profile BlockRecordProfile) (recordsRaw []BlockRecordRaw, err error) {
-	if len(profile.Fields) > math.MaxUint16 || len(profile.Blobs) > math.MaxUint16 {
+func encodeBlockRecordProfile(fields []BlockRecordProfile) (recordsRaw []BlockRecordRaw, err error) {
+	if len(fields) > math.MaxUint16 {
 		return nil, errors.New("exceeding max count of fields")
 	}
 
-	data := make([]byte, 4)
-
-	binary.LittleEndian.PutUint16(data[0:2], uint16(len(profile.Fields)))
-	binary.LittleEndian.PutUint16(data[2:4], uint16(len(profile.Blobs)))
-
-	for n := range profile.Fields {
-		storeB := []byte(profile.Fields[n].Text)
-
-		if len(storeB) > math.MaxUint32 {
+	for n := range fields {
+		if len(fields[n].Data) > math.MaxUint32 {
 			return nil, errors.New("exceeding max field size")
 		}
 
-		var tempData [6]byte
-		binary.LittleEndian.PutUint16(tempData[0:2], profile.Fields[n].Type)
-		binary.LittleEndian.PutUint32(tempData[2:6], uint32(len(storeB)))
+		data := make([]byte, 2)
+		binary.LittleEndian.PutUint16(data[0:2], fields[n].Type)
+		data = append(data, fields[n].Data...)
 
-		data = append(data, tempData[:]...)
-		data = append(data, storeB...)
+		recordsRaw = append(recordsRaw, BlockRecordRaw{Type: RecordTypeProfile, Data: data})
 	}
-
-	for n := range profile.Blobs {
-		if len(profile.Blobs[n].Data) > math.MaxUint32 {
-			return nil, errors.New("exceeding max blob size")
-		}
-
-		var tempData [6]byte
-		binary.LittleEndian.PutUint16(tempData[0:2], profile.Blobs[n].Type)
-		binary.LittleEndian.PutUint32(tempData[2:6], uint32(len(profile.Blobs[n].Data)))
-
-		data = append(data, tempData[:]...)
-		data = append(data, profile.Blobs[n].Data...)
-	}
-
-	recordsRaw = append(recordsRaw, BlockRecordRaw{Type: RecordTypeProfile, Data: data})
 
 	return recordsRaw, nil
 }

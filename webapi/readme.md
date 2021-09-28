@@ -37,10 +37,10 @@ These are the functions provided by the API:
 /blockchain/self/list/file      List all files stored on the blockchain
 /blockchain/self/delete/file    Delete files from the blockchain
 
-/profile/list                   List all users profile fields and blobs
-/profile/read                   Read a profile field or blob
-/profile/write                  Write profile fields or blobs
-/profile/delete                 Delete profile fields or blobs
+/profile/list                   List all profile fields
+/profile/read                   Read a profile field
+/profile/write                  Write profile fields
+/profile/delete                 Delete profile fields
 
 /search                         Submit a search request
 /search/result                  Return search results
@@ -97,6 +97,18 @@ type apiResponsePeerSelf struct {
 ```
 
 ## Blockchain Functions
+
+Common status codes returned by various endpoints:
+
+```go
+const (
+	BlockchainStatusOK                 = 0 // No problems in the blockchain detected.
+	BlockchainStatusBlockNotFound      = 1 // Missing block in the blockchain.
+	BlockchainStatusCorruptBlock       = 2 // Error block encoding
+	BlockchainStatusCorruptBlockRecord = 3 // Error block record encoding
+	BlockchainStatusDataNotFound       = 4 // Requested data not available in the blockchain
+)
+```
 
 ### Blockchain Self Header
 
@@ -166,23 +178,6 @@ type apiBlockchainBlock struct {
 The array `RecordsDecoded` will contain any present record of the following:
 * Profile records, see `apiBlockRecordProfile`
 * File records, see `apiBlockRecordFile`
-
-```go
-type apiBlockRecordProfile struct {
-	Fields []apiBlockRecordProfileField `json:"fields"` // All fields
-	Blobs  []apiBlockRecordProfileBlob  `json:"blobs"`  // Blobs
-}
-
-type apiBlockRecordProfileField struct {
-	Type uint16 `json:"type"` // See ProfileFieldX constants.
-	Text string `json:"text"` // The data
-}
-
-type apiBlockRecordProfileBlob struct {
-	Type uint16 `json:"type"` // See ProfileBlobX constants.
-	Data []byte `json:"data"` // The data
-}
-```
 
 ## File Functions
 
@@ -355,24 +350,25 @@ Example response:
 
 ## Profile Functions
 
-User profile data such as the username, email address, and picture are stored on the blockchain. The Profile API distinguishes between text data (= fields) and binary data (= blobs). Text is UTF-8 encoded.
+User profile data such as the username, email address, and picture are stored on the blockchain. Profile fields are text (UTF-8) or binary encoded, depending on the type.
 
-Below is the current list of well known profile information. Clients may define additional fields. The purpose of this defined list is to provide a common mapping across different client software. In the Go code they are defined as constants starting with `ProfileField` and `ProfileBlob`.
+Note that all profile data is arbitrary and shall be considered untrusted and unverified. To establish trust, the user must load Certificates into the blockchain that validate certain data.
 
-| Field Identifier | Purpose                    |
-|------------------|----------------------------|
-| 0                | Username, arbitrary        |
-| 1                | Email address              |
-| 2                | Website address            |
-| 3                | Twitter account with the @ |
-| 4                | YouTube channel URL        |
-| 5                | Physical address           |
+Below is the list of well known profile information. Clients may define additional fields. The purpose of this defined list is to provide a common mapping across different client software. Undefined types are always mapped into the `blob` field.
 
-| Blob Identifier  | Purpose                    |
-|------------------|----------------------------|
-| 0                | Profile picture, unspecified size |
+| Type | Constant       | Encoding | Info                          |
+|------|----------------|----------|-------------------------------|
+| 0    | ProfileName    | Text     | Arbitrary username            |
+| 1    | ProfileEmail   | Text     | Email address                 |
+| 2    | ProfileWebsite | Text     | Website address               |
+| 3    | ProfileTwitter | Text     | Twitter account without the @ |
+| 4    | ProfileYouTube | Text     | YouTube channel URL           |
+| 5    | ProfileAddress | Text     | Physical address              |
+| 6    | ProfilePicture | Blob     | Profile picture               |
 
 ### Profile List
+
+This lists all profile fields.
 
 ```
 Request:    GET /profile/list
@@ -381,18 +377,16 @@ Response:   200 with JSON structure apiProfileData
 
 ```go
 type apiProfileData struct {
-	Fields []apiBlockRecordProfileField `json:"fields"` // All fields
-	Blobs  []apiBlockRecordProfileBlob  `json:"blobs"`  // All blobs
-	Status int                          `json:"status"` // Status of the operation, only used when this structure is returned from the API. See core.BlockchainStatusX.
+	Fields []apiBlockRecordProfile `json:"fields"` // All fields
+	Status int                     `json:"status"` // Status of the operation, only used when this structure is returned from the API. See core.BlockchainStatusX.
 }
 
-const (
-	BlockchainStatusOK                 = 0 // No problems in the blockchain detected.
-	BlockchainStatusBlockNotFound      = 1 // Missing block in the blockchain.
-	BlockchainStatusCorruptBlock       = 2 // Error block encoding
-	BlockchainStatusCorruptBlockRecord = 3 // Error block record encoding
-	BlockchainStatusDataNotFound       = 4 // Requested data not available in the blockchain
-)
+type apiBlockRecordProfile struct {
+	Type uint16 `json:"type"` // See ProfileX constants.
+	// Depending on the exact type, one of the below fields is used for proper encoding:
+	Text string `json:"text"` // Text value. UTF-8 encoding.
+	Blob []byte `json:"blob"` // Binary data
+}
 ```
 
 Example request: `http://127.0.0.1:112/profile/list`
@@ -403,22 +397,23 @@ Example response:
 {
     "fields": [{
         "type": 0,
-        "text": "Test Username 2022"
+        "text": "Test Username 2021",
+        "blob": null
     }, {
         "type": 1,
-        "text": "test@example.com"
+        "text": "test@example.com",
+        "blob": null
     }],
-    "blobs": null,
     "status": 0
 }
 ```
 
 ### Profile Read
 
-This reads a specific users' profile field or blob. For the index see the `ProfileFieldX` and `ProfileBlobX` constants.
+This reads a specific profile field. See ProfileX for recognized fields.
 
 ```
-Request:    GET /profile/read?field=[index] or &blob=[index]
+Request:    GET /profile/read?field=[index]
 Response:   200 with JSON structure apiProfileData
 ```
 
@@ -430,16 +425,16 @@ Example response:
 {
     "fields": [{
         "type": 0,
-        "text": "Test Username 2022"
+        "text": "Test Username 2021",
+        "blob": null
     }],
-    "blobs": null,
     "status": 0
 }
 ```
 
 ### Profile Write
 
-This writes profile fields and blobs. It can write multiple fields and blobs at once.
+This writes profile fields. It can write multiple fields at once. See ProfileX for recognized fields.
 
 ```
 Request:    POST /profile/write with JSON structure apiProfileData
@@ -469,7 +464,7 @@ Example response:
 
 ### Profile Delete
 
-This function allows to delete profile data (both fields and blobs). Only the type number in the fields and blobs are required. Multiple fields and blobs can be deleted at the same time.
+This function allows to delete profile fields. Only the type number is required. Multiple fields can be deleted at the same time.
 
 ```
 Request:    POST /profile/delete with JSON structure apiProfileData
@@ -481,16 +476,6 @@ Example POST request to `http://127.0.0.1:112/profile/delete` (deleting the prof
 ```json
 {
     "fields": [{
-        "type": 0
-    }]
-}
-```
-
-One practical use case is deleting the profile picture (by specifying blob 0) with the following payload:
-
-```json
-{
-    "blobs": [{
         "type": 0
     }]
 }

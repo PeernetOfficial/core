@@ -91,7 +91,7 @@ func TestBlockEncoding(t *testing.T) {
 		return
 	}
 
-	encoded1, _ := encodeBlockRecordProfile(BlockRecordProfile{Fields: []BlockRecordProfileField{{Type: ProfileFieldName, Text: "Test User 1"}}})
+	encoded1, _ := encodeBlockRecordProfile([]BlockRecordProfile{ProfileFieldFromText(ProfileName, "Test User 1")})
 
 	file1 := BlockRecordFile{Hash: hashData([]byte("Test data")), Type: TypeText, Format: FormatText, Size: 9, ID: uuid.New()}
 	file1.Tags = append(file1.Tags, TagFromText(TagName, "Filename 1.txt"))
@@ -134,11 +134,7 @@ func TestBlockEncoding(t *testing.T) {
 			printFile(record)
 
 		case BlockRecordProfile:
-			profile := record
-			fmt.Printf("* Profile\n")
-			for _, field := range profile.Fields {
-				fmt.Printf("  %d = %s\n", field.Type, field.Text)
-			}
+			printProfileField(record)
 
 		}
 
@@ -228,6 +224,8 @@ func printFile(file BlockRecordFile) {
 			fmt.Printf("  Name          %s\n", tag.Text())
 		case TagFolder:
 			fmt.Printf("  Folder        %s\n", tag.Text())
+		case TagDescription:
+			fmt.Printf("  Description   %s\n", tag.Text())
 		}
 	}
 }
@@ -270,8 +268,10 @@ func TestBlockchainProfile(t *testing.T) {
 	initUserBlockchain()
 
 	// write some test profile data
-	newHeight, newVersion, status := UserProfileWrite(BlockRecordProfile{Fields: []BlockRecordProfileField{{Type: ProfileFieldName, Text: "Test User 1"}, {Type: ProfileFieldEmail, Text: "test@test.com"}},
-		Blobs: []BlockRecordProfileBlob{{Type: 100, Data: []byte{0, 1, 2, 3}}}})
+	newHeight, newVersion, status := UserProfileWrite([]BlockRecordProfile{
+		ProfileFieldFromText(ProfileName, "Test User 1"),
+		ProfileFieldFromText(ProfileEmail, "test@test.com"),
+		{Type: 100, Data: []byte{0, 1, 2, 3}}})
 
 	fmt.Printf("Write profile data: Status %d height %d version %d\n", status, newHeight, newVersion)
 
@@ -281,29 +281,35 @@ func TestBlockchainProfile(t *testing.T) {
 	fmt.Printf("----------------\n")
 
 	// delete profile info
-	newHeight, newVersion, status = UserProfileDelete([]uint16{ProfileFieldEmail}, nil)
+	newHeight, newVersion, status = UserProfileDelete([]uint16{ProfileEmail})
 	fmt.Printf("Deleted profile email: Status %d height %d version %d\n", status, newHeight, newVersion)
 
 	printProfileData()
 }
 
 func printProfileData() {
-	fields, blobs, status := UserProfileList()
+	fields, status := UserProfileList()
 	if status != BlockchainStatusOK {
 		fmt.Printf("Reading profile data error status: %d\n", status)
 		return
 	}
 
-	if len(fields) == 0 && len(blobs) == 0 {
+	if len(fields) == 0 {
 		fmt.Printf("No profile data to visualize.\n")
 		return
 	}
 
 	for _, field := range fields {
-		fmt.Printf("* Field  %d  =  %s\n", field.Type, field.Text)
+		printProfileField(field)
 	}
+}
 
-	for _, blob := range blobs {
-		fmt.Printf("* Blob   %d  =  %s\n", blob.Type, hex.EncodeToString(blob.Data))
+func printProfileField(field BlockRecordProfile) {
+	switch field.Type {
+	case ProfileName, ProfileEmail, ProfileWebsite, ProfileTwitter, ProfileYouTube, ProfileAddress:
+		fmt.Printf("* Field  %d  =  %s\n", field.Type, string(field.Data))
+
+	default:
+		fmt.Printf("* Field  %d  =  %s\n", field.Type, hex.EncodeToString(field.Data))
 	}
 }

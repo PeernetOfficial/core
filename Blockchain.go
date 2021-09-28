@@ -360,54 +360,22 @@ func UserBlockchainListFiles() (files []BlockRecordFile, status int) {
 	return files, status
 }
 
-// UserProfileReadField reads the specified profile field. See core.ProfileFieldX for the full list. The returned text is UTF-8 text encoded. Status is BlockchainStatusX.
-func UserProfileReadField(index uint16) (text string, status int) {
+// UserProfileReadField reads the specified profile field. See ProfileX for the list of recognized fields. The encoding depends on the field type. Status is BlockchainStatusX.
+func UserProfileReadField(index uint16) (data []byte, status int) {
 	found := false
 
 	status = blockchainIterate(func(block *Block) (statusI int) {
-		profile, err := decodeBlockRecordProfile(block.RecordsRaw)
+		fields, err := decodeBlockRecordProfile(block.RecordsRaw)
 		if err != nil {
 			return BlockchainStatusCorruptBlockRecord
-		} else if profile == nil {
+		} else if len(fields) == 0 {
 			return BlockchainStatusOK
 		}
 
 		// Check if the field is available in the profile record. If there are multiple records, only return the latest one.
-		for n := range profile.Fields {
-			if profile.Fields[n].Type == index {
-				text = profile.Fields[n].Text
-				found = true
-			}
-		}
-
-		return BlockchainStatusOK
-	})
-
-	if status != BlockchainStatusOK {
-		return "", status
-	} else if !found {
-		return "", BlockchainStatusDataNotFound
-	}
-
-	return text, BlockchainStatusOK
-}
-
-// UserProfileReadBlob reads a specific profile blob. A blob is binary data. See core.ProfileBlobX. Status is BlockchainStatusX.
-func UserProfileReadBlob(index uint16) (blob []byte, status int) {
-	found := false
-
-	status = blockchainIterate(func(block *Block) (statusI int) {
-		profile, err := decodeBlockRecordProfile(block.RecordsRaw)
-		if err != nil {
-			return BlockchainStatusCorruptBlockRecord
-		} else if profile == nil {
-			return BlockchainStatusOK
-		}
-
-		// Check if the blob is available in the profile record. If there are multiple records, only return the latest one.
-		for n := range profile.Blobs {
-			if profile.Blobs[n].Type == index {
-				blob = profile.Blobs[n].Data
+		for n := range fields {
+			if fields[n].Type == index {
+				data = fields[n].Data
 				found = true
 			}
 		}
@@ -421,47 +389,36 @@ func UserProfileReadBlob(index uint16) (blob []byte, status int) {
 		return nil, BlockchainStatusDataNotFound
 	}
 
-	return blob, BlockchainStatusOK
+	return data, BlockchainStatusOK
 }
 
-// UserProfileList lists all profile fields and blobs. Status is BlockchainStatusX.
-func UserProfileList() (fields []BlockRecordProfileField, blobs []BlockRecordProfileBlob, status int) {
-	uniqueFields := make(map[uint16]string)
-	uniqueBlobs := make(map[uint16][]byte)
+// UserProfileList lists all profile fields. Status is BlockchainStatusX.
+func UserProfileList() (fields []BlockRecordProfile, status int) {
+	uniqueFields := make(map[uint16][]byte)
 
 	status = blockchainIterate(func(block *Block) (statusI int) {
-		profile, err := decodeBlockRecordProfile(block.RecordsRaw)
+		fields, err := decodeBlockRecordProfile(block.RecordsRaw)
 		if err != nil {
 			return BlockchainStatusCorruptBlockRecord
-		} else if profile == nil {
-			return BlockchainStatusOK
 		}
 
-		for n := range profile.Fields {
-			uniqueFields[profile.Fields[n].Type] = profile.Fields[n].Text
-		}
-
-		for n := range profile.Blobs {
-			uniqueBlobs[profile.Blobs[n].Type] = profile.Blobs[n].Data
+		for n := range fields {
+			uniqueFields[fields[n].Type] = fields[n].Data
 		}
 
 		return BlockchainStatusOK
 	})
 
 	for key, value := range uniqueFields {
-		fields = append(fields, BlockRecordProfileField{Type: key, Text: value})
+		fields = append(fields, BlockRecordProfile{Type: key, Data: value})
 	}
 
-	for key, value := range uniqueBlobs {
-		blobs = append(blobs, BlockRecordProfileBlob{Type: key, Data: value})
-	}
-
-	return fields, blobs, status
+	return fields, status
 }
 
 // UserProfileWrite writes profile fields and blobs to the blockchain. Status is BlockchainStatusX.
-func UserProfileWrite(profile BlockRecordProfile) (newHeight, newVersion uint64, status int) {
-	encoded, err := encodeBlockRecordProfile(profile)
+func UserProfileWrite(fields []BlockRecordProfile) (newHeight, newVersion uint64, status int) {
+	encoded, err := encodeBlockRecordProfile(fields)
 	if err != nil {
 		return 0, 0, BlockchainStatusCorruptBlockRecord
 	}
@@ -470,56 +427,21 @@ func UserProfileWrite(profile BlockRecordProfile) (newHeight, newVersion uint64,
 }
 
 // UserProfileDelete deletes fields and blobs from the blockchain. Status is BlockchainStatusX.
-func UserProfileDelete(fields, blobs []uint16) (newHeight, newVersion uint64, status int) {
+func UserProfileDelete(fields []uint16) (newHeight, newVersion uint64, status int) {
 	return blockchainIterateDeleteRecord(func(record *BlockRecordRaw) (deleteAction int) {
 		if record.Type != RecordTypeProfile {
 			return 0 // no action
 		}
 
-		profile, err := decodeBlockRecordProfile([]BlockRecordRaw{*record})
-		if err != nil || profile == nil {
+		existingFields, err := decodeBlockRecordProfile([]BlockRecordRaw{*record})
+		if err != nil || len(existingFields) != 1 {
 			return 3 // error blockchain corrupt
 		}
 
-		// process all blobs and fields
-		var newFields []BlockRecordProfileField
-		var newBlobs []BlockRecordProfileBlob
-		refactorRecord := false
-
-	parseFields:
-		for n := range profile.Fields {
-			for _, i := range fields {
-				if profile.Fields[n].Type == i {
-					refactorRecord = true
-					continue parseFields
-				}
+		for _, i := range fields {
+			if i == existingFields[0].Type { // found a file ID to delete?
+				return 1 // delete record
 			}
-			newFields = append(newFields, profile.Fields[n])
-		}
-
-	parseBlobs:
-		for n := range profile.Blobs {
-			for _, i := range blobs {
-				if profile.Blobs[n].Type == i {
-					refactorRecord = true
-					continue parseBlobs
-				}
-			}
-			newBlobs = append(newBlobs, profile.Blobs[n])
-		}
-
-		if len(newFields) == 0 && len(newBlobs) == 0 { // delete the entire record in case no fields and blobs are left
-			return 1 // delete record
-		} else if refactorRecord {
-			// refactor
-			encoded, err := encodeBlockRecordProfile(BlockRecordProfile{Fields: newFields, Blobs: newBlobs})
-			if err != nil || len(encoded) != 1 {
-				return 3
-			}
-
-			record.Data = encoded[0].Data
-
-			return 2 // replace record
 		}
 
 		return 0 // no action on record

@@ -86,27 +86,6 @@ type apiBlockchainBlock struct {
 	RecordsDecoded    []interface{}       `json:"recordsdecoded"`    // Records decoded. The encoding for each record depends on its type.
 }
 
-// apiBlockRecordProfile contains end-user information. Any data is treated as untrusted and unverified by default.
-type apiBlockRecordProfile struct {
-	Fields []apiBlockRecordProfileField `json:"fields"` // All fields
-	Blobs  []apiBlockRecordProfileBlob  `json:"blobs"`  // Blobs
-}
-
-// apiBlockRecordProfileField contains a single information about the end user. The data is always UTF8 text encoded.
-// Note that all profile data is arbitrary and shall be considered untrusted and unverified.
-// To establish trust, the user must load Certificates into the blockchain that validate certain data.
-type apiBlockRecordProfileField struct {
-	Type uint16 `json:"type"` // See ProfileFieldX constants.
-	Text string `json:"text"` // The data
-}
-
-// apiBlockRecordProfileBlob is similar to apiBlockRecordProfileField but contains binary objects instead of text.
-// It can be used for example to store a profile picture on the blockchain.
-type apiBlockRecordProfileBlob struct {
-	Type uint16 `json:"type"` // See ProfileBlobX constants.
-	Data []byte `json:"data"` // The data
-}
-
 // apiFileMetadata contains metadata information.
 type apiFileMetadata struct {
 	Type uint16 `json:"type"` // See core.TagX constants.
