@@ -202,21 +202,24 @@ type apiFileMetadata struct {
 	Type uint16 `json:"type"` // See core.TagX constants.
 	Name string `json:"name"` // User friendly name of the metadata type. Use the Type fields to identify the metadata as this name may change.
 	// Depending on the exact type, one of the below fields is used for proper encoding:
-	Text string    `json:"text"` // Text value. UTF-8 encoding.
-	Blob []byte    `json:"blob"` // Binary data
-	Date time.Time `json:"date"` // Date
+	Text   string    `json:"text"`   // Text value. UTF-8 encoding.
+	Blob   []byte    `json:"blob"`   // Binary data
+	Date   time.Time `json:"date"`   // Date
+	Number uint64    `json:"number"` // Number
 }
 ```
 
-Below is the list of defined metadata types. Undefined types may be used by clients, but are always mapped into the `blob` field.
+Below is the list of defined metadata types. Undefined types may be used by clients, but are always mapped into the `blob` field. Virtual tags are generated at runtime and are read-only. They cannot be stored on the blockchain.
 
-| Type | Constant       | Encoding | Info                                                                                                                   |
-|------|----------------|----------|------------------------------------------------------------------------------------------------------------------------|
-| 0    | TagName        | Text     | Mapped into Name field. Name of file.                                                                                  |
-| 1    | TagFolder      | Text     | Mapped into Folder field. Folder name.                                                                                 |
-| 2    | TagDescription | Text     | Mapped into Description field. Arbitrary description of the file. May contain hashtags.                                |
-| 3    | TagDateShared  | Date     | Mapped into Date field. When the file was published on the blockchain. Cannot be set manually (virtual read-only tag). |
-| 4    | TagDateCreated | Date     | Date when the file was originally created.                                                                             |
+| Type | Constant       | Encoding | Virtual | Info                                                                                                                   |
+|------|----------------|----------|---------|------------------------------------------------------------------------------------------------------------------------|
+| 0    | TagName        | Text     |         | Mapped into Name field. Name of file.                                                                                  |
+| 1    | TagFolder      | Text     |         | Mapped into Folder field. Folder name.                                                                                 |
+| 2    | TagDescription | Text     |         | Mapped into Description field. Arbitrary description of the file. May contain hashtags.                                |
+| 3    | TagDateShared  | Date     | x       | Mapped into Date field. When the file was published on the blockchain.                                                 |
+| 4    | TagDateCreated | Date     |         | Date when the file was originally created.                                                                             |
+| 5    | TagSharedByCount    | Number   | x       | Count of peers that share the file.                                                                             |
+| 6    | TagSharedByGeoIP    | Text/CSV  | x       | GeoIP data of peers that are sharing the file. CSV encoded with header "latitude,longitude".                    |
 
 ### Add File
 
@@ -570,7 +573,21 @@ Example response with dummy data:
         "description": "",
         "date": "2021-09-23T00:00:00Z",
         "nodeid": "j4yHzmCXiXqg4DPhowj0DIOuuyJxQflo2QSNG3yhCK8=",
-        "metadata": []
+        "metadata": [{
+            "type": 5,
+            "name": "Shared By Count",
+            "text": "",
+            "blob": null,
+            "date": "0001-01-01T00:00:00Z",
+            "number": 7
+        }, {
+            "type": 6,
+            "name": "Shared By GeoIP",
+            "text": "25.7766,-178.1275\n-46.4041,8.0066\n84.4478,8.2417\n14.1721,-9.7539\n-67.2364,127.6007\n-75.1604,106.7583\n70.5132,-133.4146",
+            "blob": null,
+            "date": "0001-01-01T00:00:00Z",
+            "number": 0
+        }]
     }]
 }
 ```

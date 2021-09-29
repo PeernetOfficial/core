@@ -91,9 +91,10 @@ type apiFileMetadata struct {
 	Type uint16 `json:"type"` // See core.TagX constants.
 	Name string `json:"name"` // User friendly name of the metadata type. Use the Type fields to identify the metadata as this name may change.
 	// Depending on the exact type, one of the below fields is used for proper encoding:
-	Text string    `json:"text"` // Text value. UTF-8 encoding.
-	Blob []byte    `json:"blob"` // Binary data
-	Date time.Time `json:"date"` // Date
+	Text   string    `json:"text"`   // Text value. UTF-8 encoding.
+	Blob   []byte    `json:"blob"`   // Binary data
+	Date   time.Time `json:"date"`   // Date
+	Number uint64    `json:"number"` // Number
 }
 
 // apiBlockRecordFile is the metadata of a file published on the blockchain
@@ -249,6 +250,12 @@ func blockRecordFileToAPI(input core.BlockRecordFile) (output apiBlockRecordFile
 			date, _ := tag.Date()
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Date Created", Date: date})
 
+		case core.TagSharedByCount:
+			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Shared By Count", Number: tag.Number()})
+
+		case core.TagSharedByGeoIP:
+			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Shared By GeoIP", Text: tag.Text()})
+
 		default:
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Blob: tag.Data})
 		}
@@ -271,8 +278,12 @@ func blockRecordFileFromAPI(input apiBlockRecordFile) (output core.BlockRecordFi
 	}
 
 	for _, meta := range input.Metadata {
+		if core.IsTagVirtual(meta.Type) { // Virtual tags are not mapped back. They are read-only.
+			continue
+		}
+
 		switch meta.Type {
-		case core.TagName, core.TagFolder, core.TagDescription, core.TagDateShared:
+		case core.TagName, core.TagFolder, core.TagDescription: // auto mapped tags
 
 		case core.TagDateCreated:
 			output.Tags = append(output.Tags, core.TagFromDate(meta.Type, meta.Date))

@@ -10,6 +10,7 @@ package webapi
 
 import (
 	"encoding/hex"
+	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -284,18 +285,46 @@ func createTestResult(fileType int) (file core.BlockRecordFile) {
 		extension = ".bin"
 	}
 
-	file.Tags = append(file.Tags, core.TagFromText(core.TagName, TempFileName("", extension)))
+	file.Tags = append(file.Tags, core.TagFromText(core.TagName, tempFileName("", extension)))
 	//file.Tags = append(file.Tags, core.TagFromText(core.TagFolder, "not set"))
 	file.Tags = append(file.Tags, core.TagFromDate(core.TagDateShared, time.Now().UTC()))
+
+	sharedByCount := uint64(rand.Intn(10))
+	file.Tags = append(file.Tags, core.TagFromNumber(core.TagSharedByCount, sharedByCount))
+
+	if sharedByCount > 0 {
+		var sharedByGeoIP string
+		for n := uint64(0); n < sharedByCount; n++ {
+			latitude, longitude := randomGeoIP()
+			if n > 0 {
+				sharedByGeoIP += "\n"
+			}
+
+			sharedByGeoIP += fmt.Sprintf("%.4f", latitude) + "," + fmt.Sprintf("%.4f", longitude)
+		}
+
+		file.Tags = append(file.Tags, core.TagFromText(core.TagSharedByGeoIP, sharedByGeoIP))
+	}
 
 	return
 }
 
-// TempFileName generates a temporary filename for use in testing or whatever
-func TempFileName(prefix, suffix string) string {
+// tempFileName generates a temporary filename for use in testing
+func tempFileName(prefix, suffix string) string {
 	randBytes := make([]byte, 16)
 	rand.Read(randBytes)
 	return prefix + hex.EncodeToString(randBytes) + "." + suffix
+}
+
+// randomGeoIP generates random geo IP coordinates
+func randomGeoIP() (latitude, longitude float32) {
+	// Latitude generates latitude (from -90.0 to 90.0)
+	latitude = rand.Float32()*180 - 90
+
+	// Longitude generates longitude (from -180 to 180)
+	longitude = rand.Float32()*360 - 180
+
+	return
 }
 
 // queryRecentShared returns recently shared files on the network. fileType = -1 for any.
