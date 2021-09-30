@@ -17,6 +17,7 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -35,6 +36,7 @@ var rootPeers map[[btcec.PubKeyBytesLenCompressed]byte]*rootPeer
 // Note: This should be called before any network listening function so that incoming root peers are properly recognized.
 func initSeedList() {
 	rootPeers = make(map[[btcec.PubKeyBytesLenCompressed]byte]*rootPeer)
+	recentContacts = make(map[[btcec.PubKeyBytesLenCompressed]byte]*recentContactInfo)
 
 loopSeedList:
 	for _, seed := range config.SeedList {
@@ -95,6 +97,11 @@ func parseAddress(Address string) (remote *net.UDPAddr, err error) {
 
 // contact tries to contact the root peer on all networks
 func (peer *rootPeer) contact() {
+	// If already in peer list, no need to contact.
+	if PeerlistLookup(peer.publicKey) != nil {
+		return
+	}
+
 	for _, address := range peer.addresses {
 		// Port internal is always set to 0 for root peers. It disables NAT detection and will not send out a Traverse message.
 		contactArbitraryPeer(peer.publicKey, address, 0)
@@ -103,6 +110,8 @@ func (peer *rootPeer) contact() {
 
 // bootstrap connects to the initial set of peers.
 func bootstrap() {
+	go resetRecentContacts()
+
 	if len(rootPeers) == 0 {
 		Filters.LogError("bootstrap", "warning: Empty list of root peers. Connectivity relies on local peer discovery and incoming connections.\n")
 		return
@@ -194,13 +203,8 @@ func autoMulticastBroadcast() {
 	}
 }
 
-// contactArbitraryPeer reaches for the first time to an arbitrary peer.
-// It does not contact the peer if it is in the peer list, which means that a connection is already established.
+// contactArbitraryPeer contacts a new arbitrary peer for the first time.
 func contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, receiverPortInternal uint16) (contacted bool) {
-	if peer := PeerlistLookup(publicKey); peer != nil {
-		return false
-	}
-
 	findSelf := ShouldSendFindSelf()
 	packets := msgEncodeAnnouncement(true, findSelf, nil, nil, nil)
 	if len(packets) == 0 || packets[0].err != nil {
@@ -234,12 +238,25 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest
 			continue
 		}
 
+		// If the peer is already in the peer list, no need to contact it again.
+		if PeerlistLookup(closePeer.PublicKey) != nil {
+			continue
+		}
+
+		// Check if the reported peer was recently contacted (in connection with the origin peer) for bootstrapping. This makes sure inactive peers are not contacted over and over again.
+		recent, blacklisted := closePeer.IsRecent(peer.NodeID)
+		if blacklisted {
+			continue
+		}
+
 		for _, address := range closePeer.ToAddresses() {
-			// Initiate contact. Once a response comes back, the peer will be actually added to the peer list.
-			if contactArbitraryPeer(closePeer.PublicKey, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal) {
-				// Blacklist the target Peer ID, IP:Port for contact in the next 10 minutes.
-				// TODO
+			// Check if the specific IP:Port was already contacted in the last 5-10 minutes.
+			if recent.IsAddressContacted(address) {
+				continue
 			}
+
+			// Initiate contact. Once a response comes back, the peer will be actually added to the peer list.
+			contactArbitraryPeer(closePeer.PublicKey, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal)
 		}
 	}
 }
@@ -296,4 +313,80 @@ func (record *PeerRecord) ToAddresses() (addresses []*peerAddress) {
 	}
 
 	return addresses
+}
+
+// ---- bootstrap cache of contacted peers to prevent flooding ----
+
+// bootstrapRecentContact is the time in seconds when a peer will not be contacted again for bootstrapping.
+// This prevents unnecessary flooding and prevents some attacks. Especially in small networks it will be the case that the same peer is returned multiple times.
+const bootstrapRecentContact = 5 * 60 // 5-10 minutes
+
+type recentContactInfo struct {
+	added     time.Time           // When the peer was added to the list
+	addresses []*peerAddress      // List of contacted addresses in IP:Port format
+	origin    map[string]struct{} // List of node IDs who reported this contact
+	sync.RWMutex
+}
+
+var (
+	recentContacts      map[[btcec.PubKeyBytesLenCompressed]byte]*recentContactInfo
+	recentContactsMutex sync.RWMutex
+)
+
+func resetRecentContacts() {
+	for {
+		time.Sleep(bootstrapRecentContact * time.Second)
+		threshold := time.Now().Add(-bootstrapRecentContact * time.Second)
+
+		recentContactsMutex.Lock()
+
+		for key, recent := range recentContacts {
+			if recent.added.Before(threshold) {
+				delete(recentContacts, key)
+			}
+		}
+
+		recentContactsMutex.Unlock()
+	}
+}
+
+// IsRecent checks if the peer is blacklisted related to the origin peer due to recent contact. It will create a "recent contact" if none exists.
+func (record *PeerRecord) IsRecent(originNodeID []byte) (recent *recentContactInfo, blacklisted bool) {
+	key := publicKey2Compressed(record.PublicKey)
+
+	recentContactsMutex.Lock()
+	defer recentContactsMutex.Unlock()
+
+	if recent = recentContacts[key]; recent == nil {
+		recent = &recentContactInfo{added: time.Now(), origin: make(map[string]struct{})}
+		recent.origin[string(originNodeID)] = struct{}{}
+
+		recentContacts[key] = recent
+	} else {
+		if _, blacklisted = recent.origin[string(originNodeID)]; !blacklisted {
+			recent.origin[string(originNodeID)] = struct{}{}
+
+			// Here we could add an additional check: If number of recent.addresses (i.e. unique IP:Port tried) exceeds a threshold.
+			// However, this is currently not done due to risk of peer isolation. This could happen if enough peers would gang up to report false addresses for a given peer (such peer could still establish an inbound connection to this peer, however).
+			// Rather, those peers who report inactive peers should be blacklisted after a given threshold of garbage responses.
+		}
+	}
+
+	return recent, blacklisted
+}
+
+// IsAddressContacted checks if the address was contacted recently
+func (recent *recentContactInfo) IsAddressContacted(address *peerAddress) bool {
+	recent.Lock()
+	defer recent.Unlock()
+
+	for _, addressE := range recent.addresses {
+		if addressE.IP.Equal(address.IP) && addressE.Port == address.Port {
+			return true
+		}
+	}
+
+	recent.addresses = append(recent.addresses, address)
+
+	return false
 }
