@@ -152,7 +152,7 @@ func (job *SearchJob) ReturnNext(Limit int) (Result []*core.BlockRecordFile) {
 
 // createTestResult creates a test file. fileType = -1 for any.
 func createTestResult(fileType int) (file core.BlockRecordFile) {
-	randomData := make([]byte, 10)
+	randomData := make([]byte, 10*1024)
 	rand.Read(randomData)
 
 	file.Hash = core.Data2Hash(randomData)

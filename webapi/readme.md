@@ -48,6 +48,7 @@ These are the functions provided by the API:
 
 /download/start                 Start the download of a file
 /download/status                Get the status of a download
+/download/action                Pause, resume, and cancel a download
 
 /explore                        List recently shared files
 
@@ -601,29 +602,115 @@ Request:    GET /search/terminate?id=[UUID]
 Response:   204 Empty
 ```
 
+## Download API
+
+Downloads can have these status types:
+
+| Status | Constant       |  Info                          |
+|------|----------------|-------------------------------|
+| 0    | DownloadWaitMetadata    | Wait for file metadata.  |
+| 1    | DownloadWaitSwarm    | Wait to join swarm.  |
+| 2    | DownloadActive    | Active downloading. This only means it joined a swarm. It could still be stuck at any percentage (including 0%) if no seeders are available.  |
+| 3    | DownloadPause    | Paused by the user.  |
+| 4    | DownloadCanceled    | Canceled by the user before the download finished. Once canceled, a new download has to be started if the file shall be downloaded.  |
+| 5    | DownloadFinished    | Download finished 100%.  |
+
+The API response codes for download functions are:
+
+| Status | Constant       |  Info                          |
+|------|----------------|-------------------------------|
+| 0    | DownloadResponseSuccess    | Success  |
+| 1    | DownloadResponseIDNotFound    | Error: Download ID not found.  |
+| 2    | DownloadResponseFileInvalid   | Error: Target file cannot be used. For example, permissions denied to create it.  |
+| 3    | DownloadResponseActionInvalid  | Error: Invalid action. Pausing a non-active download, resuming a non-paused download, or canceling already canceled or finished.  |
+| 4    | DownloadResponseFileWrite    | Error writing file.  |
+
 ### Start Download
 
 This starts the download of a file. The path is the full path on disk to store the file.
-The hash parameter identifies the file to download. The blockchain parameter is the node ID of the peer who shared the file on its blockchain (i.e., the "owner" of the file).
+The hash parameter identifies the file to download. The node ID identifies the blockchain (i.e., the "owner" of the file).
 
 ```
-Request:    GET /download/start?path=[target path on disk]&hash=[file hash to download]&blockchain=[node ID]
+Request:    GET /download/start?path=[target path on disk]&hash=[file hash to download]&node=[node ID]
 Result:     200 with JSON structure apiResponseDownloadStatus
 ```
 
 ```go
 type apiResponseDownloadStatus struct {
-	Status int `json:"status"` // Status: 0 = Success, 1 = Error download not found
+	APIStatus      int                `json:"apistatus"`      // Status of the API call. See DownloadResponseX.
+	ID             uuid.UUID          `json:"id"`             // Download ID. This can be used to query the latest status and take actions.
+	DownloadStatus int                `json:"downloadstatus"` // Status of the download. See DownloadX.
+	File           apiBlockRecordFile `json:"file"`           // File information. Only available for status >= DownloadWaitSwarm.
+	Progress       struct {
+		TotalSize      uint64  `json:"totalsize"`      // Total size in bytes.
+		DownloadedSize uint64  `json:"downloadedsize"` // Count of bytes download so far.
+		Percentage     float64 `json:"percentage"`     // Percentage downloaded. Rounded to 2 decimal points. Between 0.00 and 100.00.
+	} `json:"progress"` // Progress of the download. Only valid for status >= DownloadWaitSwarm.
+	Swarm struct {
+		CountPeers uint64 `json:"countpeers"` // Count of peers participating in the swarm.
+	} `json:"swarm"` // Information about the swarm. Only valid for status >= DownloadActive.
+}
+```
+
+Example response (only apistatus, id, and downloadstatus are used):
+
+```json
+{
+    "apistatus": 0,
+    "id": "a6107122-9e31-42d3-b663-0df64263c6bc",
+    "downloadstatus": 0
 }
 ```
 
 ### Get Download Status
 
-This returns the status of an active download. The hash and blockchain parameters must be the same as `/download/start`.
+This returns the status of an active download.
 
 ```
-Request:    GET /download/status?hash=[file hash]&blockchain=[node ID]
+Request:    GET /download/status?id=[download ID]
 Result:     200 with JSON structure apiResponseDownloadStatus
+```
+
+Example request: `http://127.0.0.1:112/download/status?id=a6107122-9e31-42d3-b663-0df64263c6bc`
+
+```json
+{
+    "apistatus": 0,
+    "id": "950316e8-23b4-49c7-83dd-c021e793129e",
+    "downloadstatus": 5,
+    "file": {
+        "id": "78ac46dc-6731-4f3d-a9d4-22c9a4eb5fb9",
+        "hash": "LiQUdqPD78+e6j1eS+0VmSUdCgUXVDN74ELVTRcgmWc=",
+        "type": 0,
+        "format": 13,
+        "size": 10240,
+        "folder": "",
+        "name": "a96dc7b6a4a7a401c48f93c442f01de9.bin",
+        "description": "",
+        "date": "2021-10-04T04:37:17Z",
+        "nodeid": "lMP3/nYMjoE/PfGKRDZi+ms5h7jWUrdIZaKSvLAAq6A=",
+        "metadata": []
+    },
+    "progress": {
+        "totalsize": 10240,
+        "downloadedsize": 1024,
+        "percentage": 10
+    },
+    "swarm": {
+        "countpeers": 0
+    }
+}
+```
+
+### Pause, Resume, and Cancel a Download
+
+This pauses, resumes, and cancels a download. Once canceled, a new download has to be started if the file shall be downloaded.
+Only active downloads can be paused. While a download is in discovery phase (querying metadata, joining swarm), it can only be canceled.
+Action: 0 = Pause, 1 = Resume, 2 = Cancel.
+
+```
+Request:    GET /download/action?id=[download ID]&action=[action]
+Result:     200 with JSON structure apiResponseDownloadStatus (using APIStatus and DownloadStatus)
 ```
 
 ## Explore
