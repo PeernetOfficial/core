@@ -25,8 +25,8 @@ type apiFileMetadata struct {
 	Number uint64    `json:"number"` // Number
 }
 
-// apiBlockRecordFile is the metadata of a file published on the blockchain
-type apiBlockRecordFile struct {
+// apiFile is the metadata of a file published on the blockchain
+type apiFile struct {
 	ID          uuid.UUID         `json:"id"`          // Unique ID.
 	Hash        []byte            `json:"hash"`        // Blake3 hash of the file data
 	Type        uint8             `json:"type"`        // File Type. For example audio or document. See TypeX.
@@ -42,8 +42,8 @@ type apiBlockRecordFile struct {
 
 // --- conversion from core to API data ---
 
-func blockRecordFileToAPI(input core.BlockRecordFile) (output apiBlockRecordFile) {
-	output = apiBlockRecordFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Metadata: []apiFileMetadata{}}
+func blockRecordFileToAPI(input core.BlockRecordFile) (output apiFile) {
+	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Metadata: []apiFileMetadata{}}
 
 	for _, tag := range input.Tags {
 		switch tag.Type {
@@ -77,7 +77,7 @@ func blockRecordFileToAPI(input core.BlockRecordFile) (output apiBlockRecordFile
 	return output
 }
 
-func blockRecordFileFromAPI(input apiBlockRecordFile) (output core.BlockRecordFile) {
+func blockRecordFileFromAPI(input apiFile) (output core.BlockRecordFile) {
 	output = core.BlockRecordFile{ID: input.ID, Hash: input.Hash, Type: input.Type, Format: input.Format, Size: input.Size}
 
 	if input.Name != "" {
@@ -113,8 +113,8 @@ func blockRecordFileFromAPI(input apiBlockRecordFile) (output core.BlockRecordFi
 
 // apiBlockAddFiles contains a list of files from the blockchain
 type apiBlockAddFiles struct {
-	Files  []apiBlockRecordFile `json:"files"`  // List of files
-	Status int                  `json:"status"` // Status of the operation, only used when this structure is returned from the API.
+	Files  []apiFile `json:"files"`  // List of files
+	Status int       `json:"status"` // Status of the operation, only used when this structure is returned from the API.
 }
 
 /*

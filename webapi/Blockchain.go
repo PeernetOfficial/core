@@ -14,8 +14,6 @@ import (
 	"github.com/PeernetOfficial/core"
 )
 
-const dateFormat = "2006-01-02 15:04:05"
-
 type apiBlockchainHeader struct {
 	PeerID  string `json:"peerid"`  // Peer ID hex encoded.
 	Version uint64 `json:"version"` // Current version number of the blockchain.

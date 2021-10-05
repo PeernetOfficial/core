@@ -70,12 +70,12 @@ Response:   200 with JSON structure apiResponseStatus
 
 ```go
 type apiResponseStatus struct {
-	Status        int  `json:"status"`        // Status code: 0 = Ok.
-	IsConnected   bool `json:"isconnected"`   // Whether connected to Peernet.
-	CountPeerList int  `json:"countpeerlist"` // Count of peers in the peer list. Note that this contains peers that are considered inactive, but have not yet been removed from the list.
-	CountNetwork  int  `json:"countnetwork"`  // Count of total peers in the network.
-	// This is usually a higher number than CountPeerList, which just represents the current number of connected peers.
-	// The CountNetwork number is going to be queried from root peers which may or may not have a limited view into the network.
+    Status        int  `json:"status"`        // Status code: 0 = Ok.
+    IsConnected   bool `json:"isconnected"`   // Whether connected to Peernet.
+    CountPeerList int  `json:"countpeerlist"` // Count of peers in the peer list. Note that this contains peers that are considered inactive, but have not yet been removed from the list.
+    CountNetwork  int  `json:"countnetwork"`  // Count of total peers in the network.
+    // This is usually a higher number than CountPeerList, which just represents the current number of connected peers.
+    // The CountNetwork number is going to be queried from root peers which may or may not have a limited view into the network.
 }
 ```
 
@@ -92,8 +92,8 @@ The peer and node IDs are encoded as hex encoded strings.
 
 ```go
 type apiResponsePeerSelf struct {
-	PeerID string `json:"peerid"` // Peer ID. This is derived from the public in compressed form.
-	NodeID string `json:"nodeid"` // Node ID. This is the blake3 hash of the peer ID and used in the DHT.
+    PeerID string `json:"peerid"` // Peer ID. This is derived from the public in compressed form.
+    NodeID string `json:"nodeid"` // Node ID. This is the blake3 hash of the peer ID and used in the DHT.
 }
 ```
 
@@ -103,11 +103,11 @@ Common status codes returned by various endpoints:
 
 ```go
 const (
-	BlockchainStatusOK                 = 0 // No problems in the blockchain detected.
-	BlockchainStatusBlockNotFound      = 1 // Missing block in the blockchain.
-	BlockchainStatusCorruptBlock       = 2 // Error block encoding
-	BlockchainStatusCorruptBlockRecord = 3 // Error block record encoding
-	BlockchainStatusDataNotFound       = 4 // Requested data not available in the blockchain
+    BlockchainStatusOK                 = 0 // No problems in the blockchain detected.
+    BlockchainStatusBlockNotFound      = 1 // Missing block in the blockchain.
+    BlockchainStatusCorruptBlock       = 2 // Error block encoding
+    BlockchainStatusCorruptBlockRecord = 3 // Error block record encoding
+    BlockchainStatusDataNotFound       = 4 // Requested data not available in the blockchain
 )
 ```
 
@@ -122,9 +122,9 @@ Response:   200 with JSON structure apiBlockchainHeader
 
 ```go
 type apiBlockchainHeader struct {
-	PeerID  string `json:"peerid"`  // Peer ID hex encoded.
-	Version uint64 `json:"version"` // Current version number of the blockchain.
-	Height  uint64 `json:"height"`  // Height of the blockchain (number of blocks). If 0, no data exists.
+    PeerID  string `json:"peerid"`  // Peer ID hex encoded.
+    Version uint64 `json:"version"` // Current version number of the blockchain.
+    Height  uint64 `json:"height"`  // Height of the blockchain (number of blocks). If 0, no data exists.
 }
 ```
 
@@ -140,18 +140,18 @@ Response:   200 with JSON structure apiBlockchainBlockStatus
 
 ```go
 type apiBlockRecordRaw struct {
-	Type uint8  `json:"type"` // Record Type. See core.RecordTypeX.
-	Data []byte `json:"data"` // Data according to the type.
+    Type uint8  `json:"type"` // Record Type. See core.RecordTypeX.
+    Data []byte `json:"data"` // Data according to the type.
 }
 
 type apiBlockchainBlockRaw struct {
-	Records []apiBlockRecordRaw `json:"records"` // Block records in encoded raw format.
+    Records []apiBlockRecordRaw `json:"records"` // Block records in encoded raw format.
 }
 
 type apiBlockchainBlockStatus struct {
-	Status  int    `json:"status"`  // Status: 0 = Success, 1 = Error invalid data
-	Height  uint64 `json:"height"`  // Height of the blockchain (number of blocks).
-	Version uint64 `json:"version"` // Version of the blockchain.
+    Status  int    `json:"status"`  // Status: 0 = Success, 1 = Error invalid data
+    Height  uint64 `json:"height"`  // Height of the blockchain (number of blocks).
+    Version uint64 `json:"version"` // Version of the blockchain.
 }
 ```
 
@@ -166,47 +166,47 @@ Response:   200 with JSON structure apiBlockchainBlock
 
 ```go
 type apiBlockchainBlock struct {
-	Status            int                 `json:"status"`            // Status: 0 = Success, 1 = Error block not found, 2 = Error block encoding (indicates that the blockchain is corrupt)
-	PeerID            string              `json:"peerid"`            // Peer ID hex encoded.
-	LastBlockHash     []byte              `json:"lastblockhash"`     // Hash of the last block. Blake3.
-	BlockchainVersion uint64              `json:"blockchainversion"` // Blockchain version
-	Number            uint64              `json:"blocknumber"`       // Block number
-	RecordsRaw        []apiBlockRecordRaw `json:"recordsraw"`        // Records raw. Successfully decoded records are parsed into the below fields.
-	RecordsDecoded    []interface{}       `json:"recordsdecoded"`    // Records decoded. The encoding for each record depends on its type.
+    Status            int                 `json:"status"`            // Status: 0 = Success, 1 = Error block not found, 2 = Error block encoding (indicates that the blockchain is corrupt)
+    PeerID            string              `json:"peerid"`            // Peer ID hex encoded.
+    LastBlockHash     []byte              `json:"lastblockhash"`     // Hash of the last block. Blake3.
+    BlockchainVersion uint64              `json:"blockchainversion"` // Blockchain version
+    Number            uint64              `json:"blocknumber"`       // Block number
+    RecordsRaw        []apiBlockRecordRaw `json:"recordsraw"`        // Records raw. Successfully decoded records are parsed into the below fields.
+    RecordsDecoded    []interface{}       `json:"recordsdecoded"`    // Records decoded. The encoding for each record depends on its type.
 }
 ```
 
 The array `RecordsDecoded` will contain any present record of the following:
 * Profile records, see `apiBlockRecordProfile`
-* File records, see `apiBlockRecordFile`
+* File records, see `apiFile`
 
 ## File Functions
 
 These functions allow adding, deleting, and listing files stored on the users blockchain. Only metadata is actually stored on the blockchain. To download a remote file both the file hash and the node ID are required. The node ID specifies the owner of the file.
 
 ```go
-type apiBlockRecordFile struct {
-	ID          uuid.UUID         `json:"id"`          // Unique ID.
-	Hash        []byte            `json:"hash"`        // Blake3 hash of the file data
-	Type        uint8             `json:"type"`        // File Type. For example audio or document. See TypeX.
-	Format      uint16            `json:"format"`      // File Format. This is more granular, for example PDF or Word file. See FormatX.
-	Size        uint64            `json:"size"`        // Size of the file
-	Folder      string            `json:"folder"`      // Folder, optional
-	Name        string            `json:"name"`        // Name of the file
-	Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
-	Date        time.Time         `json:"date"`        // Date shared
-	NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file
-	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
+type apiFile struct {
+    ID          uuid.UUID         `json:"id"`          // Unique ID.
+    Hash        []byte            `json:"hash"`        // Blake3 hash of the file data
+    Type        uint8             `json:"type"`        // File Type. For example audio or document. See TypeX.
+    Format      uint16            `json:"format"`      // File Format. This is more granular, for example PDF or Word file. See FormatX.
+    Size        uint64            `json:"size"`        // Size of the file
+    Folder      string            `json:"folder"`      // Folder, optional
+    Name        string            `json:"name"`        // Name of the file
+    Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
+    Date        time.Time         `json:"date"`        // Date shared
+    NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file
+    Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
 }
 
 type apiFileMetadata struct {
-	Type uint16 `json:"type"` // See core.TagX constants.
-	Name string `json:"name"` // User friendly name of the metadata type. Use the Type fields to identify the metadata as this name may change.
-	// Depending on the exact type, one of the below fields is used for proper encoding:
-	Text   string    `json:"text"`   // Text value. UTF-8 encoding.
-	Blob   []byte    `json:"blob"`   // Binary data
-	Date   time.Time `json:"date"`   // Date
-	Number uint64    `json:"number"` // Number
+    Type uint16 `json:"type"` // See core.TagX constants.
+    Name string `json:"name"` // User friendly name of the metadata type. Use the Type fields to identify the metadata as this name may change.
+    // Depending on the exact type, one of the below fields is used for proper encoding:
+    Text   string    `json:"text"`   // Text value. UTF-8 encoding.
+    Blob   []byte    `json:"blob"`   // Binary data
+    Date   time.Time `json:"date"`   // Date
+    Number uint64    `json:"number"` // Number
 }
 ```
 
@@ -235,7 +235,8 @@ Response:   200 with JSON structure apiBlockchainBlockStatus
 
 ```go
 type apiBlockAddFiles struct {
-	Files []apiBlockRecordFile `json:"files"`
+    Files  []apiFile `json:"files"`  // List of files
+    Status int       `json:"status"` // Status of the operation, only used when this structure is returned from the API.
 }
 ```
 
@@ -384,15 +385,15 @@ Response:   200 with JSON structure apiProfileData
 
 ```go
 type apiProfileData struct {
-	Fields []apiBlockRecordProfile `json:"fields"` // All fields
-	Status int                     `json:"status"` // Status of the operation, only used when this structure is returned from the API. See core.BlockchainStatusX.
+    Fields []apiBlockRecordProfile `json:"fields"` // All fields
+    Status int                     `json:"status"` // Status of the operation, only used when this structure is returned from the API. See core.BlockchainStatusX.
 }
 
 type apiBlockRecordProfile struct {
-	Type uint16 `json:"type"` // See ProfileX constants.
-	// Depending on the exact type, one of the below fields is used for proper encoding:
-	Text string `json:"text"` // Text value. UTF-8 encoding.
-	Blob []byte `json:"blob"` // Binary data
+    Type uint16 `json:"type"` // See ProfileX constants.
+    // Depending on the exact type, one of the below fields is used for proper encoding:
+    Text string `json:"text"` // Text value. UTF-8 encoding.
+    Blob []byte `json:"blob"` // Binary data
 }
 ```
 
@@ -492,7 +493,27 @@ Example POST request to `http://127.0.0.1:112/profile/delete` (deleting the prof
 
 The search API provides a high-level function to search for files in Peernet. Searching is always asynchronous. `/search` returns an UUID which is used to loop over `/search/result` until the search is terminated.
 
-The current implementation of the underlying search algorithm only searches file names. Optional filters are supported.
+The current implementation of the underlying search algorithm only searches file names.
+
+Filters and sort order may be applied when starting the search at `/search`, or at runtime when returning the results at `/search/result`.
+
+These are the available sort options:
+
+| Sort | Constant       |  Info                          |
+|------|----------------|-------------------------------|
+| 0    | SortNone    | No sorting. Results are returned as they come in.  |
+| 1    | SortRelevanceAsc    | Least relevant results first.  |
+| 2    | SortRelevanceDec    | Most relevant results first.  |
+| 3    | SortDateAsc    | Oldest first.  |
+| 4    | SortDateDesc    | Newest first.  |
+| 5    | SortNameAsc    | File name ascending. The folder name is not used for sorting.  |
+| 6    | SortNameDesc    | File name descending. The folder name is not used for sorting.  |
+
+The following filters are supported:
+
+* Filter by date from and to. Both dates are required. The inclusion check for the 'from date' is >= and 'to date' <.
+* File type such as binary, text document etc. See core.TypeX.
+* File format (which is more granular) such as PDF, Word, Ebook, etc. See core.FormatX.
 
 ### Submitting a Search Request
 
@@ -503,21 +524,20 @@ Response:   200 on success with JSON SearchRequestResponse
 
 ```go
 type SearchRequest struct {
-	Term        string        `json:"term"`       // Search term.
-	Timeout     time.Duration `json:"timeout"`    // Timeout in seconds. 0 means default. This is the entire time the search may take. Found results are still available after this timeout.
-	MaxResults  int           `json:"maxresults"` // Total number of max results. 0 means default.
-	DateFrom    string        `json:"datefrom"`   // Date from, both from/to are required if set.
-	DateTo      string        `json:"dateto"`     // Date to, both from/to are required if set.
-	Sort        int           `json:"sort"`       // Sort order: 0 = No sorting, 1 = Relevance ASC, 2 = Relevance DESC (this should be default), 3 = Date ASC, 4 = Date DESC
-	TerminateID []uuid.UUID   `json:"terminate"`  // Optional: Previous search IDs to terminate. This is if the user makes a new search from the same tab. Same as first calling /search/terminate.
-	TypeFilter  int           `json:"typefilter"` // 0 = No filters used, 1 = Use file type filter, 2 = Use file format filter.
-	FileType    int           `json:"filetype"`   // File type such as binary, text document etc. See core.TypeX.
-	FileFormat  int           `json:"fileformat"` // File format such as PDF, Word, Ebook, etc. See core.FormatX.
+    Term        string      `json:"term"`       // Search term.
+    Timeout     int         `json:"timeout"`    // Timeout in seconds. 0 means default. This is the entire time the search may take. Found results are still available after this timeout.
+    MaxResults  int         `json:"maxresults"` // Total number of max results. 0 means default.
+    DateFrom    string      `json:"datefrom"`   // Date from, both from/to are required if set. Format "2006-01-02 15:04:05".
+    DateTo      string      `json:"dateto"`     // Date to, both from/to are required if set. Format "2006-01-02 15:04:05".
+    Sort        int         `json:"sort"`       // See SortX.
+    TerminateID []uuid.UUID `json:"terminate"`  // Optional: Previous search IDs to terminate. This is if the user makes a new search from the same tab. Same as first calling /search/terminate.
+    FileType    int         `json:"filetype"`   // File type such as binary, text document etc. See core.TypeX. -1 = not used.
+    FileFormat  int         `json:"fileformat"` // File format such as PDF, Word, Ebook, etc. See core.FormatX. -1 = not used.
 }
 
 type SearchRequestResponse struct {
-	ID     uuid.UUID `json:"id"`     // ID of the search job. This is used to get the results.
-	Status int       `json:"status"` // Status of the search: 0 = Success (ID valid), 1 = Invalid Term, 2 = Error Max Concurrent Searches
+    ID     uuid.UUID `json:"id"`     // ID of the search job. This is used to get the results.
+    Status int       `json:"status"` // Status of the search: 0 = Success (ID valid), 1 = Invalid Term, 2 = Error Max Concurrent Searches
 }
 ```
 
@@ -542,17 +562,24 @@ Example response:
 
 ### Returning Search Results
 
-This function returns search results.
+This function returns search results. The default limit is 100.
+If reset is set, all results will be filtered and sorted according to the settings. This means that the new first result will be returned again and internal result offset is set to 0.
 
 ```
 Request:    GET /search/result?id=[UUID]&limit=[max records]
+            Optional parameters:
+            &reset=[0|1] to reset the filters or sort orders with any of the below parameters (all required):
+            &filetype=[File Type]
+            &fileformat=[File Format]
+            &from=[Date From]&to=[Date To]
+            &sort=[sort order]
 Result:     200 with JSON structure SearchResult. Check the field status.
 ```
 
 ```go
 type SearchResult struct {
-	Status int                  `json:"status"` // Status: 0 = Success with results, 1 = No more results available, 2 = Search ID not found, 3 = No results yet available keep trying
-	Files  []apiBlockRecordFile `json:"files"`  // List of files found
+    Status int       `json:"status"` // Status: 0 = Success with results, 1 = No more results available, 2 = Search ID not found, 3 = No results yet available keep trying
+    Files  []apiFile `json:"files"`  // List of files found
 }
 ```
 
@@ -610,7 +637,7 @@ Downloads can have these status types:
 |------|----------------|-------------------------------|
 | 0    | DownloadWaitMetadata    | Wait for file metadata.  |
 | 1    | DownloadWaitSwarm    | Wait to join swarm.  |
-| 2    | DownloadActive    | Active downloading. This only means it joined a swarm. It could still be stuck at any percentage (including 0%) if no seeders are available.  |
+| 2    | DownloadActive    | Active downloading. It could still be stuck at any percentage (including 0%) if no seeders are available.  |
 | 3    | DownloadPause    | Paused by the user.  |
 | 4    | DownloadCanceled    | Canceled by the user before the download finished. Once canceled, a new download has to be started if the file shall be downloaded.  |
 | 5    | DownloadFinished    | Download finished 100%.  |
@@ -622,13 +649,13 @@ The API response codes for download functions are:
 | 0    | DownloadResponseSuccess    | Success  |
 | 1    | DownloadResponseIDNotFound    | Error: Download ID not found.  |
 | 2    | DownloadResponseFileInvalid   | Error: Target file cannot be used. For example, permissions denied to create it.  |
-| 3    | DownloadResponseActionInvalid  | Error: Invalid action. Pausing a non-active download, resuming a non-paused download, or canceling already canceled or finished.  |
+| 3    | DownloadResponseActionInvalid  | Error: Invalid action. Pausing a non-active download, resuming a non-paused download, or canceling already canceled or finished download.  |
 | 4    | DownloadResponseFileWrite    | Error writing file.  |
 
 ### Start Download
 
 This starts the download of a file. The path is the full path on disk to store the file.
-The hash parameter identifies the file to download. The node ID identifies the blockchain (i.e., the "owner" of the file).
+The hash parameter identifies the file to download. The node ID identifies the blockchain (i.e., the "owner" of the file). The hash and node must be hex-encoded.
 
 ```
 Request:    GET /download/start?path=[target path on disk]&hash=[file hash to download]&node=[node ID]
@@ -637,20 +664,22 @@ Result:     200 with JSON structure apiResponseDownloadStatus
 
 ```go
 type apiResponseDownloadStatus struct {
-	APIStatus      int                `json:"apistatus"`      // Status of the API call. See DownloadResponseX.
-	ID             uuid.UUID          `json:"id"`             // Download ID. This can be used to query the latest status and take actions.
-	DownloadStatus int                `json:"downloadstatus"` // Status of the download. See DownloadX.
-	File           apiBlockRecordFile `json:"file"`           // File information. Only available for status >= DownloadWaitSwarm.
-	Progress       struct {
-		TotalSize      uint64  `json:"totalsize"`      // Total size in bytes.
-		DownloadedSize uint64  `json:"downloadedsize"` // Count of bytes download so far.
-		Percentage     float64 `json:"percentage"`     // Percentage downloaded. Rounded to 2 decimal points. Between 0.00 and 100.00.
-	} `json:"progress"` // Progress of the download. Only valid for status >= DownloadWaitSwarm.
-	Swarm struct {
-		CountPeers uint64 `json:"countpeers"` // Count of peers participating in the swarm.
-	} `json:"swarm"` // Information about the swarm. Only valid for status >= DownloadActive.
+    APIStatus      int       `json:"apistatus"`      // Status of the API call. See DownloadResponseX.
+    ID             uuid.UUID `json:"id"`             // Download ID. This can be used to query the latest status and take actions.
+    DownloadStatus int       `json:"downloadstatus"` // Status of the download. See DownloadX.
+    File           apiFile   `json:"file"`           // File information. Only available for status >= DownloadWaitSwarm.
+    Progress       struct {
+        TotalSize      uint64  `json:"totalsize"`      // Total size in bytes.
+        DownloadedSize uint64  `json:"downloadedsize"` // Count of bytes download so far.
+        Percentage     float64 `json:"percentage"`     // Percentage downloaded. Rounded to 2 decimal points. Between 0.00 and 100.00.
+    } `json:"progress"` // Progress of the download. Only valid for status >= DownloadWaitSwarm.
+    Swarm struct {
+        CountPeers uint64 `json:"countpeers"` // Count of peers participating in the swarm.
+    } `json:"swarm"` // Information about the swarm. Only valid for status >= DownloadActive.
 }
 ```
+
+Example request: `http://127.0.0.1:112/download/start?path=test.bin&hash=cde13a55f41e387480391c47238acfe9c0136dd56bf365b01416aec03eec7dc4&node=5a0f712822ddc49633d27df6009d3efa27f19cb371319837f04160bdbda38544`
 
 Example response (only apistatus, id, and downloadstatus are used):
 
@@ -743,9 +772,9 @@ Result:     200 with JSON structure apiResponseFileFormat
 
 ```go
 type apiResponseFileFormat struct {
-	Status     int    `json:"status"`     // Status: 0 = Success, 1 = Error reading file
-	FileType   uint16 `json:"filetype"`   // File Type.
-	FileFormat uint16 `json:"fileformat"` // File Format.
+    Status     int    `json:"status"`     // Status: 0 = Success, 1 = Error reading file
+    FileType   uint16 `json:"filetype"`   // File Type.
+    FileFormat uint16 `json:"fileformat"` // File Format.
 }
 ```
 

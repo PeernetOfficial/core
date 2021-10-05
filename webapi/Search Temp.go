@@ -12,7 +12,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/PeernetOfficial/core"
@@ -20,11 +19,10 @@ import (
 )
 
 func dispatchSearch(input SearchRequest) (job *SearchJob) {
-	job = &SearchJob{id: uuid.New(), timeout: time.Duration(input.Timeout) * time.Second, maxResult: input.MaxResults, sortOrder: input.Sort, fileType: -1, fileFormat: -1}
+	Timeout, FileType, FileFormat, DateFrom, DateTo := input.Parse()
 
-	allJobsMutex.Lock()
-	allJobs[job.id] = job
-	allJobsMutex.Unlock()
+	// create the search job
+	job = CreateSearchJob(Timeout, input.MaxResults, input.Sort, FileType, FileFormat, DateFrom, DateTo)
 
 	// Create test data
 	// * Between 0-100 results
@@ -39,115 +37,22 @@ func dispatchSearch(input SearchRequest) (job *SearchJob) {
 		job.ResultSync.Lock()
 
 		for n := 0; n < countResults; n++ {
-			newFile := createTestResult(-1)
-			job.filesCurrent = append(job.filesCurrent, &newFile)
+			newFile := blockRecordFileToAPI(createTestResult(-1))
+
+			// TODO: Move to channel!
+			job.Files = append(job.Files, &newFile)
+			job.AllFiles = append(job.AllFiles, &newFile)
+			job.requireSort = true
 		}
 
 		job.ResultSync.Unlock()
+		job.Terminate()
 
 	}(job)
 
-	job.RemoveDefer(job.timeout + time.Second*20)
+	job.RemoveDefer(job.timeout + time.Minute*10)
 
 	return job
-}
-
-// ---- job list management ----
-
-// SearchJob is a collection of search jobs
-type SearchJob struct {
-	// input settings
-	id        uuid.UUID     // The job id
-	timeout   time.Duration // timeout set for all searches
-	maxResult int           // max results user-facing.
-	sortOrder int           // 0 = No sorting, 1 = Relevance ASC, 2 = Relevance DESC, 3 = Date ASC, 4 = Date DESC
-
-	// additional optional filters
-	isDates    bool      // whether the from/to dates are valid, both are required.
-	dateFrom   time.Time // optional date from
-	dateTo     time.Time // optional date to
-	fileType   int       // File type such as binary, text document etc. See core.TypeX. -1 not used.
-	fileFormat int       // File format such as PDF, Word, Ebook, etc. See core.FormatX. -1 not used.
-
-	// runtime data
-	//clients        []*SearchClient // all search clients
-	//clientsMutex sync.Mutex // mutex for manipulating client list
-
-	filesCurrent []*core.BlockRecordFile // Current result list of files, not yet fetched by caller.
-	FilesAll     []*core.BlockRecordFile // List of all files. This list only gets expanded.
-	ResultSync   sync.Mutex              // ResultSync ensures unique access to the file results
-}
-
-// job list management
-var (
-	allJobs      map[uuid.UUID]*SearchJob = make(map[uuid.UUID]*SearchJob)
-	allJobsMutex sync.RWMutex
-)
-
-// Remove removes the structure from the list. Terminate should be called before. Unless the search is manually removed, it stays forever in the list.
-func (job *SearchJob) Remove() {
-	allJobsMutex.Lock()
-	delete(allJobs, job.id) // delete is safe to call multiple times, so auto-removal and manual one are fine and need no syncing
-	allJobsMutex.Unlock()
-}
-
-// RemoveDefer removes the search job after a given time after all searches are terminated. This can be used for automated time delayed removal. Do not create additional search clients after deferal removing.
-func (job *SearchJob) RemoveDefer(Duration time.Duration) {
-	go func() {
-		// for _, client := range job.clients {
-		// 	<-client.TerminateSignal
-		// }
-
-		<-time.After(Duration)
-		job.Remove()
-	}()
-}
-
-// JobLookup looks up a job. Returns nil if not found.
-func JobLookup(id uuid.UUID) (job *SearchJob) {
-	allJobsMutex.RLock()
-	job = allJobs[id]
-	allJobsMutex.RUnlock()
-
-	return job
-}
-
-// Terminate terminates all searches
-func (job *SearchJob) Terminate() {
-	//job.clientsMutex.Lock()
-	//defer job.clientsMutex.Unlock()
-
-	// for n := range job.clients {
-	// 	if !job.clients[n].IsTerminated {
-	// 		job.clients[n].Terminate(true)
-	// 	}
-	// }
-}
-
-// ReturnResult returns the selected results.
-func (job *SearchJob) ReturnResult(Limit int) (Result []*core.BlockRecordFile) {
-	if Limit == 0 {
-		return Result
-	}
-
-	job.ResultSync.Lock()
-	defer job.ResultSync.Unlock()
-
-	if len(job.filesCurrent) == 0 {
-		return Result
-	} else if Limit > len(job.filesCurrent) {
-		Limit = len(job.filesCurrent)
-	}
-
-	Result = job.filesCurrent[:Limit]
-	job.filesCurrent = job.filesCurrent[Limit:]
-
-	return Result
-}
-
-// ReturnNext returns the next results. Call must be serialized.
-func (job *SearchJob) ReturnNext(Limit int) (Result []*core.BlockRecordFile) {
-	return job.ReturnResult(Limit)
 }
 
 // createTestResult creates a test file. fileType = -1 for any.

@@ -19,8 +19,7 @@ func (info *downloadInfo) Start() {
 	time.Sleep(time.Second * time.Duration(rand.Intn(5)))
 
 	// request metadata
-	info.file = createTestResult(-1)
-	info.fileU = blockRecordFileToAPI(info.file)
+	info.file = blockRecordFileToAPI(createTestResult(-1))
 
 	// join swarm
 

@@ -32,7 +32,9 @@ const (
 
 // Date returns the tags data as date encoded
 func (tag *BlockRecordFileTag) Date() (time.Time, error) {
-	if len(tag.Data) != 8 {
+	if tag == nil {
+		return time.Time{}, errors.New("tag not available")
+	} else if len(tag.Data) != 8 {
 		return time.Time{}, errors.New("file tag date invalid size")
 	}
 
@@ -88,4 +90,15 @@ func IsTagVirtual(Type uint16) bool {
 	default:
 		return false
 	}
+}
+
+// GetTag returns the tag with the type or nil if not available.
+func (file *BlockRecordFile) GetTag(Type uint16) (tag *BlockRecordFileTag) {
+	for n := range file.Tags {
+		if file.Tags[n].Type == Type {
+			return &file.Tags[n]
+		}
+	}
+
+	return nil
 }

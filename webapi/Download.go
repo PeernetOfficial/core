@@ -15,15 +15,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PeernetOfficial/core"
 	"github.com/google/uuid"
 )
 
 type apiResponseDownloadStatus struct {
-	APIStatus      int                `json:"apistatus"`      // Status of the API call. See DownloadResponseX.
-	ID             uuid.UUID          `json:"id"`             // Download ID. This can be used to query the latest status and take actions.
-	DownloadStatus int                `json:"downloadstatus"` // Status of the download. See DownloadX.
-	File           apiBlockRecordFile `json:"file"`           // File information. Only available for status >= DownloadWaitSwarm.
+	APIStatus      int       `json:"apistatus"`      // Status of the API call. See DownloadResponseX.
+	ID             uuid.UUID `json:"id"`             // Download ID. This can be used to query the latest status and take actions.
+	DownloadStatus int       `json:"downloadstatus"` // Status of the download. See DownloadX.
+	File           apiFile   `json:"file"`           // File information. Only available for status >= DownloadWaitSwarm.
 	Progress       struct {
 		TotalSize      uint64  `json:"totalsize"`      // Total size in bytes.
 		DownloadedSize uint64  `json:"downloadedsize"` // Count of bytes download so far.
@@ -38,7 +37,7 @@ const (
 	DownloadResponseSuccess       = 0 // Success
 	DownloadResponseIDNotFound    = 1 // Error: Download ID not found.
 	DownloadResponseFileInvalid   = 2 // Error: Target file cannot be used. For example, permissions denied to create it.
-	DownloadResponseActionInvalid = 4 // Error: Invalid action. Pausing a non-active download, resuming a non-paused download, or canceling already canceled or finished.
+	DownloadResponseActionInvalid = 4 // Error: Invalid action. Pausing a non-active download, resuming a non-paused download, or canceling already canceled or finished download.
 	DownloadResponseFileWrite     = 5 // Error writing file.
 )
 
@@ -46,7 +45,7 @@ const (
 const (
 	DownloadWaitMetadata = 0 // Wait for file metadata.
 	DownloadWaitSwarm    = 1 // Wait to join swarm.
-	DownloadActive       = 2 // Active downloading. This only means it joined a swarm. It could still be stuck at any percentage (including 0%) if no seeders are available.
+	DownloadActive       = 2 // Active downloading. It could still be stuck at any percentage (including 0%) if no seeders are available.
 	DownloadPause        = 3 // Paused by the user.
 	DownloadCanceled     = 4 // Canceled by the user before the download finished. Once canceled, a new download has to be started if the file shall be downloaded.
 	DownloadFinished     = 5 // Download finished 100%.
@@ -118,7 +117,7 @@ func apiDownloadStatus(w http.ResponseWriter, r *http.Request) {
 	response := apiResponseDownloadStatus{APIStatus: DownloadResponseSuccess, ID: info.id, DownloadStatus: info.status}
 
 	if info.status >= DownloadWaitSwarm {
-		response.File = info.fileU
+		response.File = info.file
 
 		response.Progress.TotalSize = info.file.Size
 		response.Progress.DownloadedSize = info.DiskFile.StoredSize
@@ -189,8 +188,7 @@ type downloadInfo struct {
 	created time.Time // When the download was created.
 	ended   time.Time // When the download was finished (only status = DownloadFinished).
 
-	file  core.BlockRecordFile // File metadata (only status >= DownloadWaitSwarm)
-	fileU apiBlockRecordFile   // Same as file metadata, but encoded for API
+	file apiFile // File metadata (only status >= DownloadWaitSwarm)
 
 	DiskFile struct { // Target file on disk to store downloaded data
 		Name       string   // File name
