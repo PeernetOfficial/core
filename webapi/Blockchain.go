@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/PeernetOfficial/core"
+	"github.com/PeernetOfficial/core/blockchain"
 )
 
 type apiBlockchainHeader struct {
@@ -27,7 +28,7 @@ Request:    GET /blockchain/self/header
 Result:     200 with JSON structure apiResponsePeerSelf
 */
 func apiBlockchainSelfHeader(w http.ResponseWriter, r *http.Request) {
-	publicKey, height, version := core.UserBlockchainHeader()
+	publicKey, height, version := core.UserBlockchain.Header()
 
 	EncodeJSON(w, r, apiBlockchainHeader{Version: version, Height: height, PeerID: hex.EncodeToString(publicKey.SerializeCompressed())})
 }
@@ -43,7 +44,7 @@ type apiBlockchainBlockRaw struct {
 }
 
 type apiBlockchainBlockStatus struct {
-	Status  int    `json:"status"`  // Status: 0 = Success, 1 = Error invalid data
+	Status  int    `json:"status"`  // See BlockchainStatusX.
 	Height  uint64 `json:"height"`  // Height of the blockchain (number of blocks).
 	Version uint64 `json:"version"` // Version of the blockchain.
 }
@@ -61,13 +62,13 @@ func apiBlockchainSelfAppend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var records []core.BlockRecordRaw
+	var records []blockchain.BlockRecordRaw
 
 	for _, record := range input.Records {
-		records = append(records, core.BlockRecordRaw{Type: record.Type, Data: record.Data})
+		records = append(records, blockchain.BlockRecordRaw{Type: record.Type, Data: record.Data})
 	}
 
-	newHeight, newVersion, status := core.UserBlockchainAppend(records)
+	newHeight, newVersion, status := core.UserBlockchain.Append(records)
 
 	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
@@ -96,7 +97,7 @@ func apiBlockchainSelfRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	block, status, _ := core.UserBlockchainRead(uint64(blockN))
+	block, status, _ := core.UserBlockchain.Read(uint64(blockN))
 	result := apiBlockchainBlock{Status: status}
 
 	if status == 0 {
@@ -108,10 +109,10 @@ func apiBlockchainSelfRead(w http.ResponseWriter, r *http.Request) {
 
 		for _, record := range block.RecordsDecoded {
 			switch v := record.(type) {
-			case core.BlockRecordFile:
+			case blockchain.BlockRecordFile:
 				result.RecordsDecoded = append(result.RecordsDecoded, blockRecordFileToAPI(v))
 
-			case core.BlockRecordProfile:
+			case blockchain.BlockRecordProfile:
 				result.RecordsDecoded = append(result.RecordsDecoded, blockRecordProfileToAPI(v))
 
 			}

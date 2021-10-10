@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PeernetOfficial/core"
+	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/google/uuid"
 )
 
@@ -273,11 +273,11 @@ func SortFiles(files []*apiFile, Sort int) (sorted []*apiFile) {
 
 	case SortSharedByCountAsc:
 		sort.SliceStable(files, func(i, j int) bool {
-			return files[i].GetMetadata(core.TagSharedByCount).Number < files[j].GetMetadata(core.TagSharedByCount).Number
+			return files[i].GetMetadata(blockchain.TagSharedByCount).Number < files[j].GetMetadata(blockchain.TagSharedByCount).Number
 		})
 	case SortSharedByCountDesc:
 		sort.SliceStable(files, func(i, j int) bool {
-			return files[i].GetMetadata(core.TagSharedByCount).Number > files[j].GetMetadata(core.TagSharedByCount).Number
+			return files[i].GetMetadata(blockchain.TagSharedByCount).Number > files[j].GetMetadata(blockchain.TagSharedByCount).Number
 		})
 
 	}

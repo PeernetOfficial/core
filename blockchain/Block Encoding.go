@@ -21,7 +21,7 @@ Offset  Size   Info
 
 */
 
-package core
+package blockchain
 
 import (
 	"bytes"
@@ -63,7 +63,7 @@ func decodeBlock(raw []byte) (block *Block, err error) {
 
 	signature := raw[0 : 0+65]
 
-	block.OwnerPublicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, hashData(raw[65:]))
+	block.OwnerPublicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, HashFunction(raw[65:]))
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func encodeBlock(block *Block, ownerPrivateKey *btcec.PrivateKey) (raw []byte, e
 	binary.LittleEndian.PutUint16(raw[113:113+2], countRecords)     // Count of records
 
 	// signature is last
-	signature, err := btcec.SignCompact(btcec.S256(), ownerPrivateKey, hashData(raw[65:]), true)
+	signature, err := btcec.SignCompact(btcec.S256(), ownerPrivateKey, HashFunction(raw[65:]), true)
 	if err != nil {
 		return nil, err
 	}

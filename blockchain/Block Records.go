@@ -31,7 +31,7 @@ Offset  Size    Info
 
 */
 
-package core
+package blockchain
 
 import (
 	"encoding/binary"

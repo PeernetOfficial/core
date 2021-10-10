@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/PeernetOfficial/core"
+	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/google/uuid"
 )
 
@@ -58,7 +59,7 @@ func dispatchSearch(input SearchRequest) (job *SearchJob) {
 }
 
 // createTestResult creates a test file. fileType = -1 for any.
-func createTestResult(fileType int) (file core.BlockRecordFile) {
+func createTestResult(fileType int) (file blockchain.BlockRecordFile) {
 	randomData := make([]byte, 10*1024)
 	rand.Read(randomData)
 
@@ -192,12 +193,12 @@ func createTestResult(fileType int) (file core.BlockRecordFile) {
 		extension = ".bin"
 	}
 
-	file.Tags = append(file.Tags, core.TagFromText(core.TagName, tempFileName("", extension)))
-	//file.Tags = append(file.Tags, core.TagFromText(core.TagFolder, "not set"))
-	file.Tags = append(file.Tags, core.TagFromDate(core.TagDateShared, time.Now().UTC()))
+	file.Tags = append(file.Tags, blockchain.TagFromText(blockchain.TagName, tempFileName("", extension)))
+	//file.Tags = append(file.Tags, blockchain.TagFromText(blockchain.TagFolder, "not set"))
+	file.Tags = append(file.Tags, blockchain.TagFromDate(blockchain.TagDateShared, time.Now().UTC()))
 
 	sharedByCount := uint64(rand.Intn(10))
-	file.Tags = append(file.Tags, core.TagFromNumber(core.TagSharedByCount, sharedByCount))
+	file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, sharedByCount))
 
 	if sharedByCount > 0 {
 		var sharedByGeoIP string
@@ -210,7 +211,7 @@ func createTestResult(fileType int) (file core.BlockRecordFile) {
 			sharedByGeoIP += fmt.Sprintf("%.4f", latitude) + "," + fmt.Sprintf("%.4f", longitude)
 		}
 
-		file.Tags = append(file.Tags, core.TagFromText(core.TagSharedByGeoIP, sharedByGeoIP))
+		file.Tags = append(file.Tags, blockchain.TagFromText(blockchain.TagSharedByGeoIP, sharedByGeoIP))
 	}
 
 	return
@@ -235,7 +236,7 @@ func randomGeoIP() (latitude, longitude float32) {
 }
 
 // queryRecentShared returns recently shared files on the network. fileType = -1 for any.
-func queryRecentShared(fileType, limit int) (files []*core.BlockRecordFile) {
+func queryRecentShared(fileType, limit int) (files []*blockchain.BlockRecordFile) {
 	for n := 0; n < limit; n++ {
 		newFile := createTestResult(fileType)
 		files = append(files, &newFile)

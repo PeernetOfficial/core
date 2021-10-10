@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/PeernetOfficial/core"
+	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/google/uuid"
 )
 
@@ -42,31 +43,31 @@ type apiFile struct {
 
 // --- conversion from core to API data ---
 
-func blockRecordFileToAPI(input core.BlockRecordFile) (output apiFile) {
+func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
 	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Metadata: []apiFileMetadata{}}
 
 	for _, tag := range input.Tags {
 		switch tag.Type {
-		case core.TagName:
+		case blockchain.TagName:
 			output.Name = tag.Text()
 
-		case core.TagFolder:
+		case blockchain.TagFolder:
 			output.Folder = tag.Text()
 
-		case core.TagDescription:
+		case blockchain.TagDescription:
 			output.Description = tag.Text()
 
-		case core.TagDateShared:
+		case blockchain.TagDateShared:
 			output.Date, _ = tag.Date()
 
-		case core.TagDateCreated:
+		case blockchain.TagDateCreated:
 			date, _ := tag.Date()
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Date Created", Date: date})
 
-		case core.TagSharedByCount:
+		case blockchain.TagSharedByCount:
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Shared By Count", Number: tag.Number()})
 
-		case core.TagSharedByGeoIP:
+		case blockchain.TagSharedByGeoIP:
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Shared By GeoIP", Text: tag.Text()})
 
 		default:
@@ -77,32 +78,32 @@ func blockRecordFileToAPI(input core.BlockRecordFile) (output apiFile) {
 	return output
 }
 
-func blockRecordFileFromAPI(input apiFile) (output core.BlockRecordFile) {
-	output = core.BlockRecordFile{ID: input.ID, Hash: input.Hash, Type: input.Type, Format: input.Format, Size: input.Size}
+func blockRecordFileFromAPI(input apiFile) (output blockchain.BlockRecordFile) {
+	output = blockchain.BlockRecordFile{ID: input.ID, Hash: input.Hash, Type: input.Type, Format: input.Format, Size: input.Size}
 
 	if input.Name != "" {
-		output.Tags = append(output.Tags, core.TagFromText(core.TagName, input.Name))
+		output.Tags = append(output.Tags, blockchain.TagFromText(blockchain.TagName, input.Name))
 	}
 	if input.Folder != "" {
-		output.Tags = append(output.Tags, core.TagFromText(core.TagFolder, input.Folder))
+		output.Tags = append(output.Tags, blockchain.TagFromText(blockchain.TagFolder, input.Folder))
 	}
 	if input.Description != "" {
-		output.Tags = append(output.Tags, core.TagFromText(core.TagDescription, input.Description))
+		output.Tags = append(output.Tags, blockchain.TagFromText(blockchain.TagDescription, input.Description))
 	}
 
 	for _, meta := range input.Metadata {
-		if core.IsTagVirtual(meta.Type) { // Virtual tags are not mapped back. They are read-only.
+		if blockchain.IsTagVirtual(meta.Type) { // Virtual tags are not mapped back. They are read-only.
 			continue
 		}
 
 		switch meta.Type {
-		case core.TagName, core.TagFolder, core.TagDescription: // auto mapped tags
+		case blockchain.TagName, blockchain.TagFolder, blockchain.TagDescription: // auto mapped tags
 
-		case core.TagDateCreated:
-			output.Tags = append(output.Tags, core.TagFromDate(meta.Type, meta.Date))
+		case blockchain.TagDateCreated:
+			output.Tags = append(output.Tags, blockchain.TagFromDate(meta.Type, meta.Date))
 
 		default:
-			output.Tags = append(output.Tags, core.BlockRecordFileTag{Type: meta.Type, Data: meta.Blob})
+			output.Tags = append(output.Tags, blockchain.BlockRecordFileTag{Type: meta.Type, Data: meta.Blob})
 		}
 	}
 
@@ -129,7 +130,7 @@ func apiBlockchainSelfAddFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var filesAdd []core.BlockRecordFile
+	var filesAdd []blockchain.BlockRecordFile
 
 	for _, file := range input.Files {
 		if file.ID == uuid.Nil { // if the ID is not provided by the caller, set it
@@ -139,7 +140,7 @@ func apiBlockchainSelfAddFile(w http.ResponseWriter, r *http.Request) {
 		filesAdd = append(filesAdd, blockRecordFileFromAPI(file))
 	}
 
-	newHeight, newVersion, status := core.UserBlockchainAddFiles(filesAdd)
+	newHeight, newVersion, status := core.UserBlockchain.AddFiles(filesAdd)
 
 	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
@@ -151,7 +152,7 @@ Request:    GET /blockchain/self/list/file
 Response:   200 with JSON structure apiBlockAddFiles
 */
 func apiBlockchainSelfListFile(w http.ResponseWriter, r *http.Request) {
-	files, status := core.UserBlockchainListFiles()
+	files, status := core.UserBlockchain.ListFiles()
 
 	var result apiBlockAddFiles
 
@@ -182,7 +183,7 @@ func apiBlockchainSelfDeleteFile(w http.ResponseWriter, r *http.Request) {
 		deleteIDs = append(deleteIDs, input.Files[n].ID)
 	}
 
-	newHeight, newVersion, status := core.UserBlockchainDeleteFiles(deleteIDs)
+	newHeight, newVersion, status := core.UserBlockchain.DeleteFiles(deleteIDs)
 
 	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }

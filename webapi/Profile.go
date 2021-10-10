@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/PeernetOfficial/core"
+	"github.com/PeernetOfficial/core/blockchain"
 )
 
 // apiProfileData contains profile metadata stored on the blockchain. Any data is treated as untrusted and unverified by default.
@@ -35,7 +36,7 @@ Request:    GET /profile/list
 Response:   200 with JSON structure apiProfileData
 */
 func apiProfileList(w http.ResponseWriter, r *http.Request) {
-	fields, status := core.UserProfileList()
+	fields, status := core.UserBlockchain.ProfileList()
 
 	result := apiProfileData{Status: status}
 	for n := range fields {
@@ -63,8 +64,8 @@ func apiProfileRead(w http.ResponseWriter, r *http.Request) {
 	var result apiProfileData
 
 	var data []byte
-	if data, result.Status = core.UserProfileReadField(uint16(fieldN)); result.Status == core.BlockchainStatusOK {
-		result.Fields = append(result.Fields, blockRecordProfileToAPI(core.BlockRecordProfile{Type: uint16(fieldN), Data: data}))
+	if data, result.Status = core.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.BlockchainStatusOK {
+		result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: uint16(fieldN), Data: data}))
 	}
 
 	EncodeJSON(w, r, result)
@@ -82,13 +83,13 @@ func apiProfileWrite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var fields []core.BlockRecordProfile
+	var fields []blockchain.BlockRecordProfile
 
 	for n := range input.Fields {
 		fields = append(fields, blockRecordProfileFromAPI(input.Fields[n]))
 	}
 
-	newHeight, newVersion, status := core.UserProfileWrite(fields)
+	newHeight, newVersion, status := core.UserBlockchain.ProfileWrite(fields)
 
 	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
@@ -111,21 +112,21 @@ func apiProfileDelete(w http.ResponseWriter, r *http.Request) {
 		fields = append(fields, input.Fields[n].Type)
 	}
 
-	newHeight, newVersion, status := core.UserProfileDelete(fields)
+	newHeight, newVersion, status := core.UserBlockchain.ProfileDelete(fields)
 
 	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 // --- conversion from core to API data ---
 
-func blockRecordProfileToAPI(input core.BlockRecordProfile) (output apiBlockRecordProfile) {
+func blockRecordProfileToAPI(input blockchain.BlockRecordProfile) (output apiBlockRecordProfile) {
 	output.Type = input.Type
 
 	switch input.Type {
-	case core.ProfileName, core.ProfileEmail, core.ProfileWebsite, core.ProfileTwitter, core.ProfileYouTube, core.ProfileAddress:
+	case blockchain.ProfileName, blockchain.ProfileEmail, blockchain.ProfileWebsite, blockchain.ProfileTwitter, blockchain.ProfileYouTube, blockchain.ProfileAddress:
 		output.Text = input.Text()
 
-	case core.ProfilePicture:
+	case blockchain.ProfilePicture:
 		output.Blob = input.Data
 
 	default:
@@ -135,14 +136,14 @@ func blockRecordProfileToAPI(input core.BlockRecordProfile) (output apiBlockReco
 	return output
 }
 
-func blockRecordProfileFromAPI(input apiBlockRecordProfile) (output core.BlockRecordProfile) {
+func blockRecordProfileFromAPI(input apiBlockRecordProfile) (output blockchain.BlockRecordProfile) {
 	output.Type = input.Type
 
 	switch input.Type {
-	case core.ProfileName, core.ProfileEmail, core.ProfileWebsite, core.ProfileTwitter, core.ProfileYouTube, core.ProfileAddress:
+	case blockchain.ProfileName, blockchain.ProfileEmail, blockchain.ProfileWebsite, blockchain.ProfileTwitter, blockchain.ProfileYouTube, blockchain.ProfileAddress:
 		output.Data = []byte(input.Text)
 
-	case core.ProfilePicture:
+	case blockchain.ProfilePicture:
 		output.Data = input.Blob
 
 	default:

@@ -1,12 +1,12 @@
 /*
-File Name:  File Metadata.go
+File Name:  File Tag.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
 Metadata tags provide meta information about files.
 */
 
-package core
+package blockchain
 
 import (
 	"encoding/binary"

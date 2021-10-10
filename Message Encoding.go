@@ -531,8 +531,10 @@ createPacketLoop:
 		raw[0] = byte(ProtocolVersion) // Protocol
 		raw[1] = FeatureSupport()      // Feature support
 		//raw[2] = Actions                                   // Action bit array
-		binary.LittleEndian.PutUint32(raw[3:7], BlockchainHeight)
-		binary.LittleEndian.PutUint64(raw[7:15], BlockchainVersion)
+
+		_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
+		binary.LittleEndian.PutUint32(raw[3:7], uint32(blockchainHeight))
+		binary.LittleEndian.PutUint64(raw[7:15], blockchainVersion)
 
 		// only on initial announcement the User Agent must be provided according to the protocol spec
 		if sendUA {
@@ -673,8 +675,10 @@ createPacketLoop:
 		raw[0] = byte(ProtocolVersion) // Protocol
 		raw[1] = FeatureSupport()      // Feature support
 		//raw[2] = Actions                                   // Action bit array
-		binary.LittleEndian.PutUint32(raw[3:7], BlockchainHeight)
-		binary.LittleEndian.PutUint64(raw[7:15], BlockchainVersion)
+
+		_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
+		binary.LittleEndian.PutUint32(raw[3:7], uint32(blockchainHeight))
+		binary.LittleEndian.PutUint64(raw[7:15], blockchainVersion)
 
 		// only on initial response the User Agent must be provided according to the protocol spec
 		if sendUA {
