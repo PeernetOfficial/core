@@ -580,6 +580,8 @@ This function returns search results. The default limit is 100.
 
 If reset is set, all results will be filtered and sorted according to the provided parameters. This means that the new first result will be returned again and internal result offset is set to 0. Note that most filters must be set to -1 if they are not used (see the field comments in the `SearchRequest` structure in `/search` above).
 
+The statistics of all results (regardless of applied runtime filters) can be returned immediately in the `statistics` field by specifying `&stats=1`. If will be only provided if the statistics change, i.e. if at least one file is returned. The returned statistics is the `SearchStatisticData` structure and matches with what is returned by `/search/statistic`.
+
 ```
 Request:    GET /search/result?id=[UUID]&limit=[max records]
             Optional parameters:
@@ -595,8 +597,9 @@ Result:     200 with JSON structure SearchResult. Check the field status.
 
 ```go
 type SearchResult struct {
-    Status int       `json:"status"` // Status: 0 = Success with results, 1 = No more results available, 2 = Search ID not found, 3 = No results yet available keep trying
-    Files  []apiFile `json:"files"`  // List of files found
+	Status    int         `json:"status"`    // Status: 0 = Success with results, 1 = No more results available, 2 = Search ID not found, 3 = No results yet available keep trying
+	Files     []apiFile   `json:"files"`     // List of files found
+	Statistic interface{} `json:"statistic"` // Statistics of all results (independent from applied filters), if requested. Only set if files are returned (= if statistics changed). See SearchStatisticData.
 }
 ```
 
@@ -639,21 +642,35 @@ Example response with dummy data:
 
 ### Search Result Statistics
 
-This returns search result statistics. Statistics are always calculated over all results, regardless if runtime filters change.
+This returns search result statistics. Statistics are always calculated over all results, regardless of any applied runtime filters.
 
 ```
-Request:    GET /search/result?id=[UUID]
+Request:    GET /search/statistic?id=[UUID]
 Result:     200 with JSON structure SearchStatistic. Check the field status (0 = Success, 2 = ID not found).
 ```
 
 ```go
 type SearchStatistic struct {
-	Date         []SearchStatisticRecordDay `json:"date"`       // Files per date
-	FileType     []SearchStatisticRecord    `json:"filetype"`   // Files per file type
-	FileFormat   []SearchStatisticRecord    `json:"fileformat"` // Files per file format
-	Total        int                        `json:"total"`      // Total count of files
-	Status       int                        `json:"status"`     // Status: 0 = Success
-	IsTerminated bool                       `json:"terminated"` // Whether the search is terminated, meaning that statistics won't change
+	SearchStatisticData
+	Status       int  `json:"status"`     // Status: 0 = Success
+	IsTerminated bool `json:"terminated"` // Whether the search is terminated, meaning that statistics won't change
+}
+
+type SearchStatisticData struct {
+	Date       []SearchStatisticRecordDay `json:"date"`       // Files per date
+	FileType   []SearchStatisticRecord    `json:"filetype"`   // Files per file type
+	FileFormat []SearchStatisticRecord    `json:"fileformat"` // Files per file format
+	Total      int                        `json:"total"`      // Total count of files
+}
+
+type SearchStatisticRecordDay struct {
+	Date  time.Time `json:"date"`  // The day (which covers the full 24 hours). Always rounded down to midnight.
+	Count int       `json:"count"` // Count of files.
+}
+
+type SearchStatisticRecord struct {
+	Key   int `json:"key"`   // Key index. The exact meaning depends on where this structure is used.
+	Count int `json:"count"` // Count of files for the given key
 }
 ```
 

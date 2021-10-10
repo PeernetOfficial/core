@@ -61,8 +61,16 @@ type SearchRequestResponse struct {
 
 // SearchResult contains the search results.
 type SearchResult struct {
-	Status int       `json:"status"` // Status: 0 = Success with results, 1 = No more results available, 2 = Search ID not found, 3 = No results yet available keep trying
-	Files  []apiFile `json:"files"`  // List of files found
+	Status    int         `json:"status"`    // Status: 0 = Success with results, 1 = No more results available, 2 = Search ID not found, 3 = No results yet available keep trying
+	Files     []apiFile   `json:"files"`     // List of files found
+	Statistic interface{} `json:"statistic"` // Statistics of all results (independent from applied filters), if requested. Only set if files are returned (= if statistics changed). See SearchStatisticData.
+}
+
+// SearchStatistic contains statistics on search results. Statistics are always calculated over all results, regardless of any applied runtime filters.
+type SearchStatistic struct {
+	SearchStatisticData
+	Status       int  `json:"status"`     // Status: 0 = Success
+	IsTerminated bool `json:"terminated"` // Whether the search is terminated, meaning that statistics won't change
 }
 
 const apiDateFormat = "2006-01-02 15:04:05"
@@ -168,6 +176,11 @@ func apiSearchResult(w http.ResponseWriter, r *http.Request) {
 	//if !job.IsSearchResults() { // if no fresh results to be expected
 	result.Status = 1 // No more results to expect
 
+	// embedded statistics?
+	if returnStats, _ := strconv.ParseBool(r.Form.Get("stats")); returnStats && len(result.Files) > 0 {
+		result.Statistic = job.Statistics()
+	}
+
 	EncodeJSON(w, r, result)
 }
 
@@ -263,7 +276,7 @@ func apiSearchTerminate(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
-apiSearchStatistic returns search result statistics. Statistics are always calculated over all results, regardless if runtime filters change.
+apiSearchStatistic returns search result statistics. Statistics are always calculated over all results, regardless of any applied runtime filters.
 
 Request:    GET /search/result?id=[UUID]
 Result:     200 with JSON structure SearchStatistic. Check the field status (0 = Success, 2 = ID not found).
@@ -285,7 +298,7 @@ func apiSearchStatistic(w http.ResponseWriter, r *http.Request) {
 
 	stats := job.Statistics()
 
-	EncodeJSON(w, r, stats)
+	EncodeJSON(w, r, SearchStatistic{SearchStatisticData: stats, Status: 0, IsTerminated: job.IsTerminated()})
 }
 
 /*

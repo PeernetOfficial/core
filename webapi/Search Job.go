@@ -384,18 +384,16 @@ type SearchStatisticRecord struct {
 	Count int `json:"count"` // Count of files for the given key
 }
 
-// SearchStatistic contains statistics on search results. Statistics are always calculated over all results, regardless if runtime filters change.
-type SearchStatistic struct {
-	Date         []SearchStatisticRecordDay `json:"date"`       // Files per date
-	FileType     []SearchStatisticRecord    `json:"filetype"`   // Files per file type
-	FileFormat   []SearchStatisticRecord    `json:"fileformat"` // Files per file format
-	Total        int                        `json:"total"`      // Total count of files
-	Status       int                        `json:"status"`     // Status: 0 = Success
-	IsTerminated bool                       `json:"terminated"` // Whether the search is terminated, meaning that statistics won't change
+// SearchStatisticData contains statistics on search results.
+type SearchStatisticData struct {
+	Date       []SearchStatisticRecordDay `json:"date"`       // Files per date
+	FileType   []SearchStatisticRecord    `json:"filetype"`   // Files per file type
+	FileFormat []SearchStatisticRecord    `json:"fileformat"` // Files per file format
+	Total      int                        `json:"total"`      // Total count of files
 }
 
-// Statistics generates statistics on results
-func (job *SearchJob) Statistics() (result SearchStatistic) {
+// Statistics generates statistics on all results, regardless of runtime filters.
+func (job *SearchJob) Statistics() (result SearchStatisticData) {
 	job.stats.RLock()
 	defer job.stats.RUnlock()
 
@@ -414,8 +412,6 @@ func (job *SearchJob) Statistics() (result SearchStatistic) {
 	for key, value := range job.stats.fileFormat {
 		result.FileFormat = append(result.FileFormat, SearchStatisticRecord{Key: int(key), Count: value})
 	}
-
-	result.IsTerminated = job.IsTerminated()
 
 	return
 }
