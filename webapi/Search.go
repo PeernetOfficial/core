@@ -6,7 +6,7 @@ Author:     Peter Kleissner
 /search                 Submit a search request
 /search/result          Return search results
 /search/terminate       Terminate a search
-/search/result/ws       Websocket to return search results as stream (future)
+/search/result/ws       Websocket to receive results as stream
 /search/statistic       Statistics about the results
 
 /explore                List recently shared files
@@ -185,12 +185,12 @@ func apiSearchResult(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
-apiSearchResultStream runs a websocket to return results
+apiSearchResultStream provides a websocket to receive results as stream.
 
 Request:    GET /search/result/ws?id=[UUID]&limit=[optional max records]
-Result:     If successful, upgrades to a web-socket and sends JSON structure SearchResult messages
+Result:     If successful, upgrades to a websocket and sends JSON structure SearchResult messages.
             Limit is optional. Not used if ommitted or 0.
-*/ /*
+*/
 func apiSearchResultStream(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	jobID, err := uuid.Parse(r.Form.Get("id"))
@@ -208,22 +208,47 @@ func apiSearchResultStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// upgrade to web-socket
+	// upgrade to websocket
 	conn, err := WSUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		// gorilla will automatically respond with "400 Bad Request", no other response is therefore necessary
 		return
 	}
 
+	defer conn.Close()
+
 	// loop to get new results and send out via the web socket.
 	// Only exit if limit is reached if used, otherwise only if there are no result or the connection breaks.
 	for {
 		// query all results
+		var resultFiles []*apiFile
 
+		queryCount := 1
+		if useLimit {
+			queryCount = limit
+		}
+		resultFiles = job.ReturnNext(queryCount)
+
+		if useLimit {
+			limit -= len(resultFiles)
+		}
+
+		// loop over results
 		var result SearchResult
 		result.Files = []apiFile{}
 
-		// loop over the results
+		for n := range resultFiles {
+			result.Files = append(result.Files, *resultFiles[n])
+		}
+
+		if !job.IsSearchResults() {
+			result.Status = 1 // No more results to expect
+
+			if len(result.Files) == 0 {
+				conn.WriteJSON(result) // final message
+				return
+			}
+		}
 
 		// if no results, stall
 		if len(result.Files) == 0 {
@@ -231,9 +256,8 @@ func apiSearchResultStream(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// send out the results via the web-socket
+		// send out the results via the websocket
 		if err := conn.WriteJSON(result); err != nil {
-			conn.Close()
 			return
 		}
 
@@ -242,7 +266,7 @@ func apiSearchResultStream(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-}*/
+}
 
 /*
 apiSearchTerminate terminates a search

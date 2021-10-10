@@ -54,7 +54,7 @@ func Start(ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKe
 	Router.HandleFunc("/profile/delete", apiProfileDelete).Methods("POST")
 	Router.HandleFunc("/search", apiSearch).Methods("POST")
 	Router.HandleFunc("/search/result", apiSearchResult).Methods("GET")
-	//Router.HandleFunc("/search/result/ws", apiSearchResultStream).Methods("GET")
+	Router.HandleFunc("/search/result/ws", apiSearchResultStream).Methods("GET")
 	Router.HandleFunc("/search/statistic", apiSearchStatistic).Methods("GET")
 	Router.HandleFunc("/search/terminate", apiSearchTerminate).Methods("GET")
 	Router.HandleFunc("/explore", apiExplore).Methods("GET")

@@ -44,6 +44,7 @@ These are the functions provided by the API:
 
 /search                         Submit a search request
 /search/result                  Return search results
+/search/result/ws               Websocket to receive results
 /search/terminate               Terminate a search
 /search/statistic               Search result statistics
 
@@ -673,6 +674,18 @@ type SearchStatisticRecord struct {
 	Count int `json:"count"` // Count of files for the given key
 }
 ```
+
+### Receiving Search Results via Websocket
+
+This provides a websocket to receive results as stream. It does not support changing runtime filters and returning statistics.
+
+```
+Request:    GET /search/result/ws?id=[UUID]&limit=[optional max records]
+Result:     If successful, upgrades to a websocket and sends JSON structure SearchResult messages.
+            Limit is optional. Not used if ommitted or 0.
+```
+
+Example socket URL: `ws://127.0.0.1:112/search/result/ws?id=08ab3469-cd0e-4219-998f-bfdf496351eb`
 
 ### Terminating a Search
 
