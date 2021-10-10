@@ -19,10 +19,11 @@ import (
 )
 
 func dispatchSearch(input SearchRequest) (job *SearchJob) {
-	Timeout, FileType, FileFormat, DateFrom, DateTo := input.Parse()
+	Timeout := input.Parse()
+	Filter := input.ToSearchFilter()
 
 	// create the search job
-	job = CreateSearchJob(Timeout, input.MaxResults, input.Sort, FileType, FileFormat, DateFrom, DateTo)
+	job = CreateSearchJob(Timeout, input.MaxResults, Filter)
 
 	// Create test data
 	// * Between 0-100 results

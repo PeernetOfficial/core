@@ -521,6 +521,8 @@ The following filters are supported:
 
 ### Submitting a Search Request
 
+This starts a search request and returns an ID that can be used to collect the results asynchronously. Note that some of the filters described below (such as `filetype`) must be set to -1 if they are not used.
+
 ```
 Request:    POST /search with JSON SearchRequest
 Response:   200 on success with JSON SearchRequestResponse
@@ -537,6 +539,8 @@ type SearchRequest struct {
     TerminateID []uuid.UUID `json:"terminate"`  // Optional: Previous search IDs to terminate. This is if the user makes a new search from the same tab. Same as first calling /search/terminate.
     FileType    int         `json:"filetype"`   // File type such as binary, text document etc. See core.TypeX. -1 = not used.
     FileFormat  int         `json:"fileformat"` // File format such as PDF, Word, Ebook, etc. See core.FormatX. -1 = not used.
+    SizeMin     int         `json:"sizemin"`    // Min file size in bytes. -1 = not used.
+    SizeMax     int         `json:"sizemax"`    // Max file size in bytes. -1 = not used.
 }
 
 type SearchRequestResponse struct {
@@ -551,7 +555,12 @@ Example POST request to `http://127.0.0.1:112/search`:
 {
     "term": "Test Search",
     "timeout": 10,
-    "maxresults": 1000
+    "maxresults": 1000,
+    "sort": 0,
+    "filetype": -1,
+    "fileformat": -1,
+    "sizemin": -1,
+    "sizemax": -1
 }
 ```
 
@@ -567,7 +576,8 @@ Example response:
 ### Returning Search Results
 
 This function returns search results. The default limit is 100.
-If reset is set, all results will be filtered and sorted according to the settings. This means that the new first result will be returned again and internal result offset is set to 0.
+
+If reset is set, all results will be filtered and sorted according to the provided parameters. This means that the new first result will be returned again and internal result offset is set to 0. Note that most filters must be set to -1 if they are not used (see the field comments in the `SearchRequest` structure in `/search` above).
 
 ```
 Request:    GET /search/result?id=[UUID]&limit=[max records]
@@ -576,6 +586,8 @@ Request:    GET /search/result?id=[UUID]&limit=[max records]
             &filetype=[File Type]
             &fileformat=[File Format]
             &from=[Date From]&to=[Date To]
+            &sizemin=[Minimum file size]
+            &sizemax=[Maximum file size]
             &sort=[sort order]
 Result:     200 with JSON structure SearchResult. Check the field status.
 ```

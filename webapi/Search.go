@@ -34,6 +34,8 @@ type SearchRequest struct {
 	TerminateID []uuid.UUID `json:"terminate"`  // Optional: Previous search IDs to terminate. This is if the user makes a new search from the same tab. Same as first calling /search/terminate.
 	FileType    int         `json:"filetype"`   // File type such as binary, text document etc. See core.TypeX. -1 = not used.
 	FileFormat  int         `json:"fileformat"` // File format such as PDF, Word, Ebook, etc. See core.FormatX. -1 = not used.
+	SizeMin     int         `json:"sizemin"`    // Min file size in bytes. -1 = not used.
+	SizeMax     int         `json:"sizemax"`    // Max file size in bytes. -1 = not used.
 }
 
 // Sort orders
@@ -109,6 +111,8 @@ Optional parameters:
 			&filetype=[File Type]
 			&fileformat=[File Format]
 			&from=[Date From]&to=[Date To]
+			&sizemin=[Minimum file size]
+			&sizemax=[Maximum file size]
 			&sort=[sort order]
 Result:     200 with JSON structure SearchResult. Check the field status.
 */
@@ -124,14 +128,6 @@ func apiSearchResult(w http.ResponseWriter, r *http.Request) {
 		limit = 100
 	}
 
-	// filters and sort parameter
-	filterReset, _ := strconv.ParseBool(r.Form.Get("reset"))
-	fileType, _ := strconv.Atoi(r.Form.Get("filetype"))
-	fileFormat, _ := strconv.Atoi(r.Form.Get("fileformat"))
-	dateFrom, _ := time.Parse(apiDateFormat, r.Form.Get("from"))
-	dateTo, _ := time.Parse(apiDateFormat, r.Form.Get("to"))
-	sort, _ := strconv.Atoi(r.Form.Get("sort"))
-
 	// find the job ID
 	job := JobLookup(jobID)
 	if job == nil {
@@ -139,9 +135,19 @@ func apiSearchResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// apply runtime filters, if any
-	if filterReset {
-		job.RuntimeFilter(sort, fileType, fileFormat, dateFrom, dateTo)
+	// filters and sort parameter
+	if filterReset, _ := strconv.ParseBool(r.Form.Get("reset")); filterReset {
+		fileType, _ := strconv.Atoi(r.Form.Get("filetype"))
+		fileFormat, _ := strconv.Atoi(r.Form.Get("fileformat"))
+		dateFrom := r.Form.Get("from")
+		dateTo := r.Form.Get("to")
+		sort, _ := strconv.Atoi(r.Form.Get("sort"))
+		sizeMin, _ := strconv.Atoi(r.Form.Get("sizemin"))
+		sizeMax, _ := strconv.Atoi(r.Form.Get("sizemax"))
+
+		filter := inputToSearchFilter(sort, fileType, fileFormat, dateFrom, dateTo, sizeMin, sizeMax)
+
+		job.RuntimeFilter(filter)
 	}
 
 	// query all results
@@ -293,18 +299,35 @@ func apiExplore(w http.ResponseWriter, r *http.Request) {
 	EncodeJSON(w, r, result)
 }
 
-func (input *SearchRequest) Parse() (Timeout time.Duration, FileType, FileFormat int, DateFrom, DateTo time.Time) {
+func (input *SearchRequest) Parse() (Timeout time.Duration) {
 	if input.Timeout == 0 {
 		Timeout = time.Second * 20 // default timeout: 20 seconds
 	} else {
 		Timeout = time.Duration(input.Timeout) * time.Second
 	}
 
-	FileType = input.FileType
-	FileFormat = input.FileFormat
+	return
+}
 
-	DateFrom, _ = time.Parse(apiDateFormat, input.DateFrom)
-	DateTo, _ = time.Parse(apiDateFormat, input.DateTo)
+// ToSearchFilter converts the user input to a valid search filter
+func (input *SearchRequest) ToSearchFilter() (output SearchFilter) {
+	return inputToSearchFilter(input.Sort, input.FileType, input.FileFormat, input.DateFrom, input.DateTo, input.SizeMin, input.SizeMax)
+}
+
+func inputToSearchFilter(Sort, FileType, FileFormat int, DateFrom, DateTo string, SizeMin, SizeMax int) (output SearchFilter) {
+	output.Sort = Sort
+	output.FileType = FileType
+	output.FileFormat = FileFormat
+	output.SizeMin = SizeMin
+	output.SizeMax = SizeMax
+
+	dateFrom, errFrom := time.Parse(apiDateFormat, DateFrom)
+	dateTo, errTo := time.Parse(apiDateFormat, DateTo)
+	if errFrom == nil && errTo == nil && dateFrom.Before(dateTo) {
+		output.DateFrom = dateFrom
+		output.DateTo = dateTo
+		output.IsDates = true
+	}
 
 	return
 }

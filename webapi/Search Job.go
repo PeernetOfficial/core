@@ -23,6 +23,8 @@ type SearchFilter struct {
 	FileType   int       // File type such as binary, text document etc. See core.TypeX. -1 = not used.
 	FileFormat int       // File format such as PDF, Word, Ebook, etc. See core.FormatX. -1 = not used.
 	Sort       int       // Sort order. See SortX.
+	SizeMin    int       // Min file size in bytes. -1 = not used.
+	SizeMax    int       // Max file size in bytes. -1 = not used.
 }
 
 // SearchJob is a collection of search jobs
@@ -58,22 +60,13 @@ type SearchJob struct {
 
 // CreateSearchJob creates a new search job and adds it to the lookup list.
 // Timeout and MaxResults must be set and must not be 0.
-func CreateSearchJob(Timeout time.Duration, MaxResults, Sort, FileType, FileFormat int, DateFrom, DateTo time.Time) (job *SearchJob) {
+func CreateSearchJob(Timeout time.Duration, MaxResults int, Filter SearchFilter) (job *SearchJob) {
 	job = &SearchJob{}
 	job.id = uuid.New()
 	job.timeout = Timeout
 	job.maxResult = MaxResults
-
-	job.filtersStart = SearchFilter{Sort: Sort, FileType: FileType, FileFormat: FileFormat}
-
-	if !DateFrom.IsZero() && !DateTo.IsZero() && DateFrom.Before(DateTo) {
-		job.filtersStart.DateFrom = DateFrom
-		job.filtersStart.DateTo = DateTo
-		job.filtersStart.IsDates = true
-	}
-
-	// initialize the runtime filters as the same
-	job.filtersRuntime = job.filtersStart
+	job.filtersStart = Filter
+	job.filtersRuntime = Filter // initialize the runtime filters as the same
 
 	// add to the list of jobs
 	allJobsMutex.Lock()
@@ -189,29 +182,16 @@ func (job *SearchJob) PeekResult(Offset, Limit int) (Result []*apiFile) {
 	return Result
 }
 
-// RuntimeFilter allows to apply filters at runtime to search jobs that already started.
-// To remove the filters, call this function without the filters set. Sort 0 = none, file type and format -1 = not used, dates 0 = not used.
-func (job *SearchJob) RuntimeFilter(Sort, FileType, FileFormat int, DateFrom, DateTo time.Time) {
+// RuntimeFilter allows to apply filters at runtime to search jobs that already started. To remove the filters, call this function without the filters set.
+func (job *SearchJob) RuntimeFilter(Filter SearchFilter) {
 	job.ResultSync.Lock()
 	defer job.ResultSync.Unlock()
+
+	job.filtersRuntime = Filter
 
 	// FreezeFiles and current offset is reset
 	job.FreezeFiles = nil
 	job.currentOffset = 0
-
-	job.filtersRuntime.Sort = Sort
-	job.filtersRuntime.FileType = FileType
-	job.filtersRuntime.FileFormat = FileFormat
-
-	if !DateFrom.IsZero() && !DateTo.IsZero() {
-		job.filtersRuntime.DateFrom = DateFrom
-		job.filtersRuntime.DateTo = DateTo
-		job.filtersRuntime.IsDates = true
-	} else {
-		job.filtersRuntime.DateFrom = time.Time{}
-		job.filtersRuntime.DateTo = time.Time{}
-		job.filtersRuntime.IsDates = false
-	}
 
 	// files remain in AllFiles, but Files needs to be filtered based on the new filter
 	job.Files = []*apiFile{}
@@ -243,6 +223,10 @@ func (job *SearchJob) isFileFiltered(file *apiFile) bool {
 
 	// Note: If the date is not available in the file, it will be filtered out. Since this is the mapped Shared Date this should normally not occur though.
 	if job.filtersRuntime.IsDates && (file.Date.IsZero() || file.Date.Before(job.filtersRuntime.DateFrom) || file.Date.After(job.filtersRuntime.DateTo)) {
+		return false
+	}
+
+	if job.filtersRuntime.SizeMin >= 0 && file.Size < uint64(job.filtersRuntime.SizeMin) || job.filtersRuntime.SizeMax >= 0 && file.Size > uint64(job.filtersRuntime.SizeMax) {
 		return false
 	}
 
