@@ -38,13 +38,17 @@ type SearchRequest struct {
 
 // Sort orders
 const (
-	SortNone         = 0 // No sorting. Results are returned as they come in.
-	SortRelevanceAsc = 1 // Least relevant results first.
-	SortRelevanceDec = 2 // Most relevant results first.
-	SortDateAsc      = 3 // Oldest first.
-	SortDateDesc     = 4 // Newest first.
-	SortNameAsc      = 5 // File name ascending. The folder name is not used for sorting.
-	SortNameDesc     = 6 // File name descending. The folder name is not used for sorting.
+	SortNone              = 0  // No sorting. Results are returned as they come in.
+	SortRelevanceAsc      = 1  // Least relevant results first.
+	SortRelevanceDec      = 2  // Most relevant results first.
+	SortDateAsc           = 3  // Oldest first.
+	SortDateDesc          = 4  // Newest first.
+	SortNameAsc           = 5  // File name ascending. The folder name is not used for sorting.
+	SortNameDesc          = 6  // File name descending. The folder name is not used for sorting.
+	SortSizeAsc           = 7  // File size ascending. Smallest files first.
+	SortSizeDesc          = 8  // File size descending. Largest files first.
+	SortSharedByCountAsc  = 9  // Shared by count ascending. Files that are shared by the least count of peers first.
+	SortSharedByCountDesc = 10 // Shared by count descending. Files that are shared by the most count of peers first.
 )
 
 // SearchRequestResponse is the result to the initial search request

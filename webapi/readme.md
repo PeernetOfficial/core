@@ -508,6 +508,10 @@ These are the available sort options:
 | 4    | SortDateDesc    | Newest first.  |
 | 5    | SortNameAsc    | File name ascending. The folder name is not used for sorting.  |
 | 6    | SortNameDesc    | File name descending. The folder name is not used for sorting.  |
+| 7    | SortSizeAsc    | File size ascending. Smallest files first. |
+| 8    | SortSizeDesc    | File size descending. Largest files first. |
+| 9    | SortSharedByCountAsc    | Shared by count ascending. Files that are shared by the least count of peers first. |
+| 10   | SortSharedByCountDesc    | Shared by count descending. Files that are shared by the most count of peers first. |
 
 The following filters are supported:
 

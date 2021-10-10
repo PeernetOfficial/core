@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/PeernetOfficial/core"
 	"github.com/google/uuid"
 )
 
@@ -250,22 +251,38 @@ func (job *SearchJob) isFileFiltered(file *apiFile) bool {
 
 // SortItems sorts a list of files. It returns a sorted list. 0 = no sorting, 1 = Relevance ASC, 2 = Relevance DESC, 3 = Date ASC, 4 = Date DESC, 5 = Name ASC, 6 = Name DESC
 func SortItems(files []*apiFile, Sort int) (sorted []*apiFile) {
-	if Sort == 0 {
-		return files
-	}
-
-	// sort!
 	switch Sort {
-	case 1: // Relevance Score ASC
+	case SortRelevanceAsc:
 		sort.SliceStable(files, func(i, j int) bool { return files[i].Date.Before(files[j].Date) }) // first as date for secondary sorting
 		//sort.SliceStable(files, func(i, j int) bool { return files[i].Score < files[j].Score }) // TODO
-	case 2: // Relevance Score DESC
+	case SortRelevanceDec:
 		sort.SliceStable(files, func(i, j int) bool { return files[j].Date.Before(files[i].Date) }) // first as date for secondary sorting
 		//sort.SliceStable(files, func(i, j int) bool { return files[i].Score > files[j].Score }) // TODO
-	case 3: // Date ASC
+
+	case SortDateAsc:
 		sort.SliceStable(files, func(i, j int) bool { return files[i].Date.Before(files[j].Date) })
-	case 4: // Date DESC
+	case SortDateDesc:
 		sort.SliceStable(files, func(i, j int) bool { return files[j].Date.Before(files[i].Date) })
+
+	case SortNameAsc:
+		sort.SliceStable(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+	case SortNameDesc:
+		sort.SliceStable(files, func(i, j int) bool { return files[i].Name > files[j].Name })
+
+	case SortSizeAsc:
+		sort.SliceStable(files, func(i, j int) bool { return files[i].Size < files[j].Size })
+	case SortSizeDesc:
+		sort.SliceStable(files, func(i, j int) bool { return files[i].Size > files[j].Size })
+
+	case SortSharedByCountAsc:
+		sort.SliceStable(files, func(i, j int) bool {
+			return files[i].GetMetadata(core.TagSharedByCount).Number < files[j].GetMetadata(core.TagSharedByCount).Number
+		})
+	case SortSharedByCountDesc:
+		sort.SliceStable(files, func(i, j int) bool {
+			return files[i].GetMetadata(core.TagSharedByCount).Number > files[j].GetMetadata(core.TagSharedByCount).Number
+		})
+
 	}
 
 	return files

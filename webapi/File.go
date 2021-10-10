@@ -186,3 +186,25 @@ func apiBlockchainSelfDeleteFile(w http.ResponseWriter, r *http.Request) {
 
 	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
+
+// ---- metadata functions ----
+
+// GetMetadata returns the specified metadata or nil if not available.
+func (file *apiFile) GetMetadata(Type uint16) (info *apiFileMetadata) {
+	for n := range file.Metadata {
+		if file.Metadata[n].Type == Type {
+			return &file.Metadata[n]
+		}
+	}
+
+	return nil
+}
+
+// GetNumber returns the data as number. 0 if not available.
+func (info *apiFileMetadata) GetNumber() uint64 {
+	if info == nil {
+		return 0
+	}
+
+	return info.Number
+}
