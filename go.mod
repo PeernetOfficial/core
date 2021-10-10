@@ -8,7 +8,6 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/websocket v1.4.2
-	github.com/pkg/errors v0.9.1
 	golang.org/x/crypto v0.0.0-20210415154028-4f45737414dc
 	golang.org/x/net v0.0.0-20210420210106-798c2154c571
 	golang.org/x/sys v0.0.0-20210420205809-ac73e9fd8988

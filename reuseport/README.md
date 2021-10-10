@@ -1,6 +1,6 @@
 # reuseport
 
-This is a fork from `https://github.com/libp2p/go-reuseport`. Last sync of changes: 16.03.2021
+This is a fork from `https://github.com/libp2p/go-reuseport`. Last sync of changes: 11.10.2021
 
 **NOTE:** This package REQUIRES go >= 1.11.
 
