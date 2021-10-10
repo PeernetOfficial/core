@@ -37,6 +37,15 @@ type SearchJob struct {
 	filtersStart   SearchFilter // Filters when starting the search. They cannot be changed later on. Any incoming file is checked against them, even if there are different runtime filters.
 	filtersRuntime SearchFilter // Runtime Filters. They allow filtering results after they were received.
 
+	// File statistics (filters are ignored) of returned results. Map value is always count of files.
+	stats struct {
+		sync.RWMutex                   // Synced access to maps
+		date         map[time.Time]int // Files per day (rounded down to midnight)
+		fileType     map[uint8]int     // Files per File Type
+		fileFormat   map[uint16]int    // Files per File Format
+		total        int               // Total count of files
+	}
+
 	// -- result data --
 
 	// runtime data
@@ -47,7 +56,7 @@ type SearchJob struct {
 	Files       []*apiFile
 	requireSort bool // if Files requires sort before returning the results
 
-	// FreezeFiles is a list of items that were already finally delivered via the API. They may NOT change in sorting.
+	// FreezeFiles is a list of files that were already finally delivered via the API. They may NOT change in sorting.
 	FreezeFiles []*apiFile
 
 	// List of all files. Does not change based on sorting or runtime filters. This list only gets expanded.
@@ -68,6 +77,10 @@ func CreateSearchJob(Timeout time.Duration, MaxResults int, Filter SearchFilter)
 	job.filtersStart = Filter
 	job.filtersRuntime = Filter // initialize the runtime filters as the same
 
+	job.stats.date = make(map[time.Time]int)
+	job.stats.fileType = make(map[uint8]int)
+	job.stats.fileFormat = make(map[uint16]int)
+
 	// add to the list of jobs
 	allJobsMutex.Lock()
 	allJobs[job.id] = job
@@ -85,7 +98,7 @@ func (job *SearchJob) ReturnResult(Offset, Limit int) (Result []*apiFile) {
 	job.ResultSync.Lock()
 	defer job.ResultSync.Unlock()
 
-	// serve files from freezed list?
+	// serve files from frozen list?
 	if Offset < len(job.FreezeFiles) {
 		countCopy := len(job.FreezeFiles) - Offset
 		if countCopy > Limit {
@@ -113,10 +126,10 @@ func (job *SearchJob) ReturnResult(Offset, Limit int) (Result []*apiFile) {
 	if job.requireSort {
 		job.requireSort = false
 
-		job.Files = SortItems(job.Files, job.filtersRuntime.Sort)
+		job.Files = SortFiles(job.Files, job.filtersRuntime.Sort)
 	}
 
-	// set the amount of items to copy
+	// set the amount of files to copy
 	countCopy := len(job.Files) - Offset
 	if countCopy > Limit {
 		countCopy = Limit
@@ -142,12 +155,12 @@ func (job *SearchJob) ReturnNext(Limit int) (Result []*apiFile) {
 	return
 }
 
-// PeekResult returns the selected results but will not change any freezed items or impact auto offset
+// PeekResult returns the selected results but will not change any frozen files or impact auto offset
 func (job *SearchJob) PeekResult(Offset, Limit int) (Result []*apiFile) {
 	job.ResultSync.Lock()
 	defer job.ResultSync.Unlock()
 
-	// serve items from freezed list?
+	// serve files from frozen list?
 	if Offset < len(job.FreezeFiles) {
 		countCopy := len(job.FreezeFiles) - Offset
 		if countCopy > Limit {
@@ -168,7 +181,7 @@ func (job *SearchJob) PeekResult(Offset, Limit int) (Result []*apiFile) {
 	if job.requireSort {
 		job.requireSort = false
 
-		job.Files = SortItems(job.Files, job.filtersRuntime.Sort)
+		job.Files = SortFiles(job.Files, job.filtersRuntime.Sort)
 	}
 
 	countCopy := len(job.Files) - Offset
@@ -206,7 +219,7 @@ func (job *SearchJob) RuntimeFilter(Filter SearchFilter) {
 
 		// sort, if a sort order is defined
 		if job.filtersRuntime.Sort > 0 {
-			job.Files = SortItems(job.Files, job.filtersRuntime.Sort)
+			job.Files = SortFiles(job.Files, job.filtersRuntime.Sort)
 		}
 	}
 }
@@ -233,8 +246,8 @@ func (job *SearchJob) isFileFiltered(file *apiFile) bool {
 	return true
 }
 
-// SortItems sorts a list of files. It returns a sorted list. 0 = no sorting, 1 = Relevance ASC, 2 = Relevance DESC, 3 = Date ASC, 4 = Date DESC, 5 = Name ASC, 6 = Name DESC
-func SortItems(files []*apiFile, Sort int) (sorted []*apiFile) {
+// SortFiles sorts a list of files. It returns a sorted list. 0 = no sorting, 1 = Relevance ASC, 2 = Relevance DESC, 3 = Date ASC, 4 = Date DESC, 5 = Name ASC, 6 = Name DESC
+func SortFiles(files []*apiFile, Sort int) (sorted []*apiFile) {
 	switch Sort {
 	case SortRelevanceAsc:
 		sort.SliceStable(files, func(i, j int) bool { return files[i].Date.Before(files[j].Date) }) // first as date for secondary sorting
@@ -358,6 +371,82 @@ func (job *SearchJob) WaitTerminate() {
 }
 
 // ---- statistics ----
+
+// SearchStatisticRecordDay is a single record containing date info.
+type SearchStatisticRecordDay struct {
+	Date  time.Time `json:"date"`  // The day (which covers the full 24 hours). Always rounded down to midnight.
+	Count int       `json:"count"` // Count of files.
+}
+
+// SearchStatisticRecord is a single record.
+type SearchStatisticRecord struct {
+	Key   int `json:"key"`   // Key index. The exact meaning depends on where this structure is used.
+	Count int `json:"count"` // Count of files for the given key
+}
+
+// SearchStatistic contains statistics on search results. Statistics are always calculated over all results, regardless if runtime filters change.
+type SearchStatistic struct {
+	Date         []SearchStatisticRecordDay `json:"date"`       // Files per date
+	FileType     []SearchStatisticRecord    `json:"filetype"`   // Files per file type
+	FileFormat   []SearchStatisticRecord    `json:"fileformat"` // Files per file format
+	Total        int                        `json:"total"`      // Total count of files
+	Status       int                        `json:"status"`     // Status: 0 = Success
+	IsTerminated bool                       `json:"terminated"` // Whether the search is terminated, meaning that statistics won't change
+}
+
+// Statistics generates statistics on results
+func (job *SearchJob) Statistics() (result SearchStatistic) {
+	job.stats.RLock()
+	defer job.stats.RUnlock()
+
+	result.Total = job.stats.total
+
+	// Files per date. Sort dates to date ASC.
+	for key, value := range job.stats.date {
+		result.Date = append(result.Date, SearchStatisticRecordDay{Date: key, Count: value})
+	}
+	sort.SliceStable(result.Date, func(i, j int) bool { return result.Date[i].Date.Before(result.Date[j].Date) })
+
+	// File Type and Format
+	for key, value := range job.stats.fileType {
+		result.FileType = append(result.FileType, SearchStatisticRecord{Key: int(key), Count: value})
+	}
+	for key, value := range job.stats.fileFormat {
+		result.FileFormat = append(result.FileFormat, SearchStatisticRecord{Key: int(key), Count: value})
+	}
+
+	result.IsTerminated = job.IsTerminated()
+
+	return
+}
+
+// statsAdd counts the files in the statistics
+func (job *SearchJob) statsAdd(files ...*apiFile) {
+	job.stats.Lock()
+	defer job.stats.Unlock()
+
+	for _, file := range files {
+		// Use file's Date field if available.
+		if !file.Date.IsZero() {
+			// Files per day
+			date := file.Date.Truncate(24 * time.Hour)
+			countDate := job.stats.date[date]
+			countDate++
+			job.stats.date[date] = countDate
+		}
+
+		// File Type and Format
+		countType := job.stats.fileType[file.Type]
+		countType++
+		job.stats.fileType[file.Type] = countType
+
+		countFormat := job.stats.fileFormat[file.Format]
+		countFormat++
+		job.stats.fileFormat[file.Format] = countFormat
+	}
+
+	job.stats.total += len(files)
+}
 
 // ---- actual search & retrieving results ----
 

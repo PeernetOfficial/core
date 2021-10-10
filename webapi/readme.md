@@ -45,6 +45,7 @@ These are the functions provided by the API:
 /search                         Submit a search request
 /search/result                  Return search results
 /search/terminate               Terminate a search
+/search/statistic               Search result statistics
 
 /download/start                 Start the download of a file
 /download/status                Get the status of a download
@@ -633,6 +634,26 @@ Example response with dummy data:
             "number": 0
         }]
     }]
+}
+```
+
+### Search Result Statistics
+
+This returns search result statistics. Statistics are always calculated over all results, regardless if runtime filters change.
+
+```
+Request:    GET /search/result?id=[UUID]
+Result:     200 with JSON structure SearchStatistic. Check the field status (0 = Success, 2 = ID not found).
+```
+
+```go
+type SearchStatistic struct {
+	Date         []SearchStatisticRecordDay `json:"date"`       // Files per date
+	FileType     []SearchStatisticRecord    `json:"filetype"`   // Files per file type
+	FileFormat   []SearchStatisticRecord    `json:"fileformat"` // Files per file format
+	Total        int                        `json:"total"`      // Total count of files
+	Status       int                        `json:"status"`     // Status: 0 = Success
+	IsTerminated bool                       `json:"terminated"` // Whether the search is terminated, meaning that statistics won't change
 }
 ```
 

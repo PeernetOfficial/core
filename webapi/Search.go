@@ -7,7 +7,7 @@ Author:     Peter Kleissner
 /search/result          Return search results
 /search/terminate       Terminate a search
 /search/result/ws       Websocket to return search results as stream (future)
-/search/statistic       Statistics about the results (future)
+/search/statistic       Statistics about the results
 
 /explore                List recently shared files
 
@@ -260,6 +260,32 @@ func apiSearchTerminate(w http.ResponseWriter, r *http.Request) {
 	job.Remove()
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+/*
+apiSearchStatistic returns search result statistics. Statistics are always calculated over all results, regardless if runtime filters change.
+
+Request:    GET /search/result?id=[UUID]
+Result:     200 with JSON structure SearchStatistic. Check the field status (0 = Success, 2 = ID not found).
+*/
+func apiSearchStatistic(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	jobID, err := uuid.Parse(r.Form.Get("id"))
+	if err != nil {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+
+	// find the job ID
+	job := JobLookup(jobID)
+	if job == nil {
+		EncodeJSON(w, r, SearchStatistic{Status: 2})
+		return
+	}
+
+	stats := job.Statistics()
+
+	EncodeJSON(w, r, stats)
 }
 
 /*

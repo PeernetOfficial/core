@@ -44,6 +44,7 @@ func dispatchSearch(input SearchRequest) (job *SearchJob) {
 			job.Files = append(job.Files, &newFile)
 			job.AllFiles = append(job.AllFiles, &newFile)
 			job.requireSort = true
+			job.statsAdd(&newFile)
 		}
 
 		job.ResultSync.Unlock()
