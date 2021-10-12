@@ -62,6 +62,10 @@ func Start(ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKe
 	Router.HandleFunc("/download/start", apiDownloadStart).Methods("GET")
 	Router.HandleFunc("/download/status", apiDownloadStatus).Methods("GET")
 	Router.HandleFunc("/download/action", apiDownloadAction).Methods("GET")
+	Router.HandleFunc("/warehouse/create", apiWarehouseCreateFile).Methods("POST")
+	Router.HandleFunc("/warehouse/create/path", apiWarehouseCreateFilePath).Methods("GET")
+	Router.HandleFunc("/warehouse/read", apiWarehouseReadFile).Methods("GET")
+	Router.HandleFunc("/warehouse/delete", apiWarehouseDeleteFile).Methods("GET")
 
 	for _, listen := range ListenAddresses {
 		go startWebServer(listen, UseSSL, CertificateFile, CertificateKey, Router, "API", TimeoutRead, TimeoutWrite)

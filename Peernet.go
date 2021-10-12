@@ -11,6 +11,7 @@ func Init() {
 	initFilters()
 	initPeerID()
 	initUserBlockchain()
+	initUserWarehouse()
 	initKademlia()
 	initMessageSequence()
 	initSeedList()

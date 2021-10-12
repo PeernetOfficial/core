@@ -55,6 +55,11 @@ These are the functions provided by the API:
 /explore                        List recently shared files
 
 /file/format                    Detect file type and format
+
+/warehouse/create               Create a file in the warehouse
+/warehouse/create/path          Create a file in the warehouse via copy
+/warehouse/read                 Read a file in the warehouse
+/warehouse/delete               Delete a file in the warehouse
 ```
 
 # API Documentation
@@ -598,9 +603,9 @@ Result:     200 with JSON structure SearchResult. Check the field status.
 
 ```go
 type SearchResult struct {
-	Status    int         `json:"status"`    // Status: 0 = Success with results, 1 = No more results available, 2 = Search ID not found, 3 = No results yet available keep trying
-	Files     []apiFile   `json:"files"`     // List of files found
-	Statistic interface{} `json:"statistic"` // Statistics of all results (independent from applied filters), if requested. Only set if files are returned (= if statistics changed). See SearchStatisticData.
+    Status    int         `json:"status"`    // Status: 0 = Success with results, 1 = No more results available, 2 = Search ID not found, 3 = No results yet available keep trying
+    Files     []apiFile   `json:"files"`     // List of files found
+    Statistic interface{} `json:"statistic"` // Statistics of all results (independent from applied filters), if requested. Only set if files are returned (= if statistics changed). See SearchStatisticData.
 }
 ```
 
@@ -652,26 +657,26 @@ Result:     200 with JSON structure SearchStatistic. Check the field status (0 =
 
 ```go
 type SearchStatistic struct {
-	SearchStatisticData
-	Status       int  `json:"status"`     // Status: 0 = Success
-	IsTerminated bool `json:"terminated"` // Whether the search is terminated, meaning that statistics won't change
+    SearchStatisticData
+    Status       int  `json:"status"`     // Status: 0 = Success
+    IsTerminated bool `json:"terminated"` // Whether the search is terminated, meaning that statistics won't change
 }
 
 type SearchStatisticData struct {
-	Date       []SearchStatisticRecordDay `json:"date"`       // Files per date
-	FileType   []SearchStatisticRecord    `json:"filetype"`   // Files per file type
-	FileFormat []SearchStatisticRecord    `json:"fileformat"` // Files per file format
-	Total      int                        `json:"total"`      // Total count of files
+    Date       []SearchStatisticRecordDay `json:"date"`       // Files per date
+    FileType   []SearchStatisticRecord    `json:"filetype"`   // Files per file type
+    FileFormat []SearchStatisticRecord    `json:"fileformat"` // Files per file format
+    Total      int                        `json:"total"`      // Total count of files
 }
 
 type SearchStatisticRecordDay struct {
-	Date  time.Time `json:"date"`  // The day (which covers the full 24 hours). Always rounded down to midnight.
-	Count int       `json:"count"` // Count of files.
+    Date  time.Time `json:"date"`  // The day (which covers the full 24 hours). Always rounded down to midnight.
+    Count int       `json:"count"` // Count of files.
 }
 
 type SearchStatisticRecord struct {
-	Key   int `json:"key"`   // Key index. The exact meaning depends on where this structure is used.
-	Count int `json:"count"` // Count of files for the given key
+    Key   int `json:"key"`   // Key index. The exact meaning depends on where this structure is used.
+    Count int `json:"count"` // Count of files for the given key
 }
 ```
 
@@ -856,3 +861,112 @@ Example response:
     "fileformat": 10
 }
 ```
+
+## Warehouse
+
+The Warehouse stores the actual files that are shared by the user. The blockchain only stores the metadata information. The Warehouse and the blockchain must be kept in sync.
+
+* Files are identified (and adressed) by their hash.
+* Before using `/blockchain/self/add/file`, you must store the file in the Warehouse using `/warehouse/create` or `/warehouse/create/path`. The blockchain function verifies if the file exists in the Warehouse and fails if it does not.
+* When deleting a file from the blockchain via `/blockchain/self/delete/file`, it will automatically delete the file from the warehouse if there are no other files on the blockchain referencing it.
+* Because files are addressed using their hash, they are automatically deduplicated. If the user shares the exact same file data under different file names, it is only stored once.
+
+Note: The Warehouse does NOT store files downloaded from other users. It strictly only stores files that the user choses to publish.
+
+Status codes:
+
+| Status | Constant       |  Info                          |
+|------|----------------|-------------------------------|
+| 0    | StatusOK    | Success  |
+| 1    | StatusErrorCreateTempFile    | Error creating a temporary file.  |
+| 2    | StatusErrorWriteTempFile    | Error writing temporary file.  |
+| 3    | StatusErrorCloseTempFile    | Error closing temporary file.  |
+| 4    | StatusErrorRenameTempFile    | Error renaming temporary file.  |
+| 5    | StatusErrorCreatePath    | Error creating path for target file in warehouse.  |
+| 7    | StatusErrorOpenFile    | Error opening file.  |
+| 8    | StatusInvalidHash    | Invalid hash.  |
+| 9    | StatusFileNotFound    | File not found.  |
+| 10    | StatusErrorDeleteFile    | Error deleting file.  |
+| 11    | StatusErrorReadFile    | Error reading file.  |
+| 12    | StatusErrorSeekFile    | Error seeking to position in file.  |
+
+### Create File
+
+This creates a file in the warehouse. The payload data is the file data to store. It returns the hash of the stored file. If the file already exists it does not return an error.
+
+```
+Request:    POST /warehouse/create with raw data to create as new file
+Response:   200 with JSON structure WarehouseResult
+```
+
+```go
+type WarehouseResult struct {
+    Status int    `json:"status"` // See warehouse.StatusX.
+    Hash   []byte `json:"hash"`   // Hash of the file.
+}
+```
+
+Example POST request to `http://127.0.0.1:112/warehouse/create`:
+
+```
+Test file.
+```
+
+Example response:
+
+```json
+{
+    "status": 0,
+    "hash": "2/NE8j54ICYTKYg64m9kkpp8mXdUkAHSjcQMkgLXZR4="
+}
+```
+
+### Create File by Copy
+
+This creates a file in the warehouse by copying it from an existing local file.
+
+Warning: An attacker could supply any local file using this function, put them into storage and read them! No input path verification or limitation is done.
+In the future the API should be secured using a random API key and setting the CORS header prohibiting regular browsers to access the API.
+
+```
+Request:    GET /warehouse/create/path?path=[target path on disk]
+Response:   200 with JSON structure WarehouseResult
+```
+
+Example request to add the local file "C:\Test File 1.txt": `http://127.0.0.1:112/warehouse/create/path?path=C%3A%5CTest%20File%201.txt`
+
+Example response in case the file does not exist (returning StatusFileNotFound):
+
+```json
+{
+    "status": 9,
+    "hash": null
+}
+```
+
+### Read File
+
+This reads a file in the warehouse. The offset and limit parameter are optional. The hash must be hex encoded.
+
+```
+Request:    GET /warehouse/read?hash=[hash]
+            Optional parameters &offset=[file offset]&limit=[read limit in bytes]
+Response:   200 with the raw file data
+            404 if file was not found
+            500 in case of internal error opening the file
+```
+
+Example request: `http://127.0.0.1:112/warehouse/read?hash=dbf344f23e7820261329883ae26f64929a7c9977549001d28dc40c9202d7651e`
+
+### Delete File
+
+This deletes a file in the warehouse. This is normally not needed, since `/blockchain/self/delete/file` will automatically delete files in the Warehouse if there are no active references.
+
+Warning: Deleting files from the warehouse but not the blockchain creates orphans. Peers might blacklist other peers who advertise files via their blockchain, but fail to provide them for transfer.
+
+```
+Request:    GET /warehouse/delete?hash=[hash]
+Response:   200 with JSON structure WarehouseResult
+```
+
+Example request: `http://127.0.0.1:112/warehouse/delete?hash=dbf344f23e7820261329883ae26f64929a7c9977549001d28dc40c9202d7651e`
