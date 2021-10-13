@@ -184,6 +184,7 @@ func apiBlockchainSelfListFile(w http.ResponseWriter, r *http.Request) {
 
 /*
 apiBlockchainSelfDeleteFile deletes files with the provided IDs. Other fields are ignored.
+It will automatically delete the file in the Warehouse if there are no other references.
 
 Request:    POST /blockchain/self/delete/file with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
@@ -200,7 +201,16 @@ func apiBlockchainSelfDeleteFile(w http.ResponseWriter, r *http.Request) {
 		deleteIDs = append(deleteIDs, input.Files[n].ID)
 	}
 
-	newHeight, newVersion, status := core.UserBlockchain.DeleteFiles(deleteIDs)
+	newHeight, newVersion, deletedFiles, status := core.UserBlockchain.DeleteFiles(deleteIDs)
+
+	// If successfully deleted from the blockchain, delete from the Warehouse in case there are no other references.
+	if status == blockchain.BlockchainStatusOK {
+		for n := range deletedFiles {
+			if files, status := core.UserBlockchain.FileExists(deletedFiles[n].Hash); status == blockchain.BlockchainStatusOK && len(files) == 0 {
+				core.UserWarehouse.DeleteFile(deletedFiles[n].Hash)
+			}
+		}
+	}
 
 	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }

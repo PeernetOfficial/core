@@ -193,7 +193,7 @@ func TestBlockchainDelete(t *testing.T) {
 	fmt.Printf("----------------\n")
 
 	// delete the file
-	newHeight, newVersion, status = blockchain.DeleteFiles([]uuid.UUID{file1.ID})
+	newHeight, newVersion, _, status = blockchain.DeleteFiles([]uuid.UUID{file1.ID})
 	fmt.Printf("Deleted file: Status %d height %d version %d\n", status, newHeight, newVersion)
 
 	// list all files

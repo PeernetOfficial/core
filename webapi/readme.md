@@ -345,6 +345,8 @@ Example response:
 
 This deletes files from the blockchain with the provided IDs. The blockchain will be refactored, which means it is recalculated without the specified files. The blockchains version number might be increased.
 
+It will automatically delete the file in the Warehouse if there are no other references.
+
 ```
 Request:    POST /blockchain/self/delete/file with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
@@ -360,7 +362,7 @@ Example POST request to `http://127.0.0.1:112/blockchain/self/delete/file`:
 }
 ```
 
-Example response:
+Example response indicating success:
 
 ```json
 {

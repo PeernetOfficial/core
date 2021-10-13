@@ -44,7 +44,7 @@ type apiBlockchainBlockRaw struct {
 }
 
 type apiBlockchainBlockStatus struct {
-	Status  int    `json:"status"`  // See BlockchainStatusX.
+	Status  int    `json:"status"`  // See blockchain.StatusX.
 	Height  uint64 `json:"height"`  // Height of the blockchain (number of blocks).
 	Version uint64 `json:"version"` // Version of the blockchain.
 }
@@ -74,7 +74,7 @@ func apiBlockchainSelfAppend(w http.ResponseWriter, r *http.Request) {
 }
 
 type apiBlockchainBlock struct {
-	Status            int                 `json:"status"`            // Status: 0 = Success, 1 = Error block not found, 2 = Error block encoding (indicates that the blockchain is corrupt)
+	Status            int                 `json:"status"`            // See blockchain.StatusX.
 	PeerID            string              `json:"peerid"`            // Peer ID hex encoded.
 	LastBlockHash     []byte              `json:"lastblockhash"`     // Hash of the last block. Blake3.
 	BlockchainVersion uint64              `json:"blockchainversion"` // Blockchain version

@@ -18,6 +18,7 @@ Offset  Size   Info
 package blockchain
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"sync"
@@ -361,6 +362,26 @@ func (blockchain *Blockchain) ListFiles() (files []BlockRecordFile, status int) 
 	return files, status
 }
 
+// FileExists checks if the file (identified via its hash) exists.
+// If there is a corruption in the blockchain it will stop reading but return the files found so far.
+func (blockchain *Blockchain) FileExists(hash []byte) (files []BlockRecordFile, status int) {
+	status = blockchain.Iterate(func(block *Block) (statusI int) {
+		filesD, err := decodeBlockRecordFiles(block.RecordsRaw, block.NodeID)
+		if err != nil {
+			return BlockchainStatusCorruptBlockRecord
+		}
+		for _, file := range filesD {
+			if bytes.Equal(file.Hash, hash) {
+				files = append(files, file)
+			}
+		}
+
+		return BlockchainStatusOK
+	})
+
+	return files, status
+}
+
 // ProfileReadField reads the specified profile field. See ProfileX for the list of recognized fields. The encoding depends on the field type. Status is BlockchainStatusX.
 func (blockchain *Blockchain) ProfileReadField(index uint16) (data []byte, status int) {
 	found := false
@@ -450,8 +471,8 @@ func (blockchain *Blockchain) ProfileDelete(fields []uint16) (newHeight, newVers
 }
 
 // DeleteFiles deletes files from the blockchain. Status is BlockchainStatusX.
-func (blockchain *Blockchain) DeleteFiles(IDs []uuid.UUID) (newHeight, newVersion uint64, status int) {
-	return blockchain.IterateDeleteRecord(func(record *BlockRecordRaw) (deleteAction int) {
+func (blockchain *Blockchain) DeleteFiles(IDs []uuid.UUID) (newHeight, newVersion uint64, deletedFiles []BlockRecordFile, status int) {
+	newHeight, newVersion, status = blockchain.IterateDeleteRecord(func(record *BlockRecordRaw) (deleteAction int) {
 		if record.Type != RecordTypeFile {
 			return 0 // no action on record
 		}
@@ -463,10 +484,13 @@ func (blockchain *Blockchain) DeleteFiles(IDs []uuid.UUID) (newHeight, newVersio
 
 		for _, id := range IDs {
 			if id == filesDecoded[0].ID { // found a file ID to delete?
+				deletedFiles = append(deletedFiles, filesDecoded[0])
 				return 1 // delete record
 			}
 		}
 
 		return 0 // no action on record
 	})
+
+	return
 }
