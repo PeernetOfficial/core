@@ -149,7 +149,7 @@ func apiBlockchainSelfAddFile(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "", http.StatusBadRequest)
 				return
 			} else if _, _, valid := core.UserWarehouse.FileExists(hashA); !valid {
-				EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.BlockchainStatusNotInWarehouse})
+				EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
 				return
 			}
 		}
@@ -204,9 +204,9 @@ func apiBlockchainSelfDeleteFile(w http.ResponseWriter, r *http.Request) {
 	newHeight, newVersion, deletedFiles, status := core.UserBlockchain.DeleteFiles(deleteIDs)
 
 	// If successfully deleted from the blockchain, delete from the Warehouse in case there are no other references.
-	if status == blockchain.BlockchainStatusOK {
+	if status == blockchain.StatusOK {
 		for n := range deletedFiles {
-			if files, status := core.UserBlockchain.FileExists(deletedFiles[n].Hash); status == blockchain.BlockchainStatusOK && len(files) == 0 {
+			if files, status := core.UserBlockchain.FileExists(deletedFiles[n].Hash); status == blockchain.StatusOK && len(files) == 0 {
 				core.UserWarehouse.DeleteFile(deletedFiles[n].Hash)
 			}
 		}
@@ -237,7 +237,7 @@ func apiBlockchainFileUpdate(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "", http.StatusBadRequest)
 				return
 			} else if _, _, valid := core.UserWarehouse.FileExists(hashA); !valid {
-				EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.BlockchainStatusNotInWarehouse})
+				EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
 				return
 			}
 		}

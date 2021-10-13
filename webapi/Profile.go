@@ -17,7 +17,7 @@ import (
 // apiProfileData contains profile metadata stored on the blockchain. Any data is treated as untrusted and unverified by default.
 type apiProfileData struct {
 	Fields []apiBlockRecordProfile `json:"fields"` // All fields
-	Status int                     `json:"status"` // Status of the operation, only used when this structure is returned from the API. See core.BlockchainStatusX.
+	Status int                     `json:"status"` // Status of the operation, only used when this structure is returned from the API. See blockchain.StatusX.
 }
 
 // apiBlockRecordProfile provides information about the end user. Note that all profile data is arbitrary and shall be considered untrusted and unverified.
@@ -64,7 +64,7 @@ func apiProfileRead(w http.ResponseWriter, r *http.Request) {
 	var result apiProfileData
 
 	var data []byte
-	if data, result.Status = core.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.BlockchainStatusOK {
+	if data, result.Status = core.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.StatusOK {
 		result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: uint16(fieldN), Data: data}))
 	}
 

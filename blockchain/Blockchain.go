@@ -133,14 +133,14 @@ func (blockchain *Blockchain) headerWrite(height, version uint64) (err error) {
 	return err
 }
 
-// BlockchainStatusX provides information about the blockchain status. Some errors codes indicate a corruption.
+// StatusX provides information about the blockchain status. Some errors codes indicate a corruption.
 const (
-	BlockchainStatusOK                 = 0 // No problems in the blockchain detected.
-	BlockchainStatusBlockNotFound      = 1 // Missing block in the blockchain.
-	BlockchainStatusCorruptBlock       = 2 // Error block encoding
-	BlockchainStatusCorruptBlockRecord = 3 // Error block record encoding
-	BlockchainStatusDataNotFound       = 4 // Requested data not available in the blockchain
-	BlockchainStatusNotInWarehouse     = 5 // File to be added to blockchain does not exist in the Warehouse
+	StatusOK                 = 0 // No problems in the blockchain detected.
+	StatusBlockNotFound      = 1 // Missing block in the blockchain.
+	StatusCorruptBlock       = 2 // Error block encoding
+	StatusCorruptBlockRecord = 3 // Error block record encoding
+	StatusDataNotFound       = 4 // Requested data not available in the blockchain
+	StatusNotInWarehouse     = 5 // File to be added to blockchain does not exist in the Warehouse
 )
 
 // blockNumberToKey returns the database key for the given block number
@@ -151,7 +151,7 @@ func blockNumberToKey(number uint64) (key []byte) {
 	return target[:]
 }
 
-// Iterate iterates over the blockchain. Status is BlockchainStatusX.
+// Iterate iterates over the blockchain. Status is StatusX.
 // If the callback returns non-zero, the function aborts and returns the inner status code.
 func (blockchain *Blockchain) Iterate(callback func(block *Block) int) (status int) {
 	// read all blocks until height is reached
@@ -160,23 +160,23 @@ func (blockchain *Blockchain) Iterate(callback func(block *Block) int) (status i
 	for blockN := uint64(0); blockN < height; blockN++ {
 		blockRaw, found := blockchain.database.Get(blockNumberToKey(blockN))
 		if !found || len(blockRaw) == 0 {
-			return BlockchainStatusBlockNotFound
+			return StatusBlockNotFound
 		}
 
 		block, err := decodeBlock(blockRaw)
 		if err != nil {
-			return BlockchainStatusCorruptBlock
+			return StatusCorruptBlock
 		}
 
-		if statusI := callback(block); statusI != BlockchainStatusOK {
+		if statusI := callback(block); statusI != StatusOK {
 			return statusI
 		}
 	}
 
-	return BlockchainStatusOK
+	return StatusOK
 }
 
-// IterateDeleteRecord iterates over the blockchain to find records to delete. Status is BlockchainStatusX.
+// IterateDeleteRecord iterates over the blockchain to find records to delete. Status is StatusX.
 // deleteAction is 0 = no action on record, 1 = delete record, 2 = replace record, 3 = error blockchain corrupt
 // If the callback returns true, the record will be deleted. The blockchain will be automatically refactored and height and version updated.
 func (blockchain *Blockchain) IterateDeleteRecord(callback func(record *BlockRecordRaw) (deleteAction int)) (newHeight, newVersion uint64, status int) {
@@ -194,12 +194,12 @@ func (blockchain *Blockchain) IterateDeleteRecord(callback func(record *BlockRec
 	for blockN := uint64(0); blockN < height; blockN++ {
 		blockRaw, found := blockchain.database.Get(blockNumberToKey(blockN))
 		if !found || len(blockRaw) == 0 {
-			return 0, 0, BlockchainStatusBlockNotFound
+			return 0, 0, StatusBlockNotFound
 		}
 
 		block, err := decodeBlock(blockRaw)
 		if err != nil {
-			return 0, 0, BlockchainStatusCorruptBlock
+			return 0, 0, StatusCorruptBlock
 		}
 
 		// loop through all records in this block
@@ -221,7 +221,7 @@ func (blockchain *Blockchain) IterateDeleteRecord(callback func(record *BlockRec
 				refactorBlockchain = true
 
 			case 3: // error blockchain corrupt
-				return 0, 0, BlockchainStatusCorruptBlockRecord
+				return 0, 0, StatusCorruptBlockRecord
 			}
 		}
 
@@ -244,7 +244,7 @@ func (blockchain *Blockchain) IterateDeleteRecord(callback func(record *BlockRec
 
 			raw, err := encodeBlock(&block, blockchain.privateKey)
 			if err != nil {
-				return 0, 0, BlockchainStatusCorruptBlock
+				return 0, 0, StatusCorruptBlock
 			}
 
 			// store the block
@@ -262,7 +262,7 @@ func (blockchain *Blockchain) IterateDeleteRecord(callback func(record *BlockRec
 		}
 	}
 
-	return blockchain.height, blockchain.version, BlockchainStatusOK
+	return blockchain.height, blockchain.version, StatusOK
 }
 
 // ---- blockchain manipulation functions ----
@@ -275,14 +275,13 @@ func (blockchain *Blockchain) Header() (publicKey *btcec.PublicKey, height uint6
 	return blockchain.publicKey, blockchain.height, blockchain.version
 }
 
-// Append appends a new block to the blockchain based on the provided raw records.
-// Status: BlockchainStatusX (0-2): 0 = Success, 1 = Error block not found, 2 = Error block encoding
+// Append appends a new block to the blockchain based on the provided raw records. Status is StatusX.
 func (blockchain *Blockchain) Append(RecordsRaw []BlockRecordRaw) (newHeight, newVersion uint64, status int) {
 	blockchain.Lock()
 	defer blockchain.Unlock()
 
 	if len(RecordsRaw) == 0 {
-		return blockchain.height, blockchain.version, BlockchainStatusOK
+		return blockchain.height, blockchain.version, StatusOK
 	}
 
 	block := &Block{OwnerPublicKey: blockchain.publicKey, RecordsRaw: RecordsRaw}
@@ -291,7 +290,7 @@ func (blockchain *Blockchain) Append(RecordsRaw []BlockRecordRaw) (newHeight, ne
 	if blockchain.height > 0 {
 		previousBlockRaw, found := blockchain.database.Get(blockNumberToKey(blockchain.height - 1))
 		if !found || len(previousBlockRaw) == 0 {
-			return 0, 0, BlockchainStatusBlockNotFound
+			return 0, 0, StatusBlockNotFound
 		}
 
 		block.LastBlockHash = HashFunction(previousBlockRaw)
@@ -302,7 +301,7 @@ func (blockchain *Blockchain) Append(RecordsRaw []BlockRecordRaw) (newHeight, ne
 
 	raw, err := encodeBlock(block, blockchain.privateKey)
 	if err != nil {
-		return 0, 0, BlockchainStatusCorruptBlock
+		return 0, 0, StatusCorruptBlock
 	}
 
 	// store the block
@@ -311,29 +310,29 @@ func (blockchain *Blockchain) Append(RecordsRaw []BlockRecordRaw) (newHeight, ne
 	// update the blockchain header in the database, increase blockchain height
 	blockchain.headerWrite(blockchain.height+1, blockchain.version)
 
-	return blockchain.height, blockchain.version, BlockchainStatusOK
+	return blockchain.height, blockchain.version, StatusOK
 }
 
-// Read reads the block number from the blockchain. Status is BlockchainStatusX.
+// Read reads the block number from the blockchain. Status is StatusX.
 func (blockchain *Blockchain) Read(number uint64) (decoded *BlockDecoded, status int, err error) {
 	if number >= blockchain.height {
-		return nil, BlockchainStatusBlockNotFound, errors.New("block number exceeds blockchain height")
+		return nil, StatusBlockNotFound, errors.New("block number exceeds blockchain height")
 	}
 
 	blockRaw, found := blockchain.database.Get(blockNumberToKey(number))
 	if !found || len(blockRaw) == 0 {
-		return nil, BlockchainStatusBlockNotFound, errors.New("block not found")
+		return nil, StatusBlockNotFound, errors.New("block not found")
 	}
 
 	block, err := decodeBlock(blockRaw)
 	if err != nil {
-		return nil, BlockchainStatusCorruptBlock, err
+		return nil, StatusCorruptBlock, err
 	}
 
 	decoded, err = decodeBlockRecords(block)
 	if err != nil {
-		return nil, BlockchainStatusCorruptBlock, err
+		return nil, StatusCorruptBlock, err
 	}
 
-	return decoded, BlockchainStatusOK, nil
+	return decoded, StatusOK, nil
 }

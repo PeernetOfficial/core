@@ -6,16 +6,16 @@ Author:     Peter Kleissner
 
 package blockchain
 
-// ProfileReadField reads the specified profile field. See ProfileX for the list of recognized fields. The encoding depends on the field type. Status is BlockchainStatusX.
+// ProfileReadField reads the specified profile field. See ProfileX for the list of recognized fields. The encoding depends on the field type. Status is StatusX.
 func (blockchain *Blockchain) ProfileReadField(index uint16) (data []byte, status int) {
 	found := false
 
 	status = blockchain.Iterate(func(block *Block) (statusI int) {
 		fields, err := decodeBlockRecordProfile(block.RecordsRaw)
 		if err != nil {
-			return BlockchainStatusCorruptBlockRecord
+			return StatusCorruptBlockRecord
 		} else if len(fields) == 0 {
-			return BlockchainStatusOK
+			return StatusOK
 		}
 
 		// Check if the field is available in the profile record. If there are multiple records, only return the latest one.
@@ -26,33 +26,33 @@ func (blockchain *Blockchain) ProfileReadField(index uint16) (data []byte, statu
 			}
 		}
 
-		return BlockchainStatusOK
+		return StatusOK
 	})
 
-	if status != BlockchainStatusOK {
+	if status != StatusOK {
 		return nil, status
 	} else if !found {
-		return nil, BlockchainStatusDataNotFound
+		return nil, StatusDataNotFound
 	}
 
-	return data, BlockchainStatusOK
+	return data, StatusOK
 }
 
-// ProfileList lists all profile fields. Status is BlockchainStatusX.
+// ProfileList lists all profile fields. Status is StatusX.
 func (blockchain *Blockchain) ProfileList() (fields []BlockRecordProfile, status int) {
 	uniqueFields := make(map[uint16][]byte)
 
 	status = blockchain.Iterate(func(block *Block) (statusI int) {
 		fields, err := decodeBlockRecordProfile(block.RecordsRaw)
 		if err != nil {
-			return BlockchainStatusCorruptBlockRecord
+			return StatusCorruptBlockRecord
 		}
 
 		for n := range fields {
 			uniqueFields[fields[n].Type] = fields[n].Data
 		}
 
-		return BlockchainStatusOK
+		return StatusOK
 	})
 
 	for key, value := range uniqueFields {
@@ -62,17 +62,17 @@ func (blockchain *Blockchain) ProfileList() (fields []BlockRecordProfile, status
 	return fields, status
 }
 
-// ProfileWrite writes profile fields and blobs to the blockchain. Status is BlockchainStatusX.
+// ProfileWrite writes profile fields and blobs to the blockchain. Status is StatusX.
 func (blockchain *Blockchain) ProfileWrite(fields []BlockRecordProfile) (newHeight, newVersion uint64, status int) {
 	encoded, err := encodeBlockRecordProfile(fields)
 	if err != nil {
-		return 0, 0, BlockchainStatusCorruptBlockRecord
+		return 0, 0, StatusCorruptBlockRecord
 	}
 
 	return blockchain.Append(encoded)
 }
 
-// ProfileDelete deletes fields and blobs from the blockchain. Status is BlockchainStatusX.
+// ProfileDelete deletes fields and blobs from the blockchain. Status is StatusX.
 func (blockchain *Blockchain) ProfileDelete(fields []uint16) (newHeight, newVersion uint64, status int) {
 	return blockchain.IterateDeleteRecord(func(record *BlockRecordRaw) (deleteAction int) {
 		if record.Type != RecordTypeProfile {

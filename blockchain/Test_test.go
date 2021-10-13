@@ -231,7 +231,7 @@ func TestBlockchainProfile(t *testing.T) {
 
 func printProfileData(blockchain *Blockchain) {
 	fields, status := blockchain.ProfileList()
-	if status != BlockchainStatusOK {
+	if status != StatusOK {
 		fmt.Printf("Reading profile data error status: %d\n", status)
 		return
 	}

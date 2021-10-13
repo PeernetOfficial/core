@@ -107,18 +107,16 @@ type apiResponsePeerSelf struct {
 
 ## Blockchain Functions
 
-Common status codes returned by various endpoints:
+Common status codes returned by various endpoints in the `blockchain` package:
 
-```go
-const (
-    BlockchainStatusOK                 = 0 // No problems in the blockchain detected.
-    BlockchainStatusBlockNotFound      = 1 // Missing block in the blockchain.
-    BlockchainStatusCorruptBlock       = 2 // Error block encoding
-    BlockchainStatusCorruptBlockRecord = 3 // Error block record encoding
-    BlockchainStatusDataNotFound       = 4 // Requested data not available in the blockchain
-	BlockchainStatusNotInWarehouse     = 5 // File to be added to blockchain does not exist in the Warehouse
-)
-```
+| Status | Constant       |  Info                          |
+|------|----------------|-------------------------------|
+| 0    | StatusOK    | Successful operation.  |
+| 1    | StatusBlockNotFound    | Missing block in the blockchain.  |
+| 2    | StatusCorruptBlock    | Error block encoding.  |
+| 3    | StatusCorruptBlockRecord    | Error block record encoding.  |
+| 4    | StatusDataNotFound    | Requested data not available in the blockchain.  |
+| 5    | StatusNotInWarehouse    | File to be added to blockchain does not exist in the Warehouse.  |
 
 ### Blockchain Self Header
 
@@ -158,7 +156,7 @@ type apiBlockchainBlockRaw struct {
 }
 
 type apiBlockchainBlockStatus struct {
-    Status  int    `json:"status"`  // Status: 0 = Success, 1 = Error invalid data
+    Status  int    `json:"status"`  // See blockchain.StatusX.
     Height  uint64 `json:"height"`  // Height of the blockchain (number of blocks).
     Version uint64 `json:"version"` // Version of the blockchain.
 }
@@ -175,7 +173,7 @@ Response:   200 with JSON structure apiBlockchainBlock
 
 ```go
 type apiBlockchainBlock struct {
-    Status            int                 `json:"status"`            // Status: 0 = Success, 1 = Error block not found, 2 = Error block encoding (indicates that the blockchain is corrupt)
+    Status            int                 `json:"status"`            // See blockchain.StatusX.
     PeerID            string              `json:"peerid"`            // Peer ID hex encoded.
     LastBlockHash     []byte              `json:"lastblockhash"`     // Hash of the last block. Blake3.
     BlockchainVersion uint64              `json:"blockchainversion"` // Blockchain version
@@ -417,7 +415,7 @@ Response:   200 with JSON structure apiProfileData
 ```go
 type apiProfileData struct {
     Fields []apiBlockRecordProfile `json:"fields"` // All fields
-    Status int                     `json:"status"` // Status of the operation, only used when this structure is returned from the API. See core.BlockchainStatusX.
+    Status int                     `json:"status"` // Status of the operation, only used when this structure is returned from the API. See blockchain.StatusX.
 }
 
 type apiBlockRecordProfile struct {
