@@ -117,7 +117,7 @@ func (wh *Warehouse) CreateFileFromPath(file string) (hash []byte, status int, e
 // ReadFile reads a file from the warehouse and outputs it to the writer
 // Offset is the position in the file to start reading. Limit (0 = not used) defines how many bytes to read starting at the offset.
 func (wh *Warehouse) ReadFile(hash []byte, offset, limit int64, writer io.Writer) (status int, err error) {
-	hashA, err := validateHash(hash)
+	hashA, err := ValidateHash(hash)
 	if err != nil {
 		return StatusInvalidHash, err
 	}
@@ -174,7 +174,7 @@ retryOpenFile:
 
 // DeleteFile deletes a file from the warehouse
 func (wh *Warehouse) DeleteFile(hash []byte) (status int, err error) {
-	hashA, err := validateHash(hash)
+	hashA, err := ValidateHash(hash)
 	if err != nil {
 		return StatusInvalidHash, err
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/PeernetOfficial/core"
 	"github.com/PeernetOfficial/core/blockchain"
+	"github.com/PeernetOfficial/core/warehouse"
 	"github.com/google/uuid"
 )
 
@@ -120,9 +121,14 @@ type apiBlockAddFiles struct {
 
 /*
 apiBlockchainSelfAddFile adds a file with the provided information to the blockchain.
+Each file must be already stored in the Warehouse (virtual folders are exempt).
+If any file is not stored in the Warehouse, the function aborts with the status code StatusNotInWarehouse.
+If the block record encoding fails for any file, this function aborts with the status code StatusCorruptBlockRecord.
+In case the function aborts, the blockchain remains unchanged.
 
 Request:    POST /blockchain/self/add/file with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
+			400 if invalid input
 */
 func apiBlockchainSelfAddFile(w http.ResponseWriter, r *http.Request) {
 	var input apiBlockAddFiles
@@ -135,6 +141,17 @@ func apiBlockchainSelfAddFile(w http.ResponseWriter, r *http.Request) {
 	for _, file := range input.Files {
 		if file.ID == uuid.Nil { // if the ID is not provided by the caller, set it
 			file.ID = uuid.New()
+		}
+
+		// Verify that the file exists in the warehouse. Folders are exempt from this check as they are only virtual.
+		if !file.IsVirtualFolder() {
+			if hashA, err := warehouse.ValidateHash(file.Hash); err != nil {
+				http.Error(w, "", http.StatusBadRequest)
+				return
+			} else if _, _, valid := core.UserWarehouse.FileExists(hashA); !valid {
+				EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.BlockchainStatusNotInWarehouse})
+				return
+			}
 		}
 
 		filesAdd = append(filesAdd, blockRecordFileFromAPI(file))
@@ -208,4 +225,9 @@ func (info *apiFileMetadata) GetNumber() uint64 {
 	}
 
 	return info.Number
+}
+
+// IsVirtualFolder returns true if the file is a virtual folder
+func (file *apiFile) IsVirtualFolder() bool {
+	return file.Type == core.TypeFolder && file.Format == core.FormatFolder
 }

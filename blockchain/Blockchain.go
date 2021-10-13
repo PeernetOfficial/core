@@ -3,7 +3,7 @@ File Name:  Blockchain.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
-All blocks and the blockchain header are stored in a key/value database.
+All blocks and the blockchain header are stored in a key-value database.
 The key for the blockchain header is keyHeader and for each block is the block number as 64-bit unsigned integer little endian.
 
 Encoding of the blockchain header:
@@ -81,7 +81,7 @@ func Init(privateKey *btcec.PrivateKey, path string) (blockchain *Blockchain, er
 	return blockchain, nil
 }
 
-// the key names in the key/value database are constant and must not collide with block numbers (i.e. they must be >64 bit)
+// the key names in the key-value database are constant and must not collide with block numbers (i.e. they must be >64 bit)
 const keyHeader = "header blockchain"
 
 // headerRead reads the header from the blockchain and decodes it.
@@ -141,6 +141,7 @@ const (
 	BlockchainStatusCorruptBlock       = 2 // Error block encoding
 	BlockchainStatusCorruptBlockRecord = 3 // Error block record encoding
 	BlockchainStatusDataNotFound       = 4 // Requested data not available in the blockchain
+	BlockchainStatusNotInWarehouse     = 5 // File to be added to blockchain does not exist in the Warehouse
 )
 
 // blockNumberToKey returns the database key for the given block number

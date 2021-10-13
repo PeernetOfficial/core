@@ -70,7 +70,7 @@ func (wh *Warehouse) FileExists(hash string) (path string, fileInfo os.FileInfo,
 
 // ---- hash functions ----
 
-func validateHash(hash []byte) (hashA string, err error) {
+func ValidateHash(hash []byte) (hashA string, err error) {
 	if len(hash) != hashSize {
 		return "", os.ErrInvalid
 	}

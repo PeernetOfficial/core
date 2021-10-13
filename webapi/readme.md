@@ -115,6 +115,7 @@ const (
     BlockchainStatusCorruptBlock       = 2 // Error block encoding
     BlockchainStatusCorruptBlockRecord = 3 // Error block record encoding
     BlockchainStatusDataNotFound       = 4 // Requested data not available in the blockchain
+	BlockchainStatusNotInWarehouse     = 5 // File to be added to blockchain does not exist in the Warehouse
 )
 ```
 
@@ -235,6 +236,10 @@ This adds a file with the provided information to the blockchain. The date field
 
 Any file added is publicly accessible. The user should be informed about this fact in advance. The user is responsible and liable for any files shared.
 
+Each file must be already stored in the Warehouse (virtual folders are exempt). If any file is not stored in the Warehouse, the function aborts with the status code StatusNotInWarehouse. Files can be added to the Warehouse via `/warehouse/create` and `/warehouse/create/path`.
+
+If the block record encoding fails for any file, this function aborts with the status code StatusCorruptBlockRecord. In case the function aborts, the blockchain remains unchanged.
+
 ```
 Request:    POST /blockchain/self/add/file with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
@@ -294,6 +299,8 @@ This lists all files stored on the blockchain.
 Request:    GET /blockchain/self/list/file
 Response:   200 with JSON structure apiBlockAddFiles
 ```
+
+Example request: `http://127.0.0.1:112/blockchain/self/list/file`
 
 Example response:
 
@@ -867,7 +874,7 @@ Example response:
 The Warehouse stores the actual files that are shared by the user. The blockchain only stores the metadata information. The Warehouse and the blockchain must be kept in sync.
 
 * Files are identified (and adressed) by their hash.
-* Before using `/blockchain/self/add/file`, you must store the file in the Warehouse using `/warehouse/create` or `/warehouse/create/path`. The blockchain function verifies if the file exists in the Warehouse and fails if it does not.
+* Before using `/blockchain/self/add/file`, you must store the file in the Warehouse using `/warehouse/create` or `/warehouse/create/path`. The blockchain add file function verifies if the file exists in the Warehouse and fails if it does not.
 * When deleting a file from the blockchain via `/blockchain/self/delete/file`, it will automatically delete the file from the warehouse if there are no other files on the blockchain referencing it.
 * Because files are addressed using their hash, they are automatically deduplicated. If the user shares the exact same file data under different file names, it is only stored once.
 
