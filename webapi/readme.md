@@ -30,12 +30,12 @@ These are the functions provided by the API:
 /status                         Provides current connectivity status to the network
 /peer/self                      Provides information about the self peer details
 
-/blockchain/self/header         Header of the blockchain
-/blockchain/self/append         Append a block to the blockchain
-/blockchain/self/read           Read a block of the blockchain
-/blockchain/self/add/file       Add file to the blockchain
-/blockchain/self/list/file      List all files stored on the blockchain
-/blockchain/self/delete/file    Delete files from the blockchain
+/blockchain/header              Header of the blockchain
+/blockchain/append              Append a block to the blockchain
+/blockchain/read                Read a block of the blockchain
+/blockchain/file/add            Add file to the blockchain
+/blockchain/file/list           List all files stored on the blockchain
+/blockchain/file/delete         Delete files from the blockchain
 /blockchain/file/update         Updates files on the blockchain
 
 /profile/list                   List all profile fields
@@ -118,12 +118,12 @@ Common status codes returned by various endpoints in the `blockchain` package:
 | 4    | StatusDataNotFound    | Requested data not available in the blockchain.  |
 | 5    | StatusNotInWarehouse    | File to be added to blockchain does not exist in the Warehouse.  |
 
-### Blockchain Self Header
+### Blockchain Header
 
 This function returns information about the current peer. It is not required that a peer has a blockchain. If no data is shared, there are no blocks. The blockchain does not formally have a header as each block has the same structure.
 
 ```
-Request:    GET /blockchain/self/header
+Request:    GET /blockchain/header
 Response:   200 with JSON structure apiBlockchainHeader
 ```
 
@@ -141,7 +141,7 @@ This appends a block to the blockchain. This is a low-level function for already
 Do not use this function. Adding invalid data to the blockchain may corrupt it which subsequently might result in blacklisting by other peers.
 
 ```
-Request:    POST /blockchain/self/append with JSON structure apiBlockchainBlockRaw
+Request:    POST /blockchain/append with JSON structure apiBlockchainBlockRaw
 Response:   200 with JSON structure apiBlockchainBlockStatus
 ```
 
@@ -167,7 +167,7 @@ type apiBlockchainBlockStatus struct {
 This reads a block of the current peer.
 
 ```
-Request:    GET /blockchain/self/read?block=[number]
+Request:    GET /blockchain/read?block=[number]
 Response:   200 with JSON structure apiBlockchainBlock
 ```
 
@@ -242,7 +242,7 @@ If the block record encoding fails for any file, this function aborts with the s
 Do not add the same file with the same ID multiple times. Doing so will create double entries. This function does not check if the file is already stored on the blockchain. Storing multiple files with the same file hash, but different IDs, is perfectly fine.
 
 ```
-Request:    POST /blockchain/self/add/file with JSON structure apiBlockAddFiles
+Request:    POST /blockchain/file/add with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
 ```
 
@@ -253,7 +253,7 @@ type apiBlockAddFiles struct {
 }
 ```
 
-Example POST request to `http://127.0.0.1:112/blockchain/self/add/file`:
+Example POST request to `http://127.0.0.1:112/blockchain/file/add`:
 
 ```json
 {
@@ -297,11 +297,11 @@ Another payload example to create a new file but with a new arbitrary tag with t
 This lists all files stored on the blockchain.
 
 ```
-Request:    GET /blockchain/self/list/file
+Request:    GET /blockchain/file/list
 Response:   200 with JSON structure apiBlockAddFiles
 ```
 
-Example request: `http://127.0.0.1:112/blockchain/self/list/file`
+Example request: `http://127.0.0.1:112/blockchain/file/list`
 
 Example response:
 
@@ -349,11 +349,11 @@ This deletes files from the blockchain with the provided IDs. The blockchain wil
 It will automatically delete the file in the Warehouse if there are no other references.
 
 ```
-Request:    POST /blockchain/self/delete/file with JSON structure apiBlockAddFiles
+Request:    POST /blockchain/file/delete with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
 ```
 
-Example POST request to `http://127.0.0.1:112/blockchain/self/delete/file`:
+Example POST request to `http://127.0.0.1:112/blockchain/file/delete`:
 
 ```json
 {
@@ -889,8 +889,8 @@ Example response:
 The Warehouse stores the actual files that are shared by the user. The blockchain only stores the metadata information. The Warehouse and the blockchain must be kept in sync.
 
 * Files are identified (and adressed) by their hash.
-* Before using `/blockchain/self/add/file`, you must store the file in the Warehouse using `/warehouse/create` or `/warehouse/create/path`. The blockchain add file function verifies if the file exists in the Warehouse and fails if it does not.
-* When deleting a file from the blockchain via `/blockchain/self/delete/file`, it will automatically delete the file from the warehouse if there are no other files on the blockchain referencing it.
+* Before using `/blockchain/file/add`, you must store the file in the Warehouse using `/warehouse/create` or `/warehouse/create/path`. The blockchain add file function verifies if the file exists in the Warehouse and fails if it does not.
+* When deleting a file from the blockchain via `/blockchain/file/delete`, it will automatically delete the file from the warehouse if there are no other files on the blockchain referencing it.
 * Because files are addressed using their hash, they are automatically deduplicated. If the user shares the exact same file data under different file names, it is only stored once.
 
 Note: The Warehouse does NOT store files downloaded from other users. It strictly only stores files that the user choses to publish.
@@ -982,7 +982,7 @@ Example request: `http://127.0.0.1:112/warehouse/read?hash=dbf344f23e78202613298
 
 ### Delete File
 
-This deletes a file in the warehouse. This is normally not needed, since `/blockchain/self/delete/file` will automatically delete files in the Warehouse if there are no active references.
+This deletes a file in the warehouse. This is normally not needed, since `/blockchain/file/delete` will automatically delete files in the Warehouse if there are no active references.
 
 Warning: Deleting files from the warehouse but not the blockchain creates orphans. Peers might blacklist other peers who advertise files via their blockchain, but fail to provide them for transfer.
 

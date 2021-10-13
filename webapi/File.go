@@ -120,17 +120,17 @@ type apiBlockAddFiles struct {
 }
 
 /*
-apiBlockchainSelfAddFile adds a file with the provided information to the blockchain.
+apiBlockchainFileAdd adds a file with the provided information to the blockchain.
 Each file must be already stored in the Warehouse (virtual folders are exempt).
 If any file is not stored in the Warehouse, the function aborts with the status code StatusNotInWarehouse.
 If the block record encoding fails for any file, this function aborts with the status code StatusCorruptBlockRecord.
 In case the function aborts, the blockchain remains unchanged.
 
-Request:    POST /blockchain/self/add/file with JSON structure apiBlockAddFiles
+Request:    POST /blockchain/file/add with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
 			400 if invalid input
 */
-func apiBlockchainSelfAddFile(w http.ResponseWriter, r *http.Request) {
+func apiBlockchainFileAdd(w http.ResponseWriter, r *http.Request) {
 	var input apiBlockAddFiles
 	if err := DecodeJSON(w, r, &input); err != nil {
 		return
@@ -163,12 +163,12 @@ func apiBlockchainSelfAddFile(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
-apiBlockchainSelfListFile lists all files stored on the blockchain.
+apiBlockchainFileList lists all files stored on the blockchain.
 
-Request:    GET /blockchain/self/list/file
+Request:    GET /blockchain/file/list
 Response:   200 with JSON structure apiBlockAddFiles
 */
-func apiBlockchainSelfListFile(w http.ResponseWriter, r *http.Request) {
+func apiBlockchainFileList(w http.ResponseWriter, r *http.Request) {
 	files, status := core.UserBlockchain.ListFiles()
 
 	var result apiBlockAddFiles
@@ -183,13 +183,13 @@ func apiBlockchainSelfListFile(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
-apiBlockchainSelfDeleteFile deletes files with the provided IDs. Other fields are ignored.
+apiBlockchainFileDelete deletes files with the provided IDs. Other fields are ignored.
 It will automatically delete the file in the Warehouse if there are no other references.
 
-Request:    POST /blockchain/self/delete/file with JSON structure apiBlockAddFiles
+Request:    POST /blockchain/file/delete with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
 */
-func apiBlockchainSelfDeleteFile(w http.ResponseWriter, r *http.Request) {
+func apiBlockchainFileDelete(w http.ResponseWriter, r *http.Request) {
 	var input apiBlockAddFiles
 	if err := DecodeJSON(w, r, &input); err != nil {
 		return

@@ -22,12 +22,12 @@ type apiBlockchainHeader struct {
 }
 
 /*
-apiBlockchainSelfHeader returns the current blockchain header information
+apiBlockchainHeaderFunc returns the current blockchain header information
 
-Request:    GET /blockchain/self/header
+Request:    GET /blockchain/header
 Result:     200 with JSON structure apiResponsePeerSelf
 */
-func apiBlockchainSelfHeader(w http.ResponseWriter, r *http.Request) {
+func apiBlockchainHeaderFunc(w http.ResponseWriter, r *http.Request) {
 	publicKey, height, version := core.UserBlockchain.Header()
 
 	EncodeJSON(w, r, apiBlockchainHeader{Version: version, Height: height, PeerID: hex.EncodeToString(publicKey.SerializeCompressed())})
@@ -50,13 +50,13 @@ type apiBlockchainBlockStatus struct {
 }
 
 /*
-apiBlockchainSelfAppend appends a block to the blockchain. This is a low-level function for already encoded blocks.
+apiBlockchainAppend appends a block to the blockchain. This is a low-level function for already encoded blocks.
 Do not use this function. Adding invalid data to the blockchain may corrupt it which might result in blacklisting by other peers.
 
-Request:    POST /blockchain/self/append with JSON structure apiBlockchainBlockRaw
+Request:    POST /blockchain/append with JSON structure apiBlockchainBlockRaw
 Response:   200 with JSON structure apiBlockchainBlockStatus
 */
-func apiBlockchainSelfAppend(w http.ResponseWriter, r *http.Request) {
+func apiBlockchainAppend(w http.ResponseWriter, r *http.Request) {
 	var input apiBlockchainBlockRaw
 	if err := DecodeJSON(w, r, &input); err != nil {
 		return
@@ -84,12 +84,12 @@ type apiBlockchainBlock struct {
 }
 
 /*
-apiBlockchainSelfRead reads a block and returns the decoded information.
+apiBlockchainRead reads a block and returns the decoded information.
 
-Request:    GET /blockchain/self/read?block=[number]
+Request:    GET /blockchain/read?block=[number]
 Result:     200 with JSON structure apiBlockchainBlock
 */
-func apiBlockchainSelfRead(w http.ResponseWriter, r *http.Request) {
+func apiBlockchainRead(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	blockN, err := strconv.Atoi(r.Form.Get("block"))
 	if err != nil || blockN < 0 {
