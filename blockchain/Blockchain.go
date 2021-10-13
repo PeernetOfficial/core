@@ -18,14 +18,12 @@ Offset  Size   Info
 package blockchain
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"sync"
 
 	"github.com/PeernetOfficial/core/store"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/google/uuid"
 )
 
 // Blockchain stores the blockchain's header in memory. Any changes must be synced to disk!
@@ -333,164 +331,4 @@ func (blockchain *Blockchain) Read(number uint64) (decoded *BlockDecoded, status
 	}
 
 	return decoded, BlockchainStatusOK, nil
-}
-
-// AddFiles adds files to the blockchain. Status is BlockchainStatusX.
-// It makes sense to group all files in the same directory into one call, since only one directory record will be created per unique directory per block.
-func (blockchain *Blockchain) AddFiles(files []BlockRecordFile) (newHeight, newVersion uint64, status int) {
-	encoded, err := encodeBlockRecordFiles(files)
-	if err != nil {
-		return 0, 0, BlockchainStatusCorruptBlockRecord
-	}
-
-	return blockchain.Append(encoded)
-}
-
-// ListFiles returns a list of all files. Status is BlockchainStatusX.
-// If there is a corruption in the blockchain it will stop reading but return the files parsed so far.
-func (blockchain *Blockchain) ListFiles() (files []BlockRecordFile, status int) {
-	status = blockchain.Iterate(func(block *Block) (statusI int) {
-		filesMore, err := decodeBlockRecordFiles(block.RecordsRaw, block.NodeID)
-		if err != nil {
-			return BlockchainStatusCorruptBlockRecord
-		}
-		files = append(files, filesMore...)
-
-		return BlockchainStatusOK
-	})
-
-	return files, status
-}
-
-// FileExists checks if the file (identified via its hash) exists.
-// If there is a corruption in the blockchain it will stop reading but return the files found so far.
-func (blockchain *Blockchain) FileExists(hash []byte) (files []BlockRecordFile, status int) {
-	status = blockchain.Iterate(func(block *Block) (statusI int) {
-		filesD, err := decodeBlockRecordFiles(block.RecordsRaw, block.NodeID)
-		if err != nil {
-			return BlockchainStatusCorruptBlockRecord
-		}
-		for _, file := range filesD {
-			if bytes.Equal(file.Hash, hash) {
-				files = append(files, file)
-			}
-		}
-
-		return BlockchainStatusOK
-	})
-
-	return files, status
-}
-
-// ProfileReadField reads the specified profile field. See ProfileX for the list of recognized fields. The encoding depends on the field type. Status is BlockchainStatusX.
-func (blockchain *Blockchain) ProfileReadField(index uint16) (data []byte, status int) {
-	found := false
-
-	status = blockchain.Iterate(func(block *Block) (statusI int) {
-		fields, err := decodeBlockRecordProfile(block.RecordsRaw)
-		if err != nil {
-			return BlockchainStatusCorruptBlockRecord
-		} else if len(fields) == 0 {
-			return BlockchainStatusOK
-		}
-
-		// Check if the field is available in the profile record. If there are multiple records, only return the latest one.
-		for n := range fields {
-			if fields[n].Type == index {
-				data = fields[n].Data
-				found = true
-			}
-		}
-
-		return BlockchainStatusOK
-	})
-
-	if status != BlockchainStatusOK {
-		return nil, status
-	} else if !found {
-		return nil, BlockchainStatusDataNotFound
-	}
-
-	return data, BlockchainStatusOK
-}
-
-// ProfileList lists all profile fields. Status is BlockchainStatusX.
-func (blockchain *Blockchain) ProfileList() (fields []BlockRecordProfile, status int) {
-	uniqueFields := make(map[uint16][]byte)
-
-	status = blockchain.Iterate(func(block *Block) (statusI int) {
-		fields, err := decodeBlockRecordProfile(block.RecordsRaw)
-		if err != nil {
-			return BlockchainStatusCorruptBlockRecord
-		}
-
-		for n := range fields {
-			uniqueFields[fields[n].Type] = fields[n].Data
-		}
-
-		return BlockchainStatusOK
-	})
-
-	for key, value := range uniqueFields {
-		fields = append(fields, BlockRecordProfile{Type: key, Data: value})
-	}
-
-	return fields, status
-}
-
-// ProfileWrite writes profile fields and blobs to the blockchain. Status is BlockchainStatusX.
-func (blockchain *Blockchain) ProfileWrite(fields []BlockRecordProfile) (newHeight, newVersion uint64, status int) {
-	encoded, err := encodeBlockRecordProfile(fields)
-	if err != nil {
-		return 0, 0, BlockchainStatusCorruptBlockRecord
-	}
-
-	return blockchain.Append(encoded)
-}
-
-// ProfileDelete deletes fields and blobs from the blockchain. Status is BlockchainStatusX.
-func (blockchain *Blockchain) ProfileDelete(fields []uint16) (newHeight, newVersion uint64, status int) {
-	return blockchain.IterateDeleteRecord(func(record *BlockRecordRaw) (deleteAction int) {
-		if record.Type != RecordTypeProfile {
-			return 0 // no action
-		}
-
-		existingFields, err := decodeBlockRecordProfile([]BlockRecordRaw{*record})
-		if err != nil || len(existingFields) != 1 {
-			return 3 // error blockchain corrupt
-		}
-
-		for _, i := range fields {
-			if i == existingFields[0].Type { // found a file ID to delete?
-				return 1 // delete record
-			}
-		}
-
-		return 0 // no action on record
-	})
-}
-
-// DeleteFiles deletes files from the blockchain. Status is BlockchainStatusX.
-func (blockchain *Blockchain) DeleteFiles(IDs []uuid.UUID) (newHeight, newVersion uint64, deletedFiles []BlockRecordFile, status int) {
-	newHeight, newVersion, status = blockchain.IterateDeleteRecord(func(record *BlockRecordRaw) (deleteAction int) {
-		if record.Type != RecordTypeFile {
-			return 0 // no action on record
-		}
-
-		filesDecoded, err := decodeBlockRecordFiles([]BlockRecordRaw{*record}, nil)
-		if err != nil || len(filesDecoded) != 1 {
-			return 3 // error blockchain corrupt
-		}
-
-		for _, id := range IDs {
-			if id == filesDecoded[0].ID { // found a file ID to delete?
-				deletedFiles = append(deletedFiles, filesDecoded[0])
-				return 1 // delete record
-			}
-		}
-
-		return 0 // no action on record
-	})
-
-	return
 }
