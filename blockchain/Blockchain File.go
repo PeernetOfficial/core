@@ -2,6 +2,8 @@
 File Name:  Blockchain File.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
+
+Note that files include virtual folders as well for any operation.
 */
 
 package blockchain
@@ -82,4 +84,19 @@ func (blockchain *Blockchain) DeleteFiles(IDs []uuid.UUID) (newHeight, newVersio
 	})
 
 	return
+}
+
+// ReplaceFiles is a convenience wrapper to replace files in the blockchain identified via their IDs. Status is BlockchainStatusX.
+// If a file does not exist on the blockchain, it acts as add.
+func (blockchain *Blockchain) ReplaceFiles(files []BlockRecordFile) (newHeight, newVersion uint64, status int) {
+	var deleteIDs []uuid.UUID
+	for n := range files {
+		deleteIDs = append(deleteIDs, files[n].ID)
+	}
+
+	if newHeight, newVersion, _, status = blockchain.DeleteFiles(deleteIDs); status != BlockchainStatusOK {
+		return
+	}
+
+	return blockchain.AddFiles(files)
 }

@@ -36,6 +36,7 @@ These are the functions provided by the API:
 /blockchain/self/add/file       Add file to the blockchain
 /blockchain/self/list/file      List all files stored on the blockchain
 /blockchain/self/delete/file    Delete files from the blockchain
+/blockchain/file/update         Updates files on the blockchain
 
 /profile/list                   List all profile fields
 /profile/read                   Read a profile field
@@ -240,6 +241,8 @@ Each file must be already stored in the Warehouse (virtual folders are exempt). 
 
 If the block record encoding fails for any file, this function aborts with the status code StatusCorruptBlockRecord. In case the function aborts, the blockchain remains unchanged.
 
+Do not add the same file with the same ID multiple times. Doing so will create double entries. This function does not check if the file is already stored on the blockchain. Storing multiple files with the same file hash, but different IDs, is perfectly fine.
+
 ```
 Request:    POST /blockchain/self/add/file with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
@@ -370,6 +373,18 @@ Example response indicating success:
     "height": 7,
     "version": 1
 }
+```
+
+### Update File
+
+This updates files that are already published on the blockchain. This is useful for example when changing a file name or description.
+Just like with the add file function, the file must be already stored in the Warehouse, otherwise this function fails.
+
+Note as this replaces the previous file record on the blockchain, all details (including special metadata fields) must be included.
+
+```
+Request:    POST /blockchain/file/update with JSON structure apiBlockAddFiles
+Response:   200 with JSON structure apiBlockchainBlockStatus
 ```
 
 ## Profile Functions

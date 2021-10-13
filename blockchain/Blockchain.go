@@ -226,6 +226,7 @@ func (blockchain *Blockchain) IterateDeleteRecord(callback func(record *BlockRec
 		}
 
 		// If refactor, re-calculate the block. All later blocks need to be re-encoded due to change of previous block hash. The version number needs to change.
+		// Note: Deleting records may leave referenced records orphaned, such as RecordTypeTagData for deleted file records.
 		if refactorBlock {
 			if len(newRecordsRaw) > 0 {
 				blockchainNew = append(blockchainNew, Block{OwnerPublicKey: blockchain.publicKey, RecordsRaw: newRecordsRaw, BlockchainVersion: refactorVersion, Number: uint64(len(blockchainNew))})
@@ -279,6 +280,10 @@ func (blockchain *Blockchain) Header() (publicKey *btcec.PublicKey, height uint6
 func (blockchain *Blockchain) Append(RecordsRaw []BlockRecordRaw) (newHeight, newVersion uint64, status int) {
 	blockchain.Lock()
 	defer blockchain.Unlock()
+
+	if len(RecordsRaw) == 0 {
+		return blockchain.height, blockchain.version, BlockchainStatusOK
+	}
 
 	block := &Block{OwnerPublicKey: blockchain.publicKey, RecordsRaw: RecordsRaw}
 

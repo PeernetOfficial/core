@@ -215,6 +215,41 @@ func apiBlockchainSelfDeleteFile(w http.ResponseWriter, r *http.Request) {
 	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
+/*
+apiBlockchainSelfUpdateFile updates files that are already published on the blockchain.
+
+Request:    POST /blockchain/file/update with JSON structure apiBlockAddFiles
+Response:   200 with JSON structure apiBlockchainBlockStatus
+			400 if invalid input
+*/
+func apiBlockchainFileUpdate(w http.ResponseWriter, r *http.Request) {
+	var input apiBlockAddFiles
+	if err := DecodeJSON(w, r, &input); err != nil {
+		return
+	}
+
+	var filesAdd []blockchain.BlockRecordFile
+
+	for _, file := range input.Files {
+		// Verify that the file exists in the warehouse. Folders are exempt from this check as they are only virtual.
+		if !file.IsVirtualFolder() {
+			if hashA, err := warehouse.ValidateHash(file.Hash); err != nil {
+				http.Error(w, "", http.StatusBadRequest)
+				return
+			} else if _, _, valid := core.UserWarehouse.FileExists(hashA); !valid {
+				EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.BlockchainStatusNotInWarehouse})
+				return
+			}
+		}
+
+		filesAdd = append(filesAdd, blockRecordFileFromAPI(file))
+	}
+
+	newHeight, newVersion, status := core.UserBlockchain.ReplaceFiles(filesAdd)
+
+	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
+}
+
 // ---- metadata functions ----
 
 // GetMetadata returns the specified metadata or nil if not available.
