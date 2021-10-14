@@ -1,5 +1,5 @@
 /*
-File Name:  Block Encoding.go
+File Name:  Block.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
@@ -11,13 +11,6 @@ Offset  Size   Info
 105     4      Block number
 109     4      Size of entire block including this header
 113     2      Count of records that follow
-
-Each record inside the block has this basic structure:
-Offset  Size   Info
-0       1      Record type
-1       8      Date created. This remains the same in case of block refactoring.
-9       4      Size of data
-13      ?      Data (encoding depends on record type)
 
 */
 

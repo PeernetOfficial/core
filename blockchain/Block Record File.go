@@ -1,9 +1,7 @@
 /*
-File Name:  Block Encoding.go
+File Name:  Block Record File.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
-
-This files defines the encoding of blocks and records within.
 
 File records:
 Offset  Size    Info
@@ -24,11 +22,6 @@ Offset  Size    Info
 Tag data record contains only raw data and may be referenced by Tags in File records.
 This is a basic embedded way of compression when tags are repetitive in multiple files within the same block.
 
-Profile records:
-Offset  Size    Info
-0       2       Type
-2       ?       Data according to the type
-
 */
 
 package blockchain
@@ -39,19 +32,6 @@ import (
 	"math"
 
 	"github.com/google/uuid"
-)
-
-// ---- Block record structures (decoded) ----
-
-// RecordTypeX defines the type of the record
-const (
-	RecordTypeProfile       = 0 // Profile data about the end user.
-	RecordTypeTagData       = 1 // Tag data record to be referenced by one or multiple tags. Only valid in the context of the current block.
-	RecordTypeFile          = 2 // File
-	RecordTypeInvalid1      = 3 // Do not use.
-	RecordTypeCertificate   = 4 // Certificate to certify provided information in the blockchain issued by a trusted 3rd party.
-	RecordTypeContentRating = 5 // Content rating (positive).
-	RecordTypeContentReport = 6 // Content report (negative).
 )
 
 // BlockRecordFile is the metadata of a file published on the blockchain
@@ -73,8 +53,6 @@ type BlockRecordFileTag struct {
 	// If top bit of Type is set, then Data must be 2, 4, or 8 bytes representing the distance number (positive or negative) of raw record in the block that will be used as data.
 	// This is an embedded basic compression algorithm for repetitive tag. For example directory tags or album tags might be heavily repetitive among files.
 }
-
-// ---- low-level encoding ----
 
 // decodeBlockRecordFiles decodes only file records. Other records are ignored.
 func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw, nodeID []byte) (files []BlockRecordFile, err error) {
@@ -229,88 +207,4 @@ func intToBytes(number int) (buffer []byte) {
 
 	binary.LittleEndian.PutUint64(buffer[0:8], uint64(number))
 	return buffer[0:8]
-}
-
-// ---- high-level decoding ----
-
-// BlockDecoded contains the decoded records from a block
-type BlockDecoded struct {
-	Block
-	RecordsDecoded []interface{} // Decoded records. See BlockRecordX structures.
-}
-
-// decodeBlockRecords decodes all raw records in the block and returns a high-level decoded structure
-// Use decodeBlockRecordX instead for specific record decoding.
-func decodeBlockRecords(block *Block) (decoded *BlockDecoded, err error) {
-	decoded = &BlockDecoded{Block: *block}
-
-	files, err := decodeBlockRecordFiles(block.RecordsRaw, block.NodeID)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, file := range files {
-		decoded.RecordsDecoded = append(decoded.RecordsDecoded, file)
-	}
-
-	if profileFields, err := decodeBlockRecordProfile(block.RecordsRaw); err != nil {
-		return nil, err
-	} else if len(profileFields) > 0 {
-		decoded.RecordsDecoded = append(decoded.RecordsDecoded, profileFields)
-	}
-
-	return decoded, nil
-}
-
-// ---- Profile data ----
-
-// BlockRecordProfile provides information about the end user.
-type BlockRecordProfile struct {
-	Type uint16 // See ProfileX constants.
-	Data []byte // Data
-}
-
-// decodeBlockRecordProfile decodes only profile records. Other records are ignored.
-func decodeBlockRecordProfile(recordsRaw []BlockRecordRaw) (fields []BlockRecordProfile, err error) {
-	fieldMap := make(map[uint16][]byte)
-
-	for _, record := range recordsRaw {
-		if record.Type != RecordTypeProfile {
-			continue
-		}
-
-		if len(record.Data) < 2 {
-			return nil, errors.New("profile record invalid size")
-		}
-
-		fieldType := binary.LittleEndian.Uint16(record.Data[0:2])
-		fieldMap[fieldType] = record.Data[2:]
-	}
-
-	for fieldType, fieldData := range fieldMap {
-		fields = append(fields, BlockRecordProfile{Type: fieldType, Data: fieldData})
-	}
-
-	return fields, nil
-}
-
-// encodeBlockRecordProfile encodes the profile record.
-func encodeBlockRecordProfile(fields []BlockRecordProfile) (recordsRaw []BlockRecordRaw, err error) {
-	if len(fields) > math.MaxUint16 {
-		return nil, errors.New("exceeding max count of fields")
-	}
-
-	for n := range fields {
-		if len(fields[n].Data) > math.MaxUint32 {
-			return nil, errors.New("exceeding max field size")
-		}
-
-		data := make([]byte, 2)
-		binary.LittleEndian.PutUint16(data[0:2], fields[n].Type)
-		data = append(data, fields[n].Data...)
-
-		recordsRaw = append(recordsRaw, BlockRecordRaw{Type: RecordTypeProfile, Data: data})
-	}
-
-	return recordsRaw, nil
 }
