@@ -2,9 +2,13 @@
 
 There are 2 reference implementations which both are based on 'Taipei Torrent'. This UPnP code is a fork mostly from the btcd one with some changes forked from tendermint.
 * https://github.com/btcsuite/btcd/blob/master/upnp.go
-* https://github.com/tendermint/tendermint/tree/master/p2p/upnp
+* https://github.com/tendermint/tendermint/tree/master/internal/p2p/upnp
 
 This library supports only IPv4 UPnP currently. The IPv6 UPnP protocol is specified here: http://upnp.org/specs/arch/UPnP-arch-AnnexAIPv6-v1.pdf
+
+Other UPnP libaries to investigate:
+* https://github.com/huin/goupnp
+* https://gitlab.com/NebulousLabs/go-upnp (which is a wrapper around huins package)
 
 ## Special Cases
 
