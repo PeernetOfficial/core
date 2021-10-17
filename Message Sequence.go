@@ -25,13 +25,16 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 )
 
-// SequenceReplyTimeout is the round-trip timeout for message sequences.
-var SequenceReplyTimeout = 20
+// SequenceManager stores all message sequence numbers that are valid at the moment
+type SequenceManager struct {
+	ReplyTimeout int // The round-trip timeout for message sequences.
 
-// sequences stores all sequence numbers that are valid at the moment. The value represents the time the sequence number was used.
-// Key = Peer ID + Sequence Number
-var sequences map[string]*SequenceExpiry
-var sequencesMutex sync.Mutex
+	// sequences is the list of sequence numbers that are valid at the moment. The value represents the time the sequence number.
+	// Key = Peer ID + Sequence Number
+	sequences map[string]*SequenceExpiry
+
+	sync.Mutex // synchronized access to the sequences
+}
 
 // SequenceExpiry contains the decoded sequence information of a message.
 type SequenceExpiry struct {
@@ -42,65 +45,73 @@ type SequenceExpiry struct {
 	Data           interface{} // Optional high-level data associated with the sequence
 }
 
-func initMessageSequence() {
-	sequences = make(map[string]*SequenceExpiry)
+// NewSequenceManager creates a new sequence manager. The ReplyTimeout is in seconds. The expiration function is started immediately.
+func NewSequenceManager(ReplyTimeout int) (manager *SequenceManager) {
+	manager = &SequenceManager{
+		ReplyTimeout: ReplyTimeout,
+		sequences:    make(map[string]*SequenceExpiry),
+	}
 
-	// auto-delete worker to remove expired sequences
-	go func() {
-		for {
-			time.Sleep(time.Duration(SequenceReplyTimeout) * time.Second)
-			now := time.Now()
+	go manager.autoDeleteExpired()
 
-			sequencesMutex.Lock()
-			for key, sequence := range sequences {
-				if sequence.expires.Before(now) {
-					delete(sequences, key)
-				}
+	return
+}
+
+// autoDeleteExpired deletes all sequences that are expired.
+func (manager *SequenceManager) autoDeleteExpired() {
+	for {
+		time.Sleep(time.Duration(manager.ReplyTimeout) * time.Second)
+		now := time.Now()
+
+		manager.Lock()
+		for key, sequence := range manager.sequences {
+			if sequence.expires.Before(now) {
+				delete(manager.sequences, key)
 			}
-			sequencesMutex.Unlock()
 		}
-	}()
+		manager.Unlock()
+	}
 }
 
 // NewSequence returns a new sequence and registers it. messageSequence must point to the variable holding the continuous next sequence number.
 // Use only for Announcement and Ping messages.
-func NewSequence(publicKey *btcec.PublicKey, messageSequence *uint32, data interface{}) (info *SequenceExpiry) {
+func (manager *SequenceManager) NewSequence(publicKey *btcec.PublicKey, messageSequence *uint32, data interface{}) (info *SequenceExpiry) {
 	info = &SequenceExpiry{
 		SequenceNumber: atomic.AddUint32(messageSequence, 1),
 		created:        time.Now(),
-		expires:        time.Now().Add(time.Duration(SequenceReplyTimeout) * time.Second),
+		expires:        time.Now().Add(time.Duration(manager.ReplyTimeout) * time.Second),
 		Data:           data,
 	}
 
 	// Add the sequence to the list. Sequences are unique enough that collisions are unlikely and negligible.
 	key := string(publicKey.SerializeCompressed()) + strconv.FormatUint(uint64(info.SequenceNumber), 10)
-	sequencesMutex.Lock()
-	sequences[key] = info
-	sequencesMutex.Unlock()
+	manager.Lock()
+	manager.sequences[key] = info
+	manager.Unlock()
 
 	return
 }
 
 // ArbitrarySequence returns an arbitrary sequence to be used for uncontacted peers
-func ArbitrarySequence(publicKey *btcec.PublicKey, data interface{}) (info *SequenceExpiry) {
+func (manager *SequenceManager) ArbitrarySequence(publicKey *btcec.PublicKey, data interface{}) (info *SequenceExpiry) {
 	info = &SequenceExpiry{
 		SequenceNumber: rand.Uint32(),
 		created:        time.Now(),
-		expires:        time.Now().Add(time.Duration(SequenceReplyTimeout) * time.Second),
+		expires:        time.Now().Add(time.Duration(manager.ReplyTimeout) * time.Second),
 		Data:           data,
 	}
 
 	// Add the sequence to the list. Sequences are unique enough that collisions are unlikely and negligible.
 	key := string(publicKey.SerializeCompressed()) + strconv.FormatUint(uint64(info.SequenceNumber), 10)
-	sequencesMutex.Lock()
-	sequences[key] = info
-	sequencesMutex.Unlock()
+	manager.Lock()
+	manager.sequences[key] = info
+	manager.Unlock()
 
 	return
 }
 
 // ValidateSequence validates the sequence number of an incoming message. It will set raw.sequence if valid.
-func ValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time.Duration) {
+func (manager *SequenceManager) ValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time.Duration) {
 	// Only Response and Pong
 	if raw.Command != protocol.CommandResponse && raw.Command != protocol.CommandPong {
 		return true, rtt
@@ -108,11 +119,11 @@ func ValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time.Du
 
 	key := string(raw.SenderPublicKey.SerializeCompressed()) + strconv.FormatUint(uint64(raw.Sequence), 10)
 
-	sequencesMutex.Lock()
-	defer sequencesMutex.Unlock()
+	manager.Lock()
+	defer manager.Unlock()
 
 	// lookup the sequence
-	sequence, ok := sequences[key]
+	sequence, ok := manager.sequences[key]
 	if !ok {
 		return false, rtt
 	}
@@ -127,10 +138,10 @@ func ValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time.Du
 
 	// invalidate the sequence immediately?
 	if invalidate {
-		delete(sequences, key)
+		delete(manager.sequences, key)
 	} else if raw.Command == protocol.CommandResponse {
 		// Special case CommandResponse: Extend validity in case there are follow-up responses by half of the round-trip time since they will be sent one-way.
-		sequence.expires = time.Now().Add(time.Duration(SequenceReplyTimeout) * time.Second / 2)
+		sequence.expires = time.Now().Add(time.Duration(manager.ReplyTimeout) * time.Second / 2)
 	}
 
 	raw.SequenceInfo = sequence
@@ -139,7 +150,7 @@ func ValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time.Du
 }
 
 // InvalidateSequence invalidates the sequence number.
-func InvalidateSequence(raw *MessageRaw) {
+func (manager *SequenceManager) InvalidateSequence(raw *MessageRaw) {
 	// Only Response
 	if raw.Command != protocol.CommandResponse {
 		return
@@ -147,7 +158,7 @@ func InvalidateSequence(raw *MessageRaw) {
 
 	key := string(raw.SenderPublicKey.SerializeCompressed()) + strconv.FormatUint(uint64(raw.Sequence), 10)
 
-	sequencesMutex.Lock()
-	delete(sequences, key)
-	sequencesMutex.Unlock()
+	manager.Lock()
+	delete(manager.sequences, key)
+	manager.Unlock()
 }

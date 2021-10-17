@@ -195,7 +195,7 @@ func packetWorker(packets <-chan networkWire) {
 		case protocol.CommandResponse: // Response
 			if response, _ := msgDecodeResponse(raw); response != nil {
 				// Validate sequence number which prevents unsolicited responses.
-				if valid, rtt := ValidateSequence(raw, response.Actions&(1<<ActionSequenceLast) > 0); !valid {
+				if valid, rtt := networks.Sequences.ValidateSequence(raw, response.Actions&(1<<ActionSequenceLast) > 0); !valid {
 					//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 					continue
 				} else if rtt > 0 {
@@ -237,7 +237,7 @@ func packetWorker(packets <-chan networkWire) {
 
 		case protocol.CommandPong: // Ping
 			// Validate sequence number which prevents unsolicited responses.
-			if valid, rtt := ValidateSequence(raw, true); !valid {
+			if valid, rtt := networks.Sequences.ValidateSequence(raw, true); !valid {
 				//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 				continue
 			} else if rtt > 0 {

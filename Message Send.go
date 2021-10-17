@@ -15,7 +15,7 @@ import (
 
 // pingConnection sends a ping to the target peer via the specified connection
 func (peer *PeerInfo) pingConnection(connection *Connection) {
-	raw := &protocol.PacketRaw{Command: protocol.CommandPing, Sequence: NewSequence(peer.PublicKey, &peer.messageSequence, nil).SequenceNumber}
+	raw := &protocol.PacketRaw{Command: protocol.CommandPing, Sequence: networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, nil).SequenceNumber}
 	Filters.MessageOutPing(peer, raw, connection)
 
 	err := peer.sendConnection(raw, connection)
@@ -37,7 +37,7 @@ func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash
 	packets := EncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files, FeatureSupport(), blockchainHeight, blockchainVersion)
 
 	for _, packet := range packets {
-		raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packet, Sequence: NewSequence(peer.PublicKey, &peer.messageSequence, sequenceData).SequenceNumber}
+		raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packet, Sequence: networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, sequenceData).SequenceNumber}
 		Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, findSelf, findPeer, findValue, files)
 		peer.send(raw)
 	}
