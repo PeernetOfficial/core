@@ -139,7 +139,7 @@ func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result
 // cmdResponse handles the response to the announcement
 func (peer *PeerInfo) cmdResponse(msg *MessageResponse, connection *Connection) {
 	// The sequence data is used to correlate this response with the announcement.
-	if msg.sequence == nil || msg.sequence.data == nil {
+	if msg.SequenceInfo == nil || msg.SequenceInfo.Data == nil {
 		// If there is no sequence data but there were results returned, it means we received unsolicited response data. It will be rejected.
 		if len(msg.HashesNotFound) > 0 || len(msg.Hash2Peers) > 0 || len(msg.FilesEmbed) > 0 {
 			Filters.LogError("cmdResponse", "unsolicited response data received from %s\n", connection.Address.String())
@@ -149,7 +149,7 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse, connection *Connection) 
 	}
 
 	// bootstrap FIND_SELF?
-	if _, ok := msg.sequence.data.(*bootstrapFindSelf); ok {
+	if _, ok := msg.SequenceInfo.Data.(*bootstrapFindSelf); ok {
 		for _, hash2Peer := range msg.Hash2Peers {
 			// Make sure no garbage is returned. The key must be self and only Closest is expected.
 			if !bytes.Equal(hash2Peer.ID.Hash, nodeID) || len(hash2Peer.Closest) == 0 {
@@ -164,10 +164,10 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse, connection *Connection) 
 	}
 
 	// Response to an information request?
-	if _, ok := msg.sequence.data.(*dht.InformationRequest); ok {
+	if _, ok := msg.SequenceInfo.Data.(*dht.InformationRequest); ok {
 		// Future: Once multiple information requests are pooled (multiplexed) into one or multiple Announcement sequences (messages), the responses need to be de-pooled.
 		// A simple multiplex structure linked via the sequence containing a map (hash 2 IR) could simplify this.
-		info := msg.sequence.data.(*dht.InformationRequest)
+		info := msg.SequenceInfo.Data.(*dht.InformationRequest)
 
 		if len(msg.HashesNotFound) > 0 {
 			info.Done()

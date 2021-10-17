@@ -49,7 +49,7 @@ const (
 type MessageRaw struct {
 	protocol.PacketRaw
 	SenderPublicKey *btcec.PublicKey // Sender Public Key, ECDSA (secp256k1) 257-bit
-	sequence        *sequenceExpiry  // Sequence
+	SequenceInfo    *SequenceExpiry  // Sequence
 }
 
 // MessageAnnouncement is the decoded announcement message.

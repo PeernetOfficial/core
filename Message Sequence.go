@@ -27,19 +27,20 @@ import (
 
 // sequences stores all sequence numbers that are valid at the moment. The value represents the time the sequence number was used.
 // Key = Peer ID + Sequence Number
-var sequences map[string]*sequenceExpiry
+var sequences map[string]*SequenceExpiry
 var sequencesMutex sync.Mutex
 
-type sequenceExpiry struct {
+// SequenceExpiry contains the decoded sequence information of a message.
+type SequenceExpiry struct {
 	sequence uint32      // Sequence number
 	created  time.Time   // When the sequence was created.
 	expires  time.Time   // When the sequence expires. This can be extended on the fly!
 	counter  int         // How many replies used the sequence. Multiple Response messages may be returned for a single Announcement one.
-	data     interface{} // Optional high-level data associated with the sequence
+	Data     interface{} // Optional high-level data associated with the sequence
 }
 
 func initMessageSequence() {
-	sequences = make(map[string]*sequenceExpiry)
+	sequences = make(map[string]*SequenceExpiry)
 
 	// auto-delete worker to remove expired sequences
 	go func() {
@@ -60,12 +61,12 @@ func initMessageSequence() {
 
 // msgNewSequence returns a new sequence and registers it. messageSequence must point to the variable holding the continuous next sequence number.
 // Use only for Announcement and Ping messages.
-func msgNewSequence(publicKey *btcec.PublicKey, messageSequence *uint32, data interface{}) (info *sequenceExpiry) {
-	info = &sequenceExpiry{
+func msgNewSequence(publicKey *btcec.PublicKey, messageSequence *uint32, data interface{}) (info *SequenceExpiry) {
+	info = &SequenceExpiry{
 		sequence: atomic.AddUint32(messageSequence, 1),
 		created:  time.Now(),
 		expires:  time.Now().Add(time.Duration(ReplyTimeout) * time.Second),
-		data:     data,
+		Data:     data,
 	}
 
 	// Add the sequence to the list. Sequences are unique enough that collisions are unlikely and negligible.
@@ -78,12 +79,12 @@ func msgNewSequence(publicKey *btcec.PublicKey, messageSequence *uint32, data in
 }
 
 // msgArbitrarySequence returns an arbitrary sequence to be used for uncontacted peers
-func msgArbitrarySequence(publicKey *btcec.PublicKey, data interface{}) (info *sequenceExpiry) {
-	info = &sequenceExpiry{
+func msgArbitrarySequence(publicKey *btcec.PublicKey, data interface{}) (info *SequenceExpiry) {
+	info = &SequenceExpiry{
 		sequence: rand.Uint32(),
 		created:  time.Now(),
 		expires:  time.Now().Add(time.Duration(ReplyTimeout) * time.Second),
-		data:     data,
+		Data:     data,
 	}
 
 	// Add the sequence to the list. Sequences are unique enough that collisions are unlikely and negligible.
@@ -129,7 +130,7 @@ func msgValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time
 		sequence.expires = time.Now().Add(time.Duration(ReplyTimeout) * time.Second / 2)
 	}
 
-	raw.sequence = sequence
+	raw.SequenceInfo = sequence
 
 	return sequence.expires.After(time.Now()), rtt
 }
