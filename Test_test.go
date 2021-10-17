@@ -27,10 +27,10 @@ func TestMessageEncodingAnnouncement(t *testing.T) {
 	findPeer = append(findPeer, KeyHash{Hash: hash1})
 	findValue = append(findValue, KeyHash{Hash: hash2})
 
-	packets := msgEncodeAnnouncement(true, true, findPeer, findValue, files, 1<<FeatureIPv4Listen|1<<FeatureIPv6Listen, 0, 0)
+	packets := EncodeAnnouncement(true, true, findPeer, findValue, files, 1<<FeatureIPv4Listen|1<<FeatureIPv6Listen, 0, 0)
 
 	msg := &MessageRaw{PacketRaw: packetR, SenderPublicKey: publicKey}
-	msg.Payload = packets[0].raw
+	msg.Payload = packets[0]
 
 	result, err := msgDecodeAnnouncement(msg)
 	if err != nil {

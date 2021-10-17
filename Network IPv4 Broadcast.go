@@ -10,6 +10,7 @@ package core
 
 import (
 	"encoding/hex"
+	"errors"
 	"net"
 	"strconv"
 	"time"
@@ -91,12 +92,12 @@ func (network *Network) BroadcastIPv4Listen() {
 // BroadcastIPv4Send sends out a single broadcast messages to discover peers
 func (network *Network) BroadcastIPv4Send() (err error) {
 	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets := msgEncodeAnnouncement(true, true, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion)
-	if len(packets) == 0 || packets[0].err != nil {
-		return packets[0].err
+	packets := EncodeAnnouncement(true, true, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion)
+	if len(packets) == 0 {
+		return errors.New("error encoding broadcast announcement")
 	}
 
-	raw, err := protocol.PacketEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &protocol.PacketRaw{Protocol: ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: packets[0].raw})
+	raw, err := protocol.PacketEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &protocol.PacketRaw{Protocol: ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: packets[0]})
 	if err != nil {
 		return err
 	}

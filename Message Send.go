@@ -32,18 +32,16 @@ func (peer *PeerInfo) Chat(text string) {
 }
 
 // sendAnnouncement sends the announcement message. It acquires a new sequence for each message.
-func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore, sequenceData interface{}) (packets []*announcementPacket) {
+func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore, sequenceData interface{}) {
 	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets = msgEncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files, FeatureSupport(), blockchainHeight, blockchainVersion)
+	packets := EncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files, FeatureSupport(), blockchainHeight, blockchainVersion)
 
 	for _, packet := range packets {
-		packet.sequence = msgNewSequence(peer.PublicKey, &peer.messageSequence, sequenceData)
-		raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packet.raw, Sequence: packet.sequence.sequence}
+		sequence := msgNewSequence(peer.PublicKey, &peer.messageSequence, sequenceData)
+		raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packet, Sequence: sequence.sequence}
 		Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, findSelf, findPeer, findValue, files)
-		packet.err = peer.send(raw)
+		peer.send(raw)
 	}
-
-	return
 }
 
 // sendResponse sends the response message

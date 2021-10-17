@@ -478,24 +478,13 @@ func isPacketSizeExceed(currentSize int, testSize int) bool {
 	return currentSize+testSize > udpMaxPacketSize-protocol.PacketLengthMin
 }
 
-// announcementPacket contains information about a single announcement message
-type announcementPacket struct {
-	raw      []byte          // The raw packet
-	hashes   [][]byte        // List of hashes that are being searched for
-	sequence *sequenceExpiry // Sequence
-	err      error           // Sending error, if any
-}
-
-// msgEncodeAnnouncement encodes an announcement message. It may return multiple messages if the input does not fit into one.
+// EncodeAnnouncement encodes an announcement message. It may return multiple messages if the input does not fit into one.
 // findPeer is a list of node IDs (blake3 hash of peer ID compressed form)
 // findValue is a list of hashes
 // files is a list of files stored to inform about
-func msgEncodeAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore, features byte, blockchainHeight, blockchainVersion uint64) (packets []*announcementPacket) {
+func EncodeAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore, features byte, blockchainHeight, blockchainVersion uint64) (packetsRaw [][]byte) {
 createPacketLoop:
 	for {
-		packet := &announcementPacket{}
-		packets = append(packets, packet)
-
 		raw := make([]byte, 64*1024) // max UDP packet size
 		packetSize := announcementPayloadHeaderSize
 
@@ -521,15 +510,13 @@ createPacketLoop:
 		// FIND_SELF
 		if findSelf {
 			raw[2] |= 1 << ActionFindSelf
-
-			packet.hashes = append(packet.hashes, nodeID)
 		}
 
 		// FIND_PEER
 		if len(findPeer) > 0 {
 			// check if there is enough space for at least the header and 1 record
 			if isPacketSizeExceed(packetSize, 2+32) {
-				packet.raw = raw[:packetSize]
+				packetsRaw = append(packetsRaw, raw[:packetSize])
 				continue createPacketLoop
 			}
 
@@ -540,7 +527,7 @@ createPacketLoop:
 			for n, find := range findPeer {
 				// check if minimum length is available in packet
 				if isPacketSizeExceed(packetSize, 32) {
-					packet.raw = raw[:packetSize]
+					packetsRaw = append(packetsRaw, raw[:packetSize])
 					findPeer = findPeer[n:]
 					continue createPacketLoop
 				}
@@ -548,8 +535,6 @@ createPacketLoop:
 				binary.LittleEndian.PutUint16(raw[index:index+2], uint16(n+1))
 				copy(raw[index+2+32*n:index+2+32*n+32], find.Hash)
 				packetSize += 32
-
-				packet.hashes = append(packet.hashes, find.Hash)
 			}
 
 			findPeer = nil
@@ -559,7 +544,7 @@ createPacketLoop:
 		if len(findValue) > 0 {
 			// check if there is enough space for at least the header and 1 record
 			if isPacketSizeExceed(packetSize, 2+32) {
-				packet.raw = raw[:packetSize]
+				packetsRaw = append(packetsRaw, raw[:packetSize])
 				continue createPacketLoop
 			}
 
@@ -570,7 +555,7 @@ createPacketLoop:
 			for n, find := range findValue {
 				// check if minimum length is available in packet
 				if isPacketSizeExceed(packetSize, 32) {
-					packet.raw = raw[:packetSize]
+					packetsRaw = append(packetsRaw, raw[:packetSize])
 					findValue = findValue[n:]
 					continue createPacketLoop
 				}
@@ -578,8 +563,6 @@ createPacketLoop:
 				binary.LittleEndian.PutUint16(raw[index:index+2], uint16(n+1))
 				copy(raw[index+2+32*n:index+2+32*n+32], find.Hash)
 				packetSize += 32
-
-				packet.hashes = append(packet.hashes, find.Hash)
 			}
 
 			findValue = nil
@@ -589,7 +572,7 @@ createPacketLoop:
 		if len(files) > 0 {
 			// check if there is enough space for at least the header and 1 record
 			if isPacketSizeExceed(packetSize, 2+41) {
-				packet.raw = raw[:packetSize]
+				packetsRaw = append(packetsRaw, raw[:packetSize])
 				continue createPacketLoop
 			}
 
@@ -600,7 +583,7 @@ createPacketLoop:
 			for n, file := range files {
 				// check if minimum length is available in packet
 				if isPacketSizeExceed(packetSize, 41) {
-					packet.raw = raw[:packetSize]
+					packetsRaw = append(packetsRaw, raw[:packetSize])
 					files = files[n:]
 					continue createPacketLoop
 				}
@@ -617,7 +600,7 @@ createPacketLoop:
 			files = nil
 		}
 
-		packet.raw = raw[:packetSize]
+		packetsRaw = append(packetsRaw, raw[:packetSize])
 
 		if len(findPeer) == 0 && len(findValue) == 0 && len(files) == 0 {
 			return

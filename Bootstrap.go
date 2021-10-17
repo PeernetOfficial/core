@@ -208,11 +208,11 @@ func autoMulticastBroadcast() {
 func contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, receiverPortInternal uint16) (contacted bool) {
 	findSelf := ShouldSendFindSelf()
 	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets := msgEncodeAnnouncement(true, findSelf, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion)
-	if len(packets) == 0 || packets[0].err != nil {
+	packets := EncodeAnnouncement(true, findSelf, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion)
+	if len(packets) == 0 {
 		return false
 	}
-	raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packets[0].raw}
+	raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packets[0]}
 
 	Filters.MessageOutAnnouncement(publicKey, nil, raw, findSelf, nil, nil, nil)
 

@@ -18,6 +18,7 @@ package core
 
 import (
 	"encoding/hex"
+	"errors"
 	"net"
 	"strconv"
 	"time"
@@ -137,12 +138,12 @@ func (network *Network) MulticastIPv6Listen() {
 // MulticastIPv6Send sends out a single multicast messages to discover peers at the same site
 func (network *Network) MulticastIPv6Send() (err error) {
 	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets := msgEncodeAnnouncement(true, true, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion)
-	if len(packets) == 0 || packets[0].err != nil {
-		return packets[0].err
+	packets := EncodeAnnouncement(true, true, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion)
+	if len(packets) == 0 {
+		return errors.New("error encoding multicast announcement")
 	}
 
-	raw, err := protocol.PacketEncrypt(peerPrivateKey, ipv6MulticastPublicKey, &protocol.PacketRaw{Protocol: ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: packets[0].raw})
+	raw, err := protocol.PacketEncrypt(peerPrivateKey, ipv6MulticastPublicKey, &protocol.PacketRaw{Protocol: ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: packets[0]})
 	if err != nil {
 		return err
 	}
