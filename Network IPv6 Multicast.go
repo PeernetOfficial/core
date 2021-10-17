@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/reuseport"
 	"github.com/btcsuite/btcd/btcec"
 	"golang.org/x/net/ipv6"
@@ -123,7 +124,7 @@ func (network *Network) MulticastIPv6Listen() {
 
 		//fmt.Printf("MulticastIPv6Listen from %s at network %s\n", sender.String(), network.address.String())
 
-		if length < packetLengthMin {
+		if length < protocol.PacketLengthMin {
 			// Discard packets that do not meet the minimum length.
 			continue
 		}
@@ -140,7 +141,7 @@ func (network *Network) MulticastIPv6Send() (err error) {
 		return packets[0].err
 	}
 
-	raw, err := PacketEncrypt(peerPrivateKey, ipv6MulticastPublicKey, &PacketRaw{Protocol: ProtocolVersion, Command: CommandLocalDiscovery, Payload: packets[0].raw})
+	raw, err := protocol.PacketEncrypt(peerPrivateKey, ipv6MulticastPublicKey, &protocol.PacketRaw{Protocol: ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: packets[0].raw})
 	if err != nil {
 		return err
 	}

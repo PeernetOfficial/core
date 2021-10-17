@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/PeernetOfficial/core/dht"
+	"github.com/PeernetOfficial/core/protocol"
 )
 
 // respondClosesContactsCount is the number of closest contact to respond.
@@ -198,7 +199,7 @@ func (peer *PeerInfo) cmdPing(msg *MessageRaw) {
 		return
 	}
 
-	raw := &PacketRaw{Command: CommandPong, Sequence: msg.Sequence}
+	raw := &protocol.PacketRaw{Command: protocol.CommandPong, Sequence: msg.Sequence}
 
 	Filters.MessageOutPong(peer, raw)
 

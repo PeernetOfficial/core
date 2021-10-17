@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/reuseport"
 	"github.com/btcsuite/btcd/btcec"
 )
@@ -77,7 +78,7 @@ func (network *Network) BroadcastIPv4Listen() {
 
 		//fmt.Printf("BroadcastIPv4Listen from %s at network %s\n", sender.String(), network.address.String())
 
-		if length < packetLengthMin {
+		if length < protocol.PacketLengthMin {
 			// Discard packets that do not meet the minimum length.
 			continue
 		}
@@ -94,7 +95,7 @@ func (network *Network) BroadcastIPv4Send() (err error) {
 		return packets[0].err
 	}
 
-	raw, err := PacketEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &PacketRaw{Protocol: ProtocolVersion, Command: CommandLocalDiscovery, Payload: packets[0].raw})
+	raw, err := protocol.PacketEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &protocol.PacketRaw{Protocol: ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: packets[0].raw})
 	if err != nil {
 		return err
 	}

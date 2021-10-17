@@ -12,6 +12,7 @@ import (
 	"log"
 
 	"github.com/PeernetOfficial/core/dht"
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/btcsuite/btcd/btcec"
 )
 
@@ -37,30 +38,30 @@ var Filters struct {
 
 	// PacketIn is a low-level filter for incoming packets after they are decrypted.
 	// Traverse messages are not covered.
-	PacketIn func(packet *PacketRaw, senderPublicKey *btcec.PublicKey, connection *Connection)
+	PacketIn func(packet *protocol.PacketRaw, senderPublicKey *btcec.PublicKey, connection *Connection)
 
 	// PacketOut is a low-level filter for outgoing packets before they are encrypted.
 	// IPv4 broadcast, IPv6 multicast, and Traverse messages are not covered.
-	PacketOut func(packet *PacketRaw, receiverPublicKey *btcec.PublicKey, connection *Connection)
+	PacketOut func(packet *protocol.PacketRaw, receiverPublicKey *btcec.PublicKey, connection *Connection)
 
 	// MessageIn is a high-level filter for decoded incoming messages. message is of type nil, MessageAnnouncement, MessageResponse, or MessageTraverse
 	MessageIn func(peer *PeerInfo, raw *MessageRaw, message interface{})
 
 	// MessageOutAnnouncement is a high-level filter for outgoing announcements. Peer is nil on first contact.
 	// Broadcast and Multicast messages are not covered.
-	MessageOutAnnouncement func(receiverPublicKey *btcec.PublicKey, peer *PeerInfo, packet *PacketRaw, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore)
+	MessageOutAnnouncement func(receiverPublicKey *btcec.PublicKey, peer *PeerInfo, packet *protocol.PacketRaw, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore)
 
 	// MessageOutResponse is a high-level filter for outgoing responses.
-	MessageOutResponse func(peer *PeerInfo, packet *PacketRaw, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte)
+	MessageOutResponse func(peer *PeerInfo, packet *protocol.PacketRaw, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte)
 
 	// MessageOutTraverse is a high-level filter for outgoing traverse messages.
-	MessageOutTraverse func(peer *PeerInfo, packet *PacketRaw, embeddedPacket *PacketRaw, receiverEnd *btcec.PublicKey)
+	MessageOutTraverse func(peer *PeerInfo, packet *protocol.PacketRaw, embeddedPacket *protocol.PacketRaw, receiverEnd *btcec.PublicKey)
 
 	// MessageOutPing is a high-level filter for outgoing pings.
-	MessageOutPing func(peer *PeerInfo, packet *PacketRaw, connection *Connection)
+	MessageOutPing func(peer *PeerInfo, packet *protocol.PacketRaw, connection *Connection)
 
 	// MessageOutPong is a high-level filter for outgoing pongs.
-	MessageOutPong func(peer *PeerInfo, packet *PacketRaw)
+	MessageOutPong func(peer *PeerInfo, packet *protocol.PacketRaw)
 }
 
 func initFilters() {
@@ -83,30 +84,31 @@ func initFilters() {
 		Filters.IncomingRequest = func(peer *PeerInfo, Action int, Key []byte, Info interface{}) {}
 	}
 	if Filters.PacketIn == nil {
-		Filters.PacketIn = func(packet *PacketRaw, senderPublicKey *btcec.PublicKey, c *Connection) {}
+		Filters.PacketIn = func(packet *protocol.PacketRaw, senderPublicKey *btcec.PublicKey, c *Connection) {}
 	}
 	if Filters.PacketOut == nil {
-		Filters.PacketOut = func(packet *PacketRaw, receiverPublicKey *btcec.PublicKey, c *Connection) {}
+		Filters.PacketOut = func(packet *protocol.PacketRaw, receiverPublicKey *btcec.PublicKey, c *Connection) {}
 	}
 	if Filters.MessageIn == nil {
 		Filters.MessageIn = func(peer *PeerInfo, raw *MessageRaw, message interface{}) {}
 	}
 	if Filters.MessageOutAnnouncement == nil {
-		Filters.MessageOutAnnouncement = func(receiverPublicKey *btcec.PublicKey, peer *PeerInfo, packet *PacketRaw, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore) {
+		Filters.MessageOutAnnouncement = func(receiverPublicKey *btcec.PublicKey, peer *PeerInfo, packet *protocol.PacketRaw, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore) {
 		}
 	}
 	if Filters.MessageOutResponse == nil {
-		Filters.MessageOutResponse = func(peer *PeerInfo, packet *PacketRaw, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte) {
+		Filters.MessageOutResponse = func(peer *PeerInfo, packet *protocol.PacketRaw, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte) {
 		}
 	}
 	if Filters.MessageOutTraverse == nil {
-		Filters.MessageOutTraverse = func(peer *PeerInfo, packet *PacketRaw, embeddedPacket *PacketRaw, receiverEnd *btcec.PublicKey) {}
+		Filters.MessageOutTraverse = func(peer *PeerInfo, packet *protocol.PacketRaw, embeddedPacket *protocol.PacketRaw, receiverEnd *btcec.PublicKey) {
+		}
 	}
 	if Filters.MessageOutPing == nil {
-		Filters.MessageOutPing = func(peer *PeerInfo, packet *PacketRaw, connection *Connection) {}
+		Filters.MessageOutPing = func(peer *PeerInfo, packet *protocol.PacketRaw, connection *Connection) {}
 	}
 	if Filters.MessageOutPong == nil {
-		Filters.MessageOutPong = func(peer *PeerInfo, packet *PacketRaw) {}
+		Filters.MessageOutPong = func(peer *PeerInfo, packet *protocol.PacketRaw) {}
 	}
 }
 

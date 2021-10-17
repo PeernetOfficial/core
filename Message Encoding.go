@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/btcsuite/btcd/btcec"
 )
 
@@ -24,25 +25,6 @@ const ProtocolVersion = 0
 
 // UserAgent should be set by the caller
 var UserAgent = "Peernet Core/0.1"
-
-// Commands between peers
-const (
-	// Peer List Management
-	CommandAnnouncement   = 0 // Announcement
-	CommandResponse       = 1 // Response
-	CommandPing           = 2 // Keep-alive message (no payload).
-	CommandPong           = 3 // Response to ping (no payload).
-	CommandLocalDiscovery = 4 // Local discovery
-	CommandTraverse       = 5 // Help establish a connection between 2 remote peers
-
-	// Blockchain
-	CommandGet = 6 // Request blocks for specified peer.
-
-	// File Discovery
-
-	// Debug
-	CommandChat = 10 // Chat message [debug]
-)
 
 // Actions between peers, sent via Announcement message. They correspond to the bit array index.
 const (
@@ -65,7 +47,7 @@ const (
 
 // MessageRaw is a high-level message between peers that has not been decoded
 type MessageRaw struct {
-	PacketRaw
+	protocol.PacketRaw
 	SenderPublicKey *btcec.PublicKey // Sender Public Key, ECDSA (secp256k1) 257-bit
 	connection      *Connection      // Connection that received the packet
 	sequence        *sequenceExpiry  // Sequence
@@ -478,7 +460,7 @@ func decodeEmbeddedFile(data []byte, count int) (filesEmbed []EmbeddedFileData, 
 		index += sizeField
 
 		// validate the hash
-		if !bytes.Equal(hash, hashData(fileData)) {
+		if !bytes.Equal(hash, protocol.HashData(fileData)) {
 			return nil, read, false
 		}
 
@@ -494,7 +476,7 @@ const udpMaxPacketSize = 65507
 
 // isPacketSizeExceed checks if the max packet size would be exceeded with the payload
 func isPacketSizeExceed(currentSize int, testSize int) bool {
-	return currentSize+testSize > udpMaxPacketSize-packetLengthMin
+	return currentSize+testSize > udpMaxPacketSize-protocol.PacketLengthMin
 }
 
 func FeatureSupport() (feature byte) {
@@ -656,7 +638,7 @@ createPacketLoop:
 }
 
 // EmbeddedFileSizeMax is the maximum size of embedded files in response messages. Any file exceeding that must be shared via regular file transfer.
-const EmbeddedFileSizeMax = udpMaxPacketSize - packetLengthMin - announcementPayloadHeaderSize - 2 - 35
+const EmbeddedFileSizeMax = udpMaxPacketSize - protocol.PacketLengthMin - announcementPayloadHeaderSize - 2 - 35
 
 // msgEncodeResponse encodes a response message
 // hash2Peers will be modified.
@@ -826,19 +808,6 @@ func encodePeerRecord(raw []byte, peer *PeerRecord, reason uint8) {
 	binary.LittleEndian.PutUint16(raw[63:63+2], peer.IPv6PortReportedExternal)
 }
 
-// setSelfReportedPorts sets the fields Internal Port and External Port according to the connection details.
-// This is important for the remote peer to make smart decisions whether this peer is behind a NAT/firewall and supports port forwarding/UPnP.
-func (packet *PacketRaw) setSelfReportedPorts(n *Network) {
-	if packet.Command != CommandAnnouncement && packet.Command != CommandResponse { // only for Announcement and Response messages
-		return
-	}
-
-	portI, portE := n.SelfReportedPorts()
-
-	binary.LittleEndian.PutUint16(packet.Payload[15:17], portI)
-	binary.LittleEndian.PutUint16(packet.Payload[17:19], portE)
-}
-
 // ---- Traverse ----
 
 const traversePayloadHeaderSize = 76 + 65 + 28
@@ -882,7 +851,7 @@ func msgDecodeTraverse(msg *MessageRaw) (result *MessageTraverse, err error) {
 
 	signature := msg.Payload[76+sizePacketEmbed : 76+sizePacketEmbed+65]
 
-	result.SignerPublicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, hashData(msg.Payload[:76+sizePacketEmbed]))
+	result.SignerPublicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, protocol.HashData(msg.Payload[:76+sizePacketEmbed]))
 	if err != nil {
 		return nil, err
 	}
@@ -932,7 +901,7 @@ func msgEncodeTraverse(senderPrivateKey *btcec.PrivateKey, embeddedPacketRaw []b
 	copy(raw[76:76+sizePacketEmbed], embeddedPacketRaw)
 
 	// add signature
-	signature, err := btcec.SignCompact(btcec.S256(), senderPrivateKey, hashData(raw[:76+sizePacketEmbed]), true)
+	signature, err := btcec.SignCompact(btcec.S256(), senderPrivateKey, protocol.HashData(raw[:76+sizePacketEmbed]), true)
 	if err != nil {
 		return nil, err
 	}
@@ -978,7 +947,7 @@ func msgEncodeTraverseSetAddress(raw []byte, connectionIPv4, connectionIPv6 *Con
 
 // pingConnection sends a ping to the target peer via the specified connection
 func (peer *PeerInfo) pingConnection(connection *Connection) {
-	raw := &PacketRaw{Command: CommandPing, Sequence: peer.msgNewSequence(nil).sequence}
+	raw := &protocol.PacketRaw{Command: protocol.CommandPing, Sequence: peer.msgNewSequence(nil).sequence}
 	Filters.MessageOutPing(peer, raw, connection)
 
 	err := peer.sendConnection(raw, connection)
@@ -991,7 +960,7 @@ func (peer *PeerInfo) pingConnection(connection *Connection) {
 
 // Chat sends a text message
 func (peer *PeerInfo) Chat(text string) {
-	peer.send(&PacketRaw{Command: CommandChat, Payload: []byte(text)})
+	peer.send(&protocol.PacketRaw{Command: protocol.CommandChat, Payload: []byte(text)})
 }
 
 // sendAnnouncement sends the announcement message. It acquires a new sequence for each message.
@@ -1000,7 +969,7 @@ func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash
 
 	for _, packet := range packets {
 		packet.sequence = peer.msgNewSequence(sequenceData)
-		raw := &PacketRaw{Command: CommandAnnouncement, Payload: packet.raw, Sequence: packet.sequence.sequence}
+		raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packet.raw, Sequence: packet.sequence.sequence}
 		Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, findSelf, findPeer, findValue, files)
 		packet.err = peer.send(raw)
 	}
@@ -1013,7 +982,7 @@ func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []Ha
 	packets, err := msgEncodeResponse(sendUA, hash2Peers, filesEmbed, hashesNotFound)
 
 	for _, packet := range packets {
-		raw := &PacketRaw{Command: CommandResponse, Payload: packet, Sequence: sequence}
+		raw := &protocol.PacketRaw{Command: protocol.CommandResponse, Payload: packet, Sequence: sequence}
 		Filters.MessageOutResponse(peer, raw, hash2Peers, filesEmbed, hashesNotFound)
 		peer.send(raw)
 	}
@@ -1022,12 +991,12 @@ func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []Ha
 }
 
 // sendTraverse sends a traverse message
-func (peer *PeerInfo) sendTraverse(packet *PacketRaw, receiverEnd *btcec.PublicKey) (err error) {
+func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd *btcec.PublicKey) (err error) {
 	packet.Protocol = ProtocolVersion
 	// self-reported ports are not set, as this isn't sent via a specific network but a relay
-	//packet.setSelfReportedPorts(c.Network)
+	//packet.SetSelfReportedPorts(c.Network.SelfReportedPorts())
 
-	embeddedPacketRaw, err := PacketEncrypt(peerPrivateKey, receiverEnd, packet)
+	embeddedPacketRaw, err := protocol.PacketEncrypt(peerPrivateKey, receiverEnd, packet)
 	if err != nil {
 		return err
 	}
@@ -1037,7 +1006,7 @@ func (peer *PeerInfo) sendTraverse(packet *PacketRaw, receiverEnd *btcec.PublicK
 		return err
 	}
 
-	raw := &PacketRaw{Command: CommandTraverse, Payload: packetRaw}
+	raw := &protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: packetRaw}
 
 	Filters.MessageOutTraverse(peer, raw, packet, receiverEnd)
 

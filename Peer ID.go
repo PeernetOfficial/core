@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/PeernetOfficial/core/dht"
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/btcsuite/btcd/btcec"
 )
 
@@ -198,7 +199,7 @@ func publicKey2Compressed(publicKey *btcec.PublicKey) [btcec.PubKeyBytesLenCompr
 
 // PublicKey2NodeID translates the Public Key into the node ID used in the Kademlia network.
 func PublicKey2NodeID(publicKey *btcec.PublicKey) (nodeID []byte) {
-	return hashData(publicKey.SerializeCompressed())
+	return protocol.HashData(publicKey.SerializeCompressed())
 }
 
 // records2Nodes translates infoPeer structures to nodes. If the reported nodes are not in the peer table, it will create temporary PeerInfo structures.

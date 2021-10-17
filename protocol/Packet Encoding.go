@@ -19,7 +19,7 @@ The signature is applied on the entire packet, which guarantees that the signatu
 Because the signature could be a possible fingerpint, it is encrypted itself.
 */
 
-package core
+package protocol
 
 import (
 	"encoding/binary"
@@ -28,7 +28,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"golang.org/x/crypto/salsa20"
-	"lukechampine.com/blake3"
 )
 
 // PacketRaw is a decrypted P2P message
@@ -40,7 +39,7 @@ type PacketRaw struct {
 }
 
 // The minimum packet size is 12 bytes (minimum header size) + 65 bytes (signature)
-const packetLengthMin = 12 + signatureSize
+const PacketLengthMin = 12 + signatureSize
 const signatureSize = 65
 const maxRandomGarbage = 20
 
@@ -60,7 +59,7 @@ func PacketDecrypt(raw []byte, receiverPublicKey *btcec.PublicKey) (packet *Pack
 	keySalsa := publicKeyToSalsa20Key(receiverPublicKey)
 	salsa20.XORKeyStream(signature[:], signature[:], nonce, keySalsa)
 
-	senderPublicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature[:], hashData(raw[:len(raw)-signatureSize]))
+	senderPublicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature[:], HashData(raw[:len(raw)-signatureSize]))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -87,8 +86,8 @@ func PacketDecrypt(raw []byte, receiverPublicKey *btcec.PublicKey) (packet *Pack
 
 // PacketEncrypt encrypts a packet using the provided senders private key and receivers compressed public key.
 func PacketEncrypt(senderPrivateKey *btcec.PrivateKey, receiverPublicKey *btcec.PublicKey, packet *PacketRaw) (raw []byte, err error) {
-	garbage := packetGarbage(packetLengthMin + len(packet.Payload))
-	raw = make([]byte, packetLengthMin+len(packet.Payload)+len(garbage))
+	garbage := packetGarbage(PacketLengthMin + len(packet.Payload))
+	raw = make([]byte, PacketLengthMin+len(packet.Payload)+len(garbage))
 
 	nonceC := rand.Uint32()
 	nonce := make([]byte, 8)
@@ -109,7 +108,7 @@ func PacketEncrypt(senderPrivateKey *btcec.PrivateKey, receiverPublicKey *btcec.
 	salsa20.XORKeyStream(raw[4:12+len(packet.Payload)+len(garbage)], raw[4:12+len(packet.Payload)+len(garbage)], nonce, keySalsa)
 
 	// add signature
-	signature, err := btcec.SignCompact(btcec.S256(), senderPrivateKey, hashData(raw[:len(raw)-signatureSize]), true)
+	signature, err := btcec.SignCompact(btcec.S256(), senderPrivateKey, HashData(raw[:len(raw)-signatureSize]), true)
 	if err != nil {
 		return nil, err
 	}
@@ -146,11 +145,13 @@ func publicKeyToSalsa20Key(publicKey *btcec.PublicKey) (key *[32]byte) {
 	return key
 }
 
-// hashData abstracts the hash function.
-func hashData(data []byte) (hash []byte) {
-	hash32 := blake3.Sum256(data)
-	return hash32[:]
-}
+// SetSelfReportedPorts sets the fields Internal Port and External Port according to the connection details.
+// This is important for the remote peer to make smart decisions whether this peer is behind a NAT/firewall and supports port forwarding/UPnP.
+func (packet *PacketRaw) SetSelfReportedPorts(portI, portE uint16) {
+	if packet.Command != CommandAnnouncement && packet.Command != CommandResponse { // only for Announcement and Response messages
+		return
+	}
 
-// HashSize is blake3 hash digest size = 256 bits
-const HashSize = 32
+	binary.LittleEndian.PutUint16(packet.Payload[15:17], portI)
+	binary.LittleEndian.PutUint16(packet.Payload[17:19], portE)
+}

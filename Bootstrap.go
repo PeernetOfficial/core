@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/btcsuite/btcd/btcec"
 )
 
@@ -210,7 +211,7 @@ func contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, rece
 	if len(packets) == 0 || packets[0].err != nil {
 		return false
 	}
-	raw := &PacketRaw{Command: CommandAnnouncement, Payload: packets[0].raw}
+	raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packets[0].raw}
 
 	Filters.MessageOutAnnouncement(publicKey, nil, raw, findSelf, nil, nil, nil)
 

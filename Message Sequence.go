@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/btcsuite/btcd/btcec"
 )
 
@@ -97,7 +98,7 @@ func msgArbitrarySequence(publicKey *btcec.PublicKey, data interface{}) (info *s
 // msgValidateSequence validates the sequence number of an incoming message. It will set raw.sequence if valid.
 func msgValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time.Duration) {
 	// Only Response and Pong
-	if raw.Command != CommandResponse && raw.Command != CommandPong {
+	if raw.Command != protocol.CommandResponse && raw.Command != protocol.CommandPong {
 		return true, rtt
 	}
 
@@ -123,7 +124,7 @@ func msgValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time
 	// invalidate the sequence immediately?
 	if invalidate {
 		delete(sequences, key)
-	} else if raw.Command == CommandResponse {
+	} else if raw.Command == protocol.CommandResponse {
 		// Special case CommandResponse: Extend validity in case there are follow-up responses by half of the round-trip time since they will be sent one-way.
 		sequence.expires = time.Now().Add(time.Duration(ReplyTimeout) * time.Second / 2)
 	}
@@ -136,7 +137,7 @@ func msgValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time
 // msgInvalidateSequence invalidates the sequence number.
 func msgInvalidateSequence(raw *MessageRaw) {
 	// Only Response
-	if raw.Command != CommandResponse {
+	if raw.Command != protocol.CommandResponse {
 		return
 	}
 

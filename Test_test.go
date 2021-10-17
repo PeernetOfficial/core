@@ -4,6 +4,8 @@ package core
 import (
 	"fmt"
 	"testing"
+
+	"github.com/PeernetOfficial/core/protocol"
 )
 
 func TestMessageEncodingAnnouncement(t *testing.T) {
@@ -14,14 +16,14 @@ func TestMessageEncodingAnnouncement(t *testing.T) {
 	}
 
 	// encode and decode announcement
-	packetR := PacketRaw{Protocol: 0, Command: CommandAnnouncement, Sequence: 123}
+	packetR := protocol.PacketRaw{Protocol: 0, Command: protocol.CommandAnnouncement, Sequence: 123}
 
 	var findPeer []KeyHash
 	var findValue []KeyHash
 	var files []InfoStore
 
-	hash1 := hashData([]byte("test"))
-	hash2 := hashData([]byte("test3"))
+	hash1 := protocol.HashData([]byte("test"))
+	hash2 := protocol.HashData([]byte("test3"))
 	findPeer = append(findPeer, KeyHash{Hash: hash1})
 	findValue = append(findValue, KeyHash{Hash: hash2})
 
@@ -47,7 +49,7 @@ func TestMessageEncodingResponse(t *testing.T) {
 	}
 
 	// encode and decode response
-	packetR := PacketRaw{Protocol: 0, Command: CommandResponse}
+	packetR := protocol.PacketRaw{Protocol: 0, Command: protocol.CommandResponse}
 
 	var hash2Peers []Hash2Peer
 	var filesEmbed []EmbeddedFileData
@@ -55,12 +57,12 @@ func TestMessageEncodingResponse(t *testing.T) {
 
 	file1Data := []byte("test")
 	file2Data := []byte("test3")
-	file1 := EmbeddedFileData{ID: KeyHash{hashData(file1Data)}, Data: file1Data}
-	file2 := EmbeddedFileData{ID: KeyHash{hashData(file2Data)}, Data: file2Data}
+	file1 := EmbeddedFileData{ID: KeyHash{protocol.HashData(file1Data)}, Data: file1Data}
+	file2 := EmbeddedFileData{ID: KeyHash{protocol.HashData(file2Data)}, Data: file2Data}
 	filesEmbed = append(filesEmbed, file1)
 	filesEmbed = append(filesEmbed, file2)
 
-	hashesNotFound = append(hashesNotFound, hashData([]byte("NA")))
+	hashesNotFound = append(hashesNotFound, protocol.HashData([]byte("NA")))
 
 	packetsRaw, err := msgEncodeResponse(true, hash2Peers, filesEmbed, hashesNotFound)
 	if err != nil {

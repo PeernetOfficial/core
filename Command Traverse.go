@@ -9,6 +9,8 @@ package core
 import (
 	"math/rand"
 	"time"
+
+	"github.com/PeernetOfficial/core/protocol"
 )
 
 // cmdTraverseForward handles an incoming traverse message that should be forwarded to another peer
@@ -45,7 +47,7 @@ func (peer *PeerInfo) cmdTraverseForward(msg *MessageTraverse) {
 		return
 	}
 
-	peerTarget.send(&PacketRaw{Command: CommandTraverse, Payload: msg.Payload})
+	peerTarget.send(&protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: msg.Payload})
 }
 
 func (peer *PeerInfo) cmdTraverseReceive(msg *MessageTraverse) {
@@ -82,7 +84,7 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *MessageTraverse) {
 
 	// ---- fork packetWorker to decode and validate embedded packet ---
 	// Due to missing connection and other embedded details in the message (such as ports), the packet is not just simply queued to rawPacketsIncoming.
-	decoded, senderPublicKey, err := PacketDecrypt(msg.EmbeddedPacketRaw, peerPublicKey)
+	decoded, senderPublicKey, err := protocol.PacketDecrypt(msg.EmbeddedPacketRaw, peerPublicKey)
 	if err != nil {
 		return
 	}
@@ -92,7 +94,7 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *MessageTraverse) {
 		return
 	} else if decoded.Protocol != 0 {
 		return
-	} else if decoded.Command != CommandAnnouncement {
+	} else if decoded.Command != protocol.CommandAnnouncement {
 		return
 	}
 
@@ -102,7 +104,7 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *MessageTraverse) {
 
 	// process it!
 	switch decoded.Command {
-	case CommandAnnouncement: // Announce
+	case protocol.CommandAnnouncement: // Announce
 		if announce, _ := msgDecodeAnnouncement(raw); announce != nil {
 			if len(announce.UserAgent) > 0 {
 				peerV.UserAgent = announce.UserAgent

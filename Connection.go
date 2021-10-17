@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/btcsuite/btcd/btcec"
 )
 
@@ -319,17 +320,17 @@ func (peer *PeerInfo) IsPortForward() (result bool) {
 // ---- sending code ----
 
 // send sends the packet to the peer on the connection
-func (c *Connection) send(packet *PacketRaw, receiverPublicKey *btcec.PublicKey, isFirstPacket bool) (err error) {
+func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey *btcec.PublicKey, isFirstPacket bool) (err error) {
 	if c == nil {
 		return errors.New("invalid connection")
 	}
 
 	packet.Protocol = ProtocolVersion
-	packet.setSelfReportedPorts(c.Network)
+	packet.SetSelfReportedPorts(c.Network.SelfReportedPorts())
 
 	Filters.PacketOut(packet, receiverPublicKey, c)
 
-	raw, err := PacketEncrypt(peerPrivateKey, receiverPublicKey, packet)
+	raw, err := protocol.PacketEncrypt(peerPrivateKey, receiverPublicKey, packet)
 	if err != nil {
 		return err
 	}
@@ -339,7 +340,7 @@ func (c *Connection) send(packet *PacketRaw, receiverPublicKey *btcec.PublicKey,
 	err = c.Network.send(c.Address.IP, c.Address.Port, raw)
 
 	// Send Traverse message if the peer is behind a NAT and this is the first message. Only for Announcement.
-	if err == nil && isFirstPacket && c.IsBehindNAT() && c.traversePeer != nil && packet.Command == CommandAnnouncement {
+	if err == nil && isFirstPacket && c.IsBehindNAT() && c.traversePeer != nil && packet.Command == protocol.CommandAnnouncement {
 		c.traversePeer.sendTraverse(packet, receiverPublicKey)
 	}
 
@@ -347,7 +348,7 @@ func (c *Connection) send(packet *PacketRaw, receiverPublicKey *btcec.PublicKey,
 }
 
 // send sends a raw packet to the peer. Only uses active connections.
-func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
+func (peer *PeerInfo) send(packet *protocol.PacketRaw) (err error) {
 	if peer.isVirtual { // special case for peers that were not contacted before
 		for _, address := range peer.targetAddresses {
 			sendAllNetworks(peer.PublicKey, packet, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, peer.traversePeer, nil)
@@ -397,7 +398,7 @@ func (peer *PeerInfo) send(packet *PacketRaw) (err error) {
 }
 
 // sendConnection sends a packet to the peer using the specific connection
-func (peer *PeerInfo) sendConnection(packet *PacketRaw, connection *Connection) (err error) {
+func (peer *PeerInfo) sendConnection(packet *protocol.PacketRaw, connection *Connection) (err error) {
 	isFirstPacketOut := atomic.LoadUint64(&peer.StatsPacketSent) == 0 && atomic.LoadUint64(&peer.StatsPacketReceived) == 0
 	atomic.AddUint64(&peer.StatsPacketSent, 1)
 
@@ -406,7 +407,7 @@ func (peer *PeerInfo) sendConnection(packet *PacketRaw, connection *Connection) 
 
 // sendAllNetworks sends a raw packet via all networks. It assigns a new sequence for each sent packet.
 // receiverPortInternal is important for NAT detection and sending the traverse message.
-func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, traversePeer *PeerInfo, sequenceData interface{}) (err error) {
+func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *protocol.PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, traversePeer *PeerInfo, sequenceData interface{}) (err error) {
 	networksMutex.RLock()
 	defer networksMutex.RUnlock()
 

@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/PeernetOfficial/core/blockchain"
+	"github.com/PeernetOfficial/core/protocol"
 )
 
 // UserBlockchain is the user's blockchain and exports functions to directly read and write it
@@ -21,7 +22,7 @@ const filenameUserBlockchain = "self.blockchain"
 // initUserBlockchain initializes the users blockchain. It creates the blockchain file if it does not exist already.
 // If it is corrupted, it will log the error and exit the process.
 func initUserBlockchain() {
-	blockchain.HashFunction = hashData
+	blockchain.HashFunction = protocol.HashData
 	blockchain.PublicKey2NodeID = PublicKey2NodeID
 
 	var err error

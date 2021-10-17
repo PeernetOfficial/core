@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/upnp"
 )
 
@@ -131,7 +132,7 @@ func (network *Network) Listen() {
 			continue
 		}
 
-		if length < packetLengthMin {
+		if length < protocol.PacketLengthMin {
 			// Discard packets that do not meet the minimum length.
 			continue
 		}
@@ -144,7 +145,7 @@ func (network *Network) Listen() {
 // packetWorker handles incoming packets.
 func packetWorker(packets <-chan networkWire) {
 	for packet := range packets {
-		decoded, senderPublicKey, err := PacketDecrypt(packet.raw, packet.receiverPublicKey)
+		decoded, senderPublicKey, err := protocol.PacketDecrypt(packet.raw, packet.receiverPublicKey)
 		if err != nil {
 			//Filters.LogError("packetWorker", "decrypting packet from '%s': %s\n", packet.sender.String(), err.Error())  // Only log for debug purposes.
 			continue
@@ -177,7 +178,7 @@ func packetWorker(packets <-chan networkWire) {
 		raw := &MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded, connection: connection}
 
 		switch decoded.Command {
-		case CommandAnnouncement: // Announce
+		case protocol.CommandAnnouncement: // Announce
 			if announce, _ := msgDecodeAnnouncement(raw); announce != nil {
 				// Update known internal/external port and User Agent
 				connection.PortInternal = announce.PortInternal
@@ -194,7 +195,7 @@ func packetWorker(packets <-chan networkWire) {
 				peer.cmdAnouncement(announce)
 			}
 
-		case CommandResponse: // Response
+		case protocol.CommandResponse: // Response
 			if response, _ := msgDecodeResponse(raw); response != nil {
 				// Validate sequence number which prevents unsolicited responses.
 				if valid, rtt := msgValidateSequence(raw, response.Actions&(1<<ActionSequenceLast) > 0); !valid {
@@ -219,7 +220,7 @@ func packetWorker(packets <-chan networkWire) {
 				peer.cmdResponse(response)
 			}
 
-		case CommandLocalDiscovery: // Local discovery, sent via IPv4 broadcast and IPv6 multicast
+		case protocol.CommandLocalDiscovery: // Local discovery, sent via IPv4 broadcast and IPv6 multicast
 			if announce, _ := msgDecodeAnnouncement(raw); announce != nil {
 				if len(announce.UserAgent) > 0 {
 					peer.UserAgent = announce.UserAgent
@@ -233,11 +234,11 @@ func packetWorker(packets <-chan networkWire) {
 				peer.cmdLocalDiscovery(announce)
 			}
 
-		case CommandPing: // Ping
+		case protocol.CommandPing: // Ping
 			Filters.MessageIn(peer, raw, nil)
 			peer.cmdPing(raw)
 
-		case CommandPong: // Ping
+		case protocol.CommandPong: // Ping
 			// Validate sequence number which prevents unsolicited responses.
 			if valid, rtt := msgValidateSequence(raw, true); !valid {
 				//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
@@ -250,11 +251,11 @@ func packetWorker(packets <-chan networkWire) {
 
 			peer.cmdPong(raw)
 
-		case CommandChat: // Chat [debug]
+		case protocol.CommandChat: // Chat [debug]
 			Filters.MessageIn(peer, raw, nil)
 			peer.cmdChat(raw)
 
-		case CommandTraverse:
+		case protocol.CommandTraverse:
 			if traverse, _ := msgDecodeTraverse(raw); traverse != nil {
 				Filters.MessageIn(peer, raw, traverse)
 				if traverse.TargetPeer.IsEqual(peerPublicKey) && traverse.AuthorizedRelayPeer.IsEqual(peer.PublicKey) {

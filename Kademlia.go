@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/PeernetOfficial/core/dht"
+	"github.com/PeernetOfficial/core/protocol"
 )
 
 const alpha = 5       // Count of nodes to be contacted in parallel for finding a key
@@ -127,7 +128,7 @@ func (peer *PeerInfo) sendAnnouncementStore(fileHash []byte, fileSize uint64) {
 
 // Data2Hash returns the hash for the data
 func Data2Hash(data []byte) (hash []byte) {
-	return hashData(data)
+	return protocol.HashData(data)
 }
 
 // GetData returns the requested data. It checks first the local store and then tries via DHT.
@@ -152,14 +153,14 @@ func GetDataDHT(hash []byte) (data []byte, senderNodeID []byte, found bool) {
 
 // StoreDataLocal stores data into the local warehouse.
 func StoreDataLocal(data []byte) error {
-	key := hashData(data)
+	key := protocol.HashData(data)
 	return Warehouse.Set(key, data)
 }
 
 // StoreDataDHT stores data locally and informs closestCount peers in the DHT about it.
 // Remote peers may choose to keep a record (in case another peers asks) or mirror the full data.
 func StoreDataDHT(data []byte, closestCount int) error {
-	key := hashData(data)
+	key := protocol.HashData(data)
 	if err := Warehouse.Set(key, data); err != nil {
 		return err
 	}
