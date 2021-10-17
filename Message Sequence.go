@@ -58,18 +58,18 @@ func initMessageSequence() {
 	}()
 }
 
-// msgNewSequence returns a new sequence and registers is
+// msgNewSequence returns a new sequence and registers it. messageSequence must point to the variable holding the continuous next sequence number.
 // Use only for Announcement and Ping messages.
-func (peer *PeerInfo) msgNewSequence(data interface{}) (info *sequenceExpiry) {
+func msgNewSequence(publicKey *btcec.PublicKey, messageSequence *uint32, data interface{}) (info *sequenceExpiry) {
 	info = &sequenceExpiry{
-		sequence: atomic.AddUint32(&peer.messageSequence, 1),
+		sequence: atomic.AddUint32(messageSequence, 1),
 		created:  time.Now(),
 		expires:  time.Now().Add(time.Duration(ReplyTimeout) * time.Second),
 		data:     data,
 	}
 
 	// Add the sequence to the list. Sequences are unique enough that collisions are unlikely and negligible.
-	key := string(peer.PublicKey.SerializeCompressed()) + strconv.FormatUint(uint64(info.sequence), 10)
+	key := string(publicKey.SerializeCompressed()) + strconv.FormatUint(uint64(info.sequence), 10)
 	sequencesMutex.Lock()
 	sequences[key] = info
 	sequencesMutex.Unlock()
