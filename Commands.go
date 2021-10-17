@@ -19,8 +19,8 @@ import (
 // It makes sense to stay below 508 bytes (no fragmentation). Reporting back 5 contacts for FIND_SELF requests should do the magic.
 const respondClosesContactsCount = 5
 
-// cmdAnouncement handles an incoming announcement
-func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
+// cmdAnouncement handles an incoming announcement. Connection may be nil for traverse relayed messages.
+func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement, connection *Connection) {
 	// Filter function to only share peers that are "connectable" to the remote one. It checks IPv4, IPv6, and local connection.
 	filterFunc := func(allowLocal, allowIPv4, allowIPv6 bool) dht.NodeFilterFunc {
 		return func(node *dht.Node) (accept bool) {
@@ -42,8 +42,8 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 		selfD := Hash2Peer{ID: KeyHash{peer.NodeID}}
 
 		// do not respond the caller's own peer (add to ignore list)
-		for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, peer.NodeID, filterFunc(msg.connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
-			if info := node.Info.(*PeerInfo).peer2Record(msg.connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
+		for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, peer.NodeID, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
+			if info := node.Info.(*PeerInfo).peer2Record(connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
 				selfD.Closest = append(selfD.Closest, *info)
 			}
 		}
@@ -63,8 +63,8 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement) {
 			details := Hash2Peer{ID: findPeer}
 
 			// Same as before, put self as ignoredNodes.
-			for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, findPeer.Hash, filterFunc(msg.connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
-				if info := node.Info.(*PeerInfo).peer2Record(msg.connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
+			for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, findPeer.Hash, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
+				if info := node.Info.(*PeerInfo).peer2Record(connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
 					details.Closest = append(details.Closest, *info)
 				}
 			}
@@ -137,12 +137,12 @@ func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result
 }
 
 // cmdResponse handles the response to the announcement
-func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
+func (peer *PeerInfo) cmdResponse(msg *MessageResponse, connection *Connection) {
 	// The sequence data is used to correlate this response with the announcement.
 	if msg.sequence == nil || msg.sequence.data == nil {
 		// If there is no sequence data but there were results returned, it means we received unsolicited response data. It will be rejected.
 		if len(msg.HashesNotFound) > 0 || len(msg.Hash2Peers) > 0 || len(msg.FilesEmbed) > 0 {
-			Filters.LogError("cmdResponse", "unsolicited response data received from %s\n", msg.connection.Address.String())
+			Filters.LogError("cmdResponse", "unsolicited response data received from %s\n", connection.Address.String())
 		}
 
 		return
@@ -153,7 +153,7 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 		for _, hash2Peer := range msg.Hash2Peers {
 			// Make sure no garbage is returned. The key must be self and only Closest is expected.
 			if !bytes.Equal(hash2Peer.ID.Hash, nodeID) || len(hash2Peer.Closest) == 0 {
-				Filters.LogError("cmdResponse", "incoming response to bootstrap FIND_SELF contains invalid data from %s\n", msg.connection.Address.String())
+				Filters.LogError("cmdResponse", "incoming response to bootstrap FIND_SELF contains invalid data from %s\n", connection.Address.String())
 				return
 			}
 
@@ -191,10 +191,10 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse) {
 }
 
 // cmdPing handles an incoming ping message
-func (peer *PeerInfo) cmdPing(msg *MessageRaw) {
+func (peer *PeerInfo) cmdPing(msg *MessageRaw, connection *Connection) {
 	// If PortInternal is 0, it means no incoming announcement or response message was received on that connection.
 	// This means the ping is unexpected. In that case for security reasons the remote peer is not asked for FIND_SELF.
-	if msg.connection.PortInternal == 0 {
+	if connection.PortInternal == 0 {
 		peer.sendAnnouncement(true, false, nil, nil, nil, nil)
 		return
 	}
@@ -207,21 +207,21 @@ func (peer *PeerInfo) cmdPing(msg *MessageRaw) {
 }
 
 // cmdPong handles an incoming pong message
-func (peer *PeerInfo) cmdPong(msg *MessageRaw) {
+func (peer *PeerInfo) cmdPong(msg *MessageRaw, connection *Connection) {
 }
 
 // cmdChat handles a chat message [debug]
-func (peer *PeerInfo) cmdChat(msg *MessageRaw) {
-	fmt.Printf("Chat from '%s': %s\n", msg.connection.Address.String(), string(msg.PacketRaw.Payload))
+func (peer *PeerInfo) cmdChat(msg *MessageRaw, connection *Connection) {
+	fmt.Printf("Chat from '%s': %s\n", connection.Address.String(), string(msg.PacketRaw.Payload))
 }
 
 // cmdLocalDiscovery handles an incoming announcement via local discovery
-func (peer *PeerInfo) cmdLocalDiscovery(msg *MessageAnnouncement) {
+func (peer *PeerInfo) cmdLocalDiscovery(msg *MessageAnnouncement, connection *Connection) {
 	// 21.04.2021 update: Local peer discovery from public IPv4s is possible in datacenter situations. Keep it enabled for now.
 	// only accept local discovery message from private IPs for IPv4
 	// IPv6 DHCP routers typically assign public IPv6s and they can join multicast in the local network.
-	//if msg.connection.IsIPv4() && !msg.connection.IsLocal() {
-	//	Filters.LogError("cmdLocalDiscovery", "message received from non-local IP %s peer ID %s\n", msg.connection.Address.String(), hex.EncodeToString(msg.SenderPublicKey.SerializeCompressed()))
+	//if connection.IsIPv4() && !connection.IsLocal() {
+	//	Filters.LogError("cmdLocalDiscovery", "message received from non-local IP %s peer ID %s\n", connection.Address.String(), hex.EncodeToString(msg.SenderPublicKey.SerializeCompressed()))
 	//	return
 	//}
 

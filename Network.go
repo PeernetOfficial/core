@@ -175,7 +175,7 @@ func packetWorker(packets <-chan networkWire) {
 		connection.LastPacketIn = time.Now()
 
 		// process the packet
-		raw := &MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded, connection: connection}
+		raw := &MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded}
 
 		switch decoded.Command {
 		case protocol.CommandAnnouncement: // Announce
@@ -192,7 +192,7 @@ func packetWorker(packets <-chan networkWire) {
 
 				Filters.MessageIn(peer, raw, announce)
 
-				peer.cmdAnouncement(announce)
+				peer.cmdAnouncement(announce, connection)
 			}
 
 		case protocol.CommandResponse: // Response
@@ -217,7 +217,7 @@ func packetWorker(packets <-chan networkWire) {
 
 				Filters.MessageIn(peer, raw, response)
 
-				peer.cmdResponse(response)
+				peer.cmdResponse(response, connection)
 			}
 
 		case protocol.CommandLocalDiscovery: // Local discovery, sent via IPv4 broadcast and IPv6 multicast
@@ -231,12 +231,12 @@ func packetWorker(packets <-chan networkWire) {
 
 				Filters.MessageIn(peer, raw, announce)
 
-				peer.cmdLocalDiscovery(announce)
+				peer.cmdLocalDiscovery(announce, connection)
 			}
 
 		case protocol.CommandPing: // Ping
 			Filters.MessageIn(peer, raw, nil)
-			peer.cmdPing(raw)
+			peer.cmdPing(raw, connection)
 
 		case protocol.CommandPong: // Ping
 			// Validate sequence number which prevents unsolicited responses.
@@ -249,11 +249,11 @@ func packetWorker(packets <-chan networkWire) {
 
 			Filters.MessageIn(peer, raw, nil)
 
-			peer.cmdPong(raw)
+			peer.cmdPong(raw, connection)
 
 		case protocol.CommandChat: // Chat [debug]
 			Filters.MessageIn(peer, raw, nil)
-			peer.cmdChat(raw)
+			peer.cmdChat(raw, connection)
 
 		case protocol.CommandTraverse:
 			if traverse, _ := msgDecodeTraverse(raw); traverse != nil {

@@ -49,7 +49,6 @@ const (
 type MessageRaw struct {
 	protocol.PacketRaw
 	SenderPublicKey *btcec.PublicKey // Sender Public Key, ECDSA (secp256k1) 257-bit
-	connection      *Connection      // Connection that received the packet
 	sequence        *sequenceExpiry  // Sequence
 }
 
