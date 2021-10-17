@@ -478,16 +478,6 @@ func isPacketSizeExceed(currentSize int, testSize int) bool {
 	return currentSize+testSize > udpMaxPacketSize-protocol.PacketLengthMin
 }
 
-func FeatureSupport() (feature byte) {
-	if countListen4 > 0 {
-		feature |= 1 << FeatureIPv4Listen
-	}
-	if countListen6 > 0 {
-		feature |= 1 << FeatureIPv6Listen
-	}
-	return feature
-}
-
 // announcementPacket contains information about a single announcement message
 type announcementPacket struct {
 	raw      []byte          // The raw packet
@@ -500,7 +490,7 @@ type announcementPacket struct {
 // findPeer is a list of node IDs (blake3 hash of peer ID compressed form)
 // findValue is a list of hashes
 // files is a list of files stored to inform about
-func msgEncodeAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore) (packets []*announcementPacket) {
+func msgEncodeAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore, features byte, blockchainHeight, blockchainVersion uint64) (packets []*announcementPacket) {
 createPacketLoop:
 	for {
 		packet := &announcementPacket{}
@@ -510,10 +500,9 @@ createPacketLoop:
 		packetSize := announcementPayloadHeaderSize
 
 		raw[0] = byte(ProtocolVersion) // Protocol
-		raw[1] = FeatureSupport()      // Feature support
+		raw[1] = features              // Feature support
 		//raw[2] = Actions                                   // Action bit array
 
-		_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
 		binary.LittleEndian.PutUint32(raw[3:7], uint32(blockchainHeight))
 		binary.LittleEndian.PutUint64(raw[7:15], blockchainVersion)
 
@@ -641,7 +630,7 @@ const EmbeddedFileSizeMax = udpMaxPacketSize - protocol.PacketLengthMin - announ
 
 // msgEncodeResponse encodes a response message
 // hash2Peers will be modified.
-func msgEncodeResponse(sendUA bool, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte) (packetsRaw [][]byte, err error) {
+func msgEncodeResponse(sendUA bool, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte, features byte, blockchainHeight, blockchainVersion uint64) (packetsRaw [][]byte, err error) {
 	for n := range filesEmbed {
 		if len(filesEmbed[n].Data) > EmbeddedFileSizeMax {
 			return nil, errors.New("embedded file too big")
@@ -654,10 +643,9 @@ createPacketLoop:
 		packetSize := announcementPayloadHeaderSize
 
 		raw[0] = byte(ProtocolVersion) // Protocol
-		raw[1] = FeatureSupport()      // Feature support
+		raw[1] = features              // Feature support
 		//raw[2] = Actions                                   // Action bit array
 
-		_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
 		binary.LittleEndian.PutUint32(raw[3:7], uint32(blockchainHeight))
 		binary.LittleEndian.PutUint64(raw[7:15], blockchainVersion)
 

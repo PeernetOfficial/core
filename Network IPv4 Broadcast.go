@@ -90,7 +90,8 @@ func (network *Network) BroadcastIPv4Listen() {
 
 // BroadcastIPv4Send sends out a single broadcast messages to discover peers
 func (network *Network) BroadcastIPv4Send() (err error) {
-	packets := msgEncodeAnnouncement(true, true, nil, nil, nil)
+	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
+	packets := msgEncodeAnnouncement(true, true, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion)
 	if len(packets) == 0 || packets[0].err != nil {
 		return packets[0].err
 	}

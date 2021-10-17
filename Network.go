@@ -341,3 +341,14 @@ func (network *Network) SelfReportedPorts() (portI, portE uint16) {
 
 	return portI, portE
 }
+
+// FeatureSupport returns supported features by this peer
+func FeatureSupport() (feature byte) {
+	if countListen4 > 0 {
+		feature |= 1 << FeatureIPv4Listen
+	}
+	if countListen6 > 0 {
+		feature |= 1 << FeatureIPv6Listen
+	}
+	return feature
+}

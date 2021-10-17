@@ -27,7 +27,7 @@ func TestMessageEncodingAnnouncement(t *testing.T) {
 	findPeer = append(findPeer, KeyHash{Hash: hash1})
 	findValue = append(findValue, KeyHash{Hash: hash2})
 
-	packets := msgEncodeAnnouncement(true, true, findPeer, findValue, files)
+	packets := msgEncodeAnnouncement(true, true, findPeer, findValue, files, 1<<FeatureIPv4Listen|1<<FeatureIPv6Listen, 0, 0)
 
 	msg := &MessageRaw{PacketRaw: packetR, SenderPublicKey: publicKey}
 	msg.Payload = packets[0].raw
@@ -64,7 +64,7 @@ func TestMessageEncodingResponse(t *testing.T) {
 
 	hashesNotFound = append(hashesNotFound, protocol.HashData([]byte("NA")))
 
-	packetsRaw, err := msgEncodeResponse(true, hash2Peers, filesEmbed, hashesNotFound)
+	packetsRaw, err := msgEncodeResponse(true, hash2Peers, filesEmbed, hashesNotFound, 1<<FeatureIPv4Listen|1<<FeatureIPv6Listen, 0, 0)
 	if err != nil {
 		fmt.Printf("Error msgEncodeAnnouncement: %s\n", err.Error())
 		return

@@ -33,7 +33,8 @@ func (peer *PeerInfo) Chat(text string) {
 
 // sendAnnouncement sends the announcement message. It acquires a new sequence for each message.
 func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore, sequenceData interface{}) (packets []*announcementPacket) {
-	packets = msgEncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files)
+	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
+	packets = msgEncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files, FeatureSupport(), blockchainHeight, blockchainVersion)
 
 	for _, packet := range packets {
 		packet.sequence = peer.msgNewSequence(sequenceData)
@@ -47,7 +48,8 @@ func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash
 
 // sendResponse sends the response message
 func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte) (err error) {
-	packets, err := msgEncodeResponse(sendUA, hash2Peers, filesEmbed, hashesNotFound)
+	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
+	packets, err := msgEncodeResponse(sendUA, hash2Peers, filesEmbed, hashesNotFound, FeatureSupport(), blockchainHeight, blockchainVersion)
 
 	for _, packet := range packets {
 		raw := &protocol.PacketRaw{Command: protocol.CommandResponse, Payload: packet, Sequence: sequence}
