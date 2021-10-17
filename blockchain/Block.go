@@ -22,6 +22,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/btcsuite/btcd/btcec"
 )
 
@@ -56,15 +57,15 @@ func decodeBlock(raw []byte) (block *Block, err error) {
 
 	signature := raw[0 : 0+65]
 
-	block.OwnerPublicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, HashFunction(raw[65:]))
+	block.OwnerPublicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, protocol.HashData(raw[65:]))
 	if err != nil {
 		return nil, err
 	}
 
-	block.NodeID = PublicKey2NodeID(block.OwnerPublicKey)
+	block.NodeID = protocol.PublicKey2NodeID(block.OwnerPublicKey)
 
-	block.LastBlockHash = make([]byte, hashSize)
-	copy(block.LastBlockHash, raw[65:65+hashSize])
+	block.LastBlockHash = make([]byte, protocol.HashSize)
+	copy(block.LastBlockHash, raw[65:65+protocol.HashSize])
 
 	block.BlockchainVersion = binary.LittleEndian.Uint64(raw[97 : 97+8])
 	block.Number = uint64(binary.LittleEndian.Uint32(raw[105 : 105+4])) // for now 32-bit in protocol
@@ -104,7 +105,7 @@ func encodeBlock(block *Block, ownerPrivateKey *btcec.PrivateKey) (raw []byte, e
 	var buffer bytes.Buffer
 	buffer.Write(make([]byte, 65)) // Signature, filled at the end
 
-	if block.Number > 0 && len(block.LastBlockHash) != hashSize {
+	if block.Number > 0 && len(block.LastBlockHash) != protocol.HashSize {
 		return nil, errors.New("encodeBlock invalid last block hash")
 	} else if block.Number == 0 { // Block 0: Empty last hash
 		block.LastBlockHash = make([]byte, 32)
@@ -151,7 +152,7 @@ func encodeBlock(block *Block, ownerPrivateKey *btcec.PrivateKey) (raw []byte, e
 	binary.LittleEndian.PutUint16(raw[113:113+2], countRecords)     // Count of records
 
 	// signature is last
-	signature, err := btcec.SignCompact(btcec.S256(), ownerPrivateKey, HashFunction(raw[65:]), true)
+	signature, err := btcec.SignCompact(btcec.S256(), ownerPrivateKey, protocol.HashData(raw[65:]), true)
 	if err != nil {
 		return nil, err
 	}

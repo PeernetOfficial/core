@@ -115,7 +115,7 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *MessageTraverse) {
 
 	// process the packet and create a virtual peer
 	raw := &MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded}
-	peerV := &PeerInfo{PublicKey: senderPublicKey, connectionActive: nil, connectionLatest: nil, NodeID: PublicKey2NodeID(senderPublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses}
+	peerV := &PeerInfo{PublicKey: senderPublicKey, connectionActive: nil, connectionLatest: nil, NodeID: protocol.PublicKey2NodeID(senderPublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses}
 
 	// process it!
 	switch decoded.Command {

@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/google/uuid"
-	"lukechampine.com/blake3"
 )
 
 func TestBlockEncoding(t *testing.T) {
-	initRequiredFunctions()
 	privateKey, err := btcec.NewPrivateKey(btcec.S256())
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
@@ -20,11 +19,11 @@ func TestBlockEncoding(t *testing.T) {
 
 	encoded1, _ := encodeBlockRecordProfile([]BlockRecordProfile{ProfileFieldFromText(ProfileName, "Test User 1")})
 
-	file1 := BlockRecordFile{Hash: testHashData([]byte("Test data")), Type: testTypeText, Format: testFormatText, Size: 9, ID: uuid.New()}
+	file1 := BlockRecordFile{Hash: protocol.HashData([]byte("Test data")), Type: testTypeText, Format: testFormatText, Size: 9, ID: uuid.New()}
 	file1.Tags = append(file1.Tags, TagFromText(TagName, "Filename 1.txt"))
 	file1.Tags = append(file1.Tags, TagFromText(TagFolder, "documents\\sub folder"))
 
-	file2 := BlockRecordFile{Hash: testHashData([]byte("Test data 2!")), Type: testTypeText, Format: testFormatText, Size: 10, ID: uuid.New()}
+	file2 := BlockRecordFile{Hash: protocol.HashData([]byte("Test data 2!")), Type: testTypeText, Format: testFormatText, Size: 10, ID: uuid.New()}
 	file2.Tags = append(file2.Tags, TagFromText(TagName, "Filename 2.txt"))
 	file2.Tags = append(file2.Tags, TagFromText(TagFolder, "documents\\sub folder"))
 
@@ -68,13 +67,6 @@ func TestBlockEncoding(t *testing.T) {
 	}
 }
 
-func initRequiredFunctions() {
-	HashFunction = testHashData
-	PublicKey2NodeID = func(publicKey *btcec.PublicKey) (nodeID []byte) {
-		return testHashData(publicKey.SerializeCompressed())
-	}
-}
-
 func initTestPrivateKey() (blockchain *Blockchain, err error) {
 	// use static test key, otherwise tests will be inconsistent (would otherwise fail to open blockchain database)
 	privateKeyTestA := "d65da474861d826edd29c1307f1250d79e9dbf84e3a2449022658445c8d8ed63"
@@ -82,8 +74,6 @@ func initTestPrivateKey() (blockchain *Blockchain, err error) {
 	peerPrivateKey, peerPublicKey := btcec.PrivKeyFromBytes(btcec.S256(), privateKeyB)
 
 	fmt.Printf("Loaded public key: %s\n", hex.EncodeToString(peerPublicKey.SerializeCompressed()))
-
-	initRequiredFunctions()
 
 	return Init(peerPrivateKey, "test.blockchain")
 }
@@ -94,7 +84,7 @@ func TestBlockchainAdd(t *testing.T) {
 		return
 	}
 
-	file1 := BlockRecordFile{Hash: testHashData([]byte("Test data")), Type: testTypeText, Format: testFormatText, Size: 9, ID: uuid.New()}
+	file1 := BlockRecordFile{Hash: protocol.HashData([]byte("Test data")), Type: testTypeText, Format: testFormatText, Size: 9, ID: uuid.New()}
 	file1.Tags = append(file1.Tags, TagFromText(TagName, "Filename 1.txt"))
 	file1.Tags = append(file1.Tags, TagFromText(TagFolder, "documents\\sub folder"))
 
@@ -177,7 +167,7 @@ func TestBlockchainDelete(t *testing.T) {
 	}
 
 	// test add file
-	file1 := BlockRecordFile{Hash: testHashData([]byte("Test data")), Type: testTypeText, Format: testFormatText, Size: 9, ID: uuid.New()}
+	file1 := BlockRecordFile{Hash: protocol.HashData([]byte("Test data")), Type: testTypeText, Format: testFormatText, Size: 9, ID: uuid.New()}
 	file1.Tags = append(file1.Tags, TagFromText(TagName, "Test file to be deleted.txt"))
 	file1.Tags = append(file1.Tags, TagFromText(TagFolder, "documents\\sub folder"))
 
@@ -254,11 +244,6 @@ func printProfileField(field BlockRecordProfile) {
 	default:
 		fmt.Printf("* Field  %d  =  %s\n", field.Type, hex.EncodeToString(field.Data))
 	}
-}
-
-func testHashData(data []byte) (hash []byte) {
-	hash32 := blake3.Sum256(data)
-	return hash32[:]
 }
 
 const testTypeText = 1

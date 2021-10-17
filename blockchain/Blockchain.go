@@ -22,6 +22,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/store"
 	"github.com/btcsuite/btcd/btcec"
 )
@@ -40,15 +41,6 @@ type Blockchain struct {
 	database   store.Store       // The database storing the blockchain.
 	sync.Mutex                   // synchronized access to the header
 }
-
-// HashFunction must be set by the caller to the hash function (blake3) that shall be used.
-var HashFunction func(data []byte) (hash []byte)
-
-// hashSize is the blake3 digest size in bytes
-const hashSize = 32
-
-// PublicKey2NodeID must be set by the caller to the function generating the node ID from the public key. Typically it would use the HashFunction.
-var PublicKey2NodeID func(publicKey *btcec.PublicKey) (nodeID []byte)
 
 // Init initializes the given blockchain. It creates the blockchain file if it does not exist already.
 func Init(privateKey *btcec.PrivateKey, path string) (blockchain *Blockchain, err error) {
@@ -103,7 +95,7 @@ func (blockchain *Blockchain) headerRead() (found bool, err error) {
 		return true, errors.New("future blockchain format not supported. You must go back to the future!")
 	}
 
-	blockchain.publicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, HashFunction(buffer[0:18]))
+	blockchain.publicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, protocol.HashData(buffer[0:18]))
 
 	return
 }
@@ -118,7 +110,7 @@ func (blockchain *Blockchain) headerWrite(height, version uint64) (err error) {
 	binary.LittleEndian.PutUint64(buffer[8:16], version)
 	binary.LittleEndian.PutUint16(buffer[16:18], 0) // Current format is 0
 
-	signature, err := btcec.SignCompact(btcec.S256(), blockchain.privateKey, HashFunction(buffer[0:18]), true)
+	signature, err := btcec.SignCompact(btcec.S256(), blockchain.privateKey, protocol.HashData(buffer[0:18]), true)
 
 	if err != nil {
 		return err
@@ -250,7 +242,7 @@ func (blockchain *Blockchain) IterateDeleteRecord(callback func(record *BlockRec
 			// store the block
 			blockchain.database.Set(blockNumberToKey(block.Number), raw)
 
-			lastBlockHash = HashFunction(raw)
+			lastBlockHash = protocol.HashData(raw)
 		}
 
 		// update the blockchain header in the database
@@ -293,7 +285,7 @@ func (blockchain *Blockchain) Append(RecordsRaw []BlockRecordRaw) (newHeight, ne
 			return 0, 0, StatusBlockNotFound
 		}
 
-		block.LastBlockHash = HashFunction(previousBlockRaw)
+		block.LastBlockHash = protocol.HashData(previousBlockRaw)
 	}
 
 	block.Number = blockchain.height

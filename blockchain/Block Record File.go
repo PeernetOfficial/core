@@ -31,6 +31,7 @@ import (
 	"errors"
 	"math"
 
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/google/uuid"
 )
 
@@ -64,8 +65,8 @@ func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw, nodeID []byte) (files [
 			}
 
 			file := BlockRecordFile{NodeID: nodeID}
-			file.Hash = make([]byte, hashSize)
-			copy(file.Hash, record.Data[0:0+hashSize])
+			file.Hash = make([]byte, protocol.HashSize)
+			copy(file.Hash, record.Data[0:0+protocol.HashSize])
 			copy(file.ID[:], record.Data[32:32+16])
 			file.Type = record.Data[48]
 			file.Format = binary.LittleEndian.Uint16(record.Data[49 : 49+2])
@@ -152,7 +153,7 @@ func encodeBlockRecordFiles(files []BlockRecordFile) (recordsRaw []BlockRecordRa
 	for n := range files {
 		data := make([]byte, 61)
 
-		if len(files[n].Hash) != hashSize {
+		if len(files[n].Hash) != protocol.HashSize {
 			return nil, errors.New("encodeBlockRecords invalid file hash")
 		}
 

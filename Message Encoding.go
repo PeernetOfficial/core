@@ -418,7 +418,7 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 				return nil, 0, false
 			}
 
-			peer.NodeID = PublicKey2NodeID(peer.PublicKey)
+			peer.NodeID = protocol.PublicKey2NodeID(peer.PublicKey)
 
 			if reason == 0 { // Peer was returned because it is close to the requested hash
 				hash2Peer.Closest = append(hash2Peer.Closest, peer)
