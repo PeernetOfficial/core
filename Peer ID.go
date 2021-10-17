@@ -201,7 +201,7 @@ func publicKey2Compressed(publicKey *btcec.PublicKey) [btcec.PubKeyBytesLenCompr
 // LastContact is passed on in the Node.LastSeen field.
 func records2Nodes(records []PeerRecord, peerSource *PeerInfo) (nodes []*dht.Node) {
 	for _, record := range records {
-		if record.IsBadQuality() {
+		if IsReturnedPeerBadQuality(&record) {
 			continue
 		}
 

@@ -236,7 +236,7 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest
 	}
 
 	for _, closePeer := range closest {
-		if closePeer.IsBadQuality() {
+		if IsReturnedPeerBadQuality(&closePeer) {
 			continue
 		}
 
@@ -269,8 +269,8 @@ func ShouldSendFindSelf() bool {
 	return true
 }
 
-// IsBadQuality checks if the returned peer record is bad quality and should be discarded
-func (record *PeerRecord) IsBadQuality() bool {
+// IsReturnedPeerBadQuality checks if the returned peer record is bad quality and should be discarded
+func IsReturnedPeerBadQuality(record *PeerRecord) bool {
 	isIPv4 := record.IPv4 != nil && !record.IPv4.IsUnspecified()
 	isIPv6 := record.IPv6 != nil && !record.IPv6.IsUnspecified()
 
@@ -281,13 +281,13 @@ func (record *PeerRecord) IsBadQuality() bool {
 
 	// Internal port must be provided. Otherwise the external port is likely not provided either, and checking the NAT and port forwarded status is not possible.
 	if isIPv4 && record.IPv4PortReportedInternal == 0 || isIPv6 && record.IPv6PortReportedInternal == 0 {
-		//fmt.Printf("IsBadQuality port internal not available for target %s port %d, peer %s\n", record.IP.String(), record.Port, hex.EncodeToString(record.PublicKey.SerializeCompressed()))
+		//fmt.Printf("IsReturnedPeerBadQuality port internal not available for target %s port %d, peer %s\n", record.IP.String(), record.Port, hex.EncodeToString(record.PublicKey.SerializeCompressed()))
 		return true
 	}
 
 	// Must not be self. There is no point that a remote peer would return self
 	if record.PublicKey.IsEqual(peerPublicKey) {
-		//fmt.Printf("IsBadQuality received self peer\n")
+		//fmt.Printf("IsReturnedPeerBadQuality received self peer\n")
 		return true
 	}
 
