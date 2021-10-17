@@ -426,7 +426,7 @@ func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *protocol.Packet
 		}
 
 		if sequenceData != nil {
-			packet.Sequence = msgArbitrarySequence(receiverPublicKey, sequenceData).sequence
+			packet.Sequence = ArbitrarySequence(receiverPublicKey, sequenceData).SequenceNumber
 		}
 		err = (&Connection{Network: network, Address: remote, PortInternal: receiverPortInternal, traversePeer: traversePeer}).send(packet, receiverPublicKey, isFirstPacket)
 		isFirstPacket = false

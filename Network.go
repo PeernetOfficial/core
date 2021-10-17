@@ -49,9 +49,6 @@ var countListen4, countListen6 int64
 // Default ports to use. This may be randomized in the future to prevent fingerprinting (and subsequent blocking) by corporate and ISP firewalls.
 const defaultPort = 'p' // 112
 
-// ReplyTimeout is the round-trip timeout for message sequences.
-var ReplyTimeout = 20
-
 // AutoAssignPort assigns a port for the given IP. Use port 0 for zero configuration.
 func (network *Network) AutoAssignPort(ip net.IP, port int) (err error) {
 	networkA := "udp6"
@@ -198,7 +195,7 @@ func packetWorker(packets <-chan networkWire) {
 		case protocol.CommandResponse: // Response
 			if response, _ := msgDecodeResponse(raw); response != nil {
 				// Validate sequence number which prevents unsolicited responses.
-				if valid, rtt := msgValidateSequence(raw, response.Actions&(1<<ActionSequenceLast) > 0); !valid {
+				if valid, rtt := ValidateSequence(raw, response.Actions&(1<<ActionSequenceLast) > 0); !valid {
 					//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 					continue
 				} else if rtt > 0 {
@@ -240,7 +237,7 @@ func packetWorker(packets <-chan networkWire) {
 
 		case protocol.CommandPong: // Ping
 			// Validate sequence number which prevents unsolicited responses.
-			if valid, rtt := msgValidateSequence(raw, true); !valid {
+			if valid, rtt := ValidateSequence(raw, true); !valid {
 				//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 				continue
 			} else if rtt > 0 {
