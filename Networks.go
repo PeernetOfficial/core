@@ -19,7 +19,11 @@ type Networks struct {
 	// This is useful to determine if there are any IPv4 or IPv6 listeners for potential external connections. This can be used to determine IPv4_LISTEN and IPv6_LISTEN.
 	//countListen4, countListen6 int64
 
+	// Sequences keeps track of all message sequence number, regardless of the network connection.
 	Sequences *SequenceManager
+
+	// ipListen keeps a simple list of IPs listened to. This allows quickly identifying if an IP matches with a listened one.
+	ipListen *ipList
 }
 
 //  ReplyTimeout is the round-trip timeout for message sequences.
@@ -31,4 +35,6 @@ func initMessageSequence() {
 	networks = &Networks{}
 
 	networks.Sequences = NewSequenceManager(ReplyTimeout)
+
+	networks.ipListen = NewIPList()
 }

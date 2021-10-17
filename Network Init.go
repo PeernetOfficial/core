@@ -31,18 +31,13 @@ type networkWire struct {
 }
 
 var (
-	rawPacketsIncoming chan networkWire      // channel for processing incoming decoded packets by workers
-	ipsListen          map[string]struct{}   // list of IPs currently listening on
-	ipsListenMutex     sync.RWMutex          // Mutext for ipsListen
-	ifacesExist        map[string][]net.Addr // list of currently known interfaces with list of IP addresses
+	rawPacketsIncoming chan networkWire // channel for processing incoming decoded packets by workers
 )
 
 // initNetwork sets up the network configuration and starts listening.
 func initNetwork() {
 	rawPacketsIncoming = make(chan networkWire, 1000) // buffer up to 1000 UDP packets before they get buffered by the OS network stack and eventually dropped
-	ipsListen = make(map[string]struct{})
-	ifacesExist = make(map[string][]net.Addr)
-	rand.Seed(time.Now().UnixNano()) // we are not using "crypto/rand" for speed tradeoff
+	rand.Seed(time.Now().UnixNano())                  // we are not using "crypto/rand" for speed tradeoff
 
 	if config.ListenWorkers == 0 {
 		config.ListenWorkers = 2
@@ -65,7 +60,7 @@ func initNetwork() {
 
 			portI, _ := strconv.Atoi(portA)
 
-			if _, err := networkPrepareListen(host, portI); err != nil {
+			if _, err := networks.PrepareListen(host, portI); err != nil {
 				Filters.LogError("initNetwork", "listen on '%s': %s\n", listenA, err.Error())
 				continue
 			}
@@ -75,10 +70,10 @@ func initNetwork() {
 	}
 
 	// Listen on all IPv4 and IPv6 addresses
-	//if _, err := networkPrepareListen("0.0.0.0", 0); err != nil {
+	//if _, err := networks.PrepareListen("0.0.0.0", 0); err != nil {
 	//	Filters.LogError("initNetwork", "listen on all IPv4 addresses (0.0.0.0): %s\n", err.Error())
 	//}
-	//if _, err := networkPrepareListen("::", 0); err != nil {
+	//if _, err := networks.PrepareListen("::", 0); err != nil {
 	//	Filters.LogError("initNetwork", "listen on all IPv6 addresses (::): %s\n", err.Error())
 	//}
 
@@ -99,14 +94,14 @@ func initNetwork() {
 			continue
 		}
 
-		ifacesExist[iface.Name] = addresses
+		networks.ipListen.ifacesExist[iface.Name] = addresses
 
-		networkStart(iface, addresses)
+		networks.InterfaceStart(iface, addresses)
 	}
 }
 
-// networkStart will start the listeners on all the IP addresses for the network
-func networkStart(iface net.Interface, addresses []net.Addr) (networks []*Network) {
+// InterfaceStart will start the listeners on all the IP addresses for the network
+func (nets *Networks) InterfaceStart(iface net.Interface, addresses []net.Addr) (networksNew []*Network) {
 	for _, address := range addresses {
 		net1 := address.(*net.IPNet)
 
@@ -115,7 +110,7 @@ func networkStart(iface net.Interface, addresses []net.Addr) (networks []*Networ
 			continue
 		}
 
-		netw, err := networkPrepareListen(net1.IP.String(), 0)
+		networkNew, err := networks.PrepareListen(net1.IP.String(), 0)
 
 		if err != nil {
 			// Do not log common errors:
@@ -125,22 +120,22 @@ func networkStart(iface net.Interface, addresses []net.Addr) (networks []*Networ
 				continue
 			}
 
-			Filters.LogError("networkStart", "listening on network adapter '%s' IPv4 '%s': %s\n", iface.Name, net1.IP.String(), err.Error())
+			Filters.LogError("networks.InterfaceStart", "listening on network adapter '%s' IPv4 '%s': %s\n", iface.Name, net1.IP.String(), err.Error())
 			continue
 		}
 
-		addListenAddress(netw.address)
+		networks.ipListen.Add(networkNew.address)
 
-		Filters.LogError("networkStart", "listen on network '%s' UDP %s\n", iface.Name, netw.address.String())
+		Filters.LogError("networks.InterfaceStart", "listen on network '%s' UDP %s\n", iface.Name, networkNew.address.String())
 
-		networks = append(networks, netw)
+		networksNew = append(networksNew, networkNew)
 	}
 
 	return
 }
 
-// networkPrepareListen prepares to listen on the given IP address. If port is 0, one is chosen automatically.
-func networkPrepareListen(ipA string, port int) (network *Network, err error) {
+// PrepareListen creates a new network and prepares to listen on the given IP address. If port is 0, one is chosen automatically.
+func (nets *Networks) PrepareListen(ipA string, port int) (network *Network, err error) {
 	ip := net.ParseIP(ipA)
 	if ip == nil {
 		return nil, errors.New("invalid input IP")
@@ -180,30 +175,45 @@ func networkPrepareListen(ipA string, port int) (network *Network, err error) {
 	return network, nil
 }
 
-// addListenAddress adds a listening IP:Port to the list.
-func addListenAddress(addr *net.UDPAddr) {
-	ipsListenMutex.Lock()
-	ipsListen[net.JoinHostPort(addr.IP.String(), strconv.Itoa(addr.Port))] = struct{}{}
-	ipsListenMutex.Unlock()
+// ipList keeps track of listened IP addresses and observed interfaces
+type ipList struct {
+	ipListen     map[string]struct{}   // list of IPs currently listening on
+	sync.RWMutex                       // Mutex for list
+	ifacesExist  map[string][]net.Addr // list of currently known interfaces with list of IP addresses
 }
 
-// removeListenAddress removes a listening address from the list
-func removeListenAddress(addr *net.UDPAddr) {
-	ipsListenMutex.Lock()
-	delete(ipsListen, net.JoinHostPort(addr.IP.String(), strconv.Itoa(addr.Port)))
-	ipsListenMutex.Unlock()
+// NewIPList creates a new list
+func NewIPList() (list *ipList) {
+	return &ipList{
+		ipListen:    make(map[string]struct{}),
+		ifacesExist: make(map[string][]net.Addr),
+	}
+}
+
+// Add adds a listening IP:Port to the list.
+func (list *ipList) Add(addr *net.UDPAddr) {
+	list.Lock()
+	list.ipListen[net.JoinHostPort(addr.IP.String(), strconv.Itoa(addr.Port))] = struct{}{}
+	list.Unlock()
+}
+
+// Remove removes a listening address from the list
+func (list *ipList) Remove(addr *net.UDPAddr) {
+	list.Lock()
+	delete(list.ipListen, net.JoinHostPort(addr.IP.String(), strconv.Itoa(addr.Port)))
+	list.Unlock()
 }
 
 // IsAddressSelf checks if the senders address is actually listening address. This prevents loopback packets from being considered.
 // Note: This does not work when listening on 0.0.0.0 or ::1 and binding the sending socket to that.
-func IsAddressSelf(addr *net.UDPAddr) bool {
+func (list *ipList) IsAddressSelf(addr *net.UDPAddr) bool {
 	if addr == nil {
 		return false
 	}
 
 	// do not use addr.String() since it addds the Zone for IPv6 which may be ambiguous (can be adapter name or address literal).
-	ipsListenMutex.RLock()
-	_, ok := ipsListen[net.JoinHostPort(addr.IP.String(), strconv.Itoa(addr.Port))]
-	ipsListenMutex.RUnlock()
+	list.RLock()
+	_, ok := list.ipListen[net.JoinHostPort(addr.IP.String(), strconv.Itoa(addr.Port))]
+	list.RUnlock()
 	return ok
 }

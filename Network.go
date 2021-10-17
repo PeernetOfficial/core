@@ -316,7 +316,7 @@ func (network *Network) Terminate() {
 	close(network.terminateSignal) // safety guaranteed via lock
 	network.socket.Close()         // Will stop the listener from blocking on network.socket.ReadFromUDP
 
-	removeListenAddress(network.address)
+	networks.ipListen.Remove(network.address)
 }
 
 // SelfReportedPorts returns the internal and external ports as self-reported by the peer to others.

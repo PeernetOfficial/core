@@ -114,7 +114,7 @@ func (network *Network) MulticastIPv6Listen() {
 		}
 
 		// skip incoming packets that were looped back
-		if IsAddressSelf(sender.(*net.UDPAddr)) {
+		if networks.ipListen.IsAddressSelf(sender.(*net.UDPAddr)) {
 			continue
 		}
 

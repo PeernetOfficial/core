@@ -119,7 +119,7 @@ func networkChangeMonitor() {
 			ifacesNew[iface.Name] = addressesNew
 
 			// was the interface added?
-			addressesExist, ok := ifacesExist[iface.Name]
+			addressesExist, ok := networks.ipListen.ifacesExist[iface.Name]
 			if !ok {
 				networkChangeInterfaceNew(iface, addressesNew)
 			} else {
@@ -156,13 +156,13 @@ func networkChangeMonitor() {
 		}
 
 		// was an existing interface removed?
-		for ifaceExist, addressesExist := range ifacesExist {
+		for ifaceExist, addressesExist := range networks.ipListen.ifacesExist {
 			if _, ok := ifacesNew[ifaceExist]; !ok {
 				networkChangeInterfaceRemove(ifaceExist, addressesExist)
 			}
 		}
 
-		ifacesExist = ifacesNew
+		networks.ipListen.ifacesExist = ifacesNew
 	}
 }
 
@@ -170,7 +170,7 @@ func networkChangeMonitor() {
 func networkChangeInterfaceNew(iface net.Interface, addresses []net.Addr) {
 	Filters.LogError("networkChangeInterfaceNew", "new interface '%s' (%d IPs)\n", iface.Name, len(addresses))
 
-	networks := networkStart(iface, addresses)
+	networks := networks.InterfaceStart(iface, addresses)
 
 	for _, network := range networks {
 		go network.upnpAuto()
@@ -217,9 +217,9 @@ func networkChangeInterfaceRemove(iface string, addresses []net.Addr) {
 func networkChangeIPNew(iface net.Interface, address net.Addr) {
 	Filters.LogError("networkChangeIPNew", "new interface '%s' IP %s\n", iface.Name, address.String())
 
-	networks := networkStart(iface, []net.Addr{address})
+	networksNew := networks.InterfaceStart(iface, []net.Addr{address})
 
-	for _, network := range networks {
+	for _, network := range networksNew {
 		go network.upnpAuto()
 	}
 

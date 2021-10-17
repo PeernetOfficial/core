@@ -68,7 +68,7 @@ func (network *Network) BroadcastIPv4Listen() {
 			continue
 		}
 
-		if IsAddressSelf(sender.(*net.UDPAddr)) {
+		if networks.ipListen.IsAddressSelf(sender.(*net.UDPAddr)) {
 			continue
 		}
 
