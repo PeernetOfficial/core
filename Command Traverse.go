@@ -8,6 +8,7 @@ package core
 
 import (
 	"math/rand"
+	"net"
 	"time"
 
 	"github.com/PeernetOfficial/core/protocol"
@@ -43,7 +44,21 @@ func (peer *PeerInfo) cmdTraverseForward(msg *MessageTraverse) {
 		return
 	}
 
-	if err := msgEncodeTraverseSetAddress(msg.Payload, connectionIPv4, connectionIPv6); err != nil {
+	// get the individual fields
+	var IPv4, IPv6 net.IP
+	var PortIPv4, PortIPv4ReportedExternal, PortIPv6, PortIPv6ReportedExternal uint16
+	if connectionIPv4 != nil {
+		IPv4 = connectionIPv4.Address.IP
+		PortIPv4 = uint16(connectionIPv4.Address.Port)
+		PortIPv4ReportedExternal = connectionIPv4.PortExternal
+	}
+	if connectionIPv6 != nil {
+		IPv6 = connectionIPv6.Address.IP
+		PortIPv6 = uint16(connectionIPv6.Address.Port)
+		PortIPv6ReportedExternal = connectionIPv6.PortExternal
+	}
+
+	if err := msgEncodeTraverseSetAddress(msg.Payload, IPv4, PortIPv4, PortIPv4ReportedExternal, IPv6, PortIPv6, PortIPv6ReportedExternal); err != nil {
 		return
 	}
 

@@ -912,8 +912,7 @@ func msgEncodeTraverse(senderPrivateKey *btcec.PrivateKey, embeddedPacketRaw []b
 }
 
 // msgEncodeTraverseSetAddress sets the IP and Port
-//func msgEncodeTraverseSetAddress(raw []byte, IPv4 net.IP, PortIPv4, PortIPv4ReportedExternal uint16, IPv6 net.IP, PortIPv6, PortIPv6ReportedExternal uint16) (err error) {
-func msgEncodeTraverseSetAddress(raw []byte, connectionIPv4, connectionIPv6 *Connection) (err error) {
+func msgEncodeTraverseSetAddress(raw []byte, IPv4 net.IP, PortIPv4, PortIPv4ReportedExternal uint16, IPv6 net.IP, PortIPv6, PortIPv6ReportedExternal uint16) (err error) {
 	if isPacketSizeExceed(len(raw), 0) {
 		return errors.New("traverse encode 2: embedded packet too big")
 	} else if len(raw) < traversePayloadHeaderSize {
@@ -926,17 +925,17 @@ func msgEncodeTraverseSetAddress(raw []byte, connectionIPv4, connectionIPv6 *Con
 	}
 
 	// IPv4
-	if connectionIPv4 != nil && connectionIPv4.IsIPv4() {
-		copy(raw[76+sizePacketEmbed+65:76+sizePacketEmbed+65+4], connectionIPv4.Address.IP.To4())
-		binary.LittleEndian.PutUint16(raw[76+sizePacketEmbed+65+4:76+sizePacketEmbed+65+4+2], uint16(connectionIPv4.Address.Port))
-		binary.LittleEndian.PutUint16(raw[76+sizePacketEmbed+65+6:76+sizePacketEmbed+65+6+2], connectionIPv4.PortExternal)
+	if IPv4 != nil && IsIPv4(IPv4) {
+		copy(raw[76+sizePacketEmbed+65:76+sizePacketEmbed+65+4], IPv4.To4())
+		binary.LittleEndian.PutUint16(raw[76+sizePacketEmbed+65+4:76+sizePacketEmbed+65+4+2], PortIPv4)
+		binary.LittleEndian.PutUint16(raw[76+sizePacketEmbed+65+6:76+sizePacketEmbed+65+6+2], PortIPv4ReportedExternal)
 	}
 
 	// IPv6
-	if connectionIPv6 != nil && connectionIPv6.IsIPv6() {
-		copy(raw[76+sizePacketEmbed+65+8:76+sizePacketEmbed+65+8+16], connectionIPv6.Address.IP.To16())
-		binary.LittleEndian.PutUint16(raw[76+sizePacketEmbed+65+24:76+sizePacketEmbed+65+24+2], uint16(connectionIPv6.Address.Port))
-		binary.LittleEndian.PutUint16(raw[76+sizePacketEmbed+65+26:76+sizePacketEmbed+65+26+2], connectionIPv6.PortExternal)
+	if IPv6 != nil && IsIPv6(IPv6) {
+		copy(raw[76+sizePacketEmbed+65+8:76+sizePacketEmbed+65+8+16], IPv6.To16())
+		binary.LittleEndian.PutUint16(raw[76+sizePacketEmbed+65+24:76+sizePacketEmbed+65+24+2], PortIPv6)
+		binary.LittleEndian.PutUint16(raw[76+sizePacketEmbed+65+26:76+sizePacketEmbed+65+26+2], PortIPv6ReportedExternal)
 	}
 
 	return nil
