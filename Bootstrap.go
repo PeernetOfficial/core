@@ -208,7 +208,7 @@ func (nets *Networks) autoMulticastBroadcast() {
 func contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, receiverPortInternal uint16) (contacted bool) {
 	findSelf := ShouldSendFindSelf()
 	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets := EncodeAnnouncement(true, findSelf, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion)
+	packets := protocol.EncodeAnnouncement(true, findSelf, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion, userAgent)
 	if len(packets) == 0 {
 		return false
 	}
@@ -230,13 +230,13 @@ type bootstrapFindSelf struct {
 const bootstrapAcceptContacts = 5
 
 // cmdResponseBootstrapFindSelf processes FIND_SELF responses
-func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest []PeerRecord) {
+func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse, closest []protocol.PeerRecord) {
 	if len(closest) > bootstrapAcceptContacts {
 		closest = closest[:bootstrapAcceptContacts]
 	}
 
 	for _, closePeer := range closest {
-		if IsReturnedPeerBadQuality(&closePeer) {
+		if isReturnedPeerBadQuality(&closePeer) {
 			continue
 		}
 
@@ -246,12 +246,12 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *MessageResponse, closest
 		}
 
 		// Check if the reported peer was recently contacted (in connection with the origin peer) for bootstrapping. This makes sure inactive peers are not contacted over and over again.
-		recent, blacklisted := closePeer.IsRecent(peer.NodeID)
+		recent, blacklisted := isReturnedPeerRecent(&closePeer, peer.NodeID)
 		if blacklisted {
 			continue
 		}
 
-		for _, address := range closePeer.ToAddresses() {
+		for _, address := range peerRecordToAddresses(&closePeer) {
 			// Check if the specific IP:Port was already contacted in the last 5-10 minutes.
 			if recent.IsAddressContacted(address) {
 				continue
@@ -269,8 +269,8 @@ func ShouldSendFindSelf() bool {
 	return true
 }
 
-// IsReturnedPeerBadQuality checks if the returned peer record is bad quality and should be discarded
-func IsReturnedPeerBadQuality(record *PeerRecord) bool {
+// isReturnedPeerBadQuality checks if the returned peer record is bad quality and should be discarded
+func isReturnedPeerBadQuality(record *protocol.PeerRecord) bool {
 	isIPv4 := record.IPv4 != nil && !record.IPv4.IsUnspecified()
 	isIPv6 := record.IPv6 != nil && !record.IPv6.IsUnspecified()
 
@@ -294,8 +294,8 @@ func IsReturnedPeerBadQuality(record *PeerRecord) bool {
 	return false
 }
 
-// ToAddresses returns the addresses in a usable way
-func (record *PeerRecord) ToAddresses() (addresses []*peerAddress) {
+// peerRecordToAddresses returns the addresses in a usable way
+func peerRecordToAddresses(record *protocol.PeerRecord) (addresses []*peerAddress) {
 	// IPv4
 	ipv4Port := record.IPv4Port
 	if record.IPv4PortReportedExternal > 0 { // Use the external port if available
@@ -352,8 +352,8 @@ func resetRecentContacts() {
 	}
 }
 
-// IsRecent checks if the peer is blacklisted related to the origin peer due to recent contact. It will create a "recent contact" if none exists.
-func (record *PeerRecord) IsRecent(originNodeID []byte) (recent *recentContactInfo, blacklisted bool) {
+// isReturnedPeerRecent checks if the peer is blacklisted related to the origin peer due to recent contact. It will create a "recent contact" if none exists.
+func isReturnedPeerRecent(record *protocol.PeerRecord, originNodeID []byte) (recent *recentContactInfo, blacklisted bool) {
 	key := publicKey2Compressed(record.PublicKey)
 
 	recentContactsMutex.Lock()

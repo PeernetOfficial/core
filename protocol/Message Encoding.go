@@ -6,7 +6,7 @@ Author:     Peter Kleissner
 Intermediary between low-level packets and high-level interpretation.
 */
 
-package core
+package protocol
 
 import (
 	"bytes"
@@ -16,15 +16,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/PeernetOfficial/core/protocol"
 	"github.com/btcsuite/btcd/btcec"
 )
 
 // ProtocolVersion is the current protocol version
 const ProtocolVersion = 0
-
-// UserAgent should be set by the caller
-var UserAgent = "Peernet Core/0.1"
 
 // Actions between peers, sent via Announcement message. They correspond to the bit array index.
 const (
@@ -47,9 +43,9 @@ const (
 
 // MessageRaw is a high-level message between peers that has not been decoded
 type MessageRaw struct {
-	protocol.PacketRaw
-	SenderPublicKey *btcec.PublicKey         // Sender Public Key, ECDSA (secp256k1) 257-bit
-	SequenceInfo    *protocol.SequenceExpiry // Sequence
+	PacketRaw
+	SenderPublicKey *btcec.PublicKey // Sender Public Key, ECDSA (secp256k1) 257-bit
+	SequenceInfo    *SequenceExpiry  // Sequence
 }
 
 // MessageAnnouncement is the decoded announcement message.
@@ -67,9 +63,6 @@ type MessageAnnouncement struct {
 	FindDataKeys      []KeyHash   // FIND_VALUE data
 	InfoStoreFiles    []InfoStore // INFO_STORE data
 }
-
-// blake3 digest size in bytes
-const hashSize = 32
 
 // KeyHash is a single blake3 key hash
 type KeyHash struct {
@@ -151,8 +144,8 @@ type MessageTraverse struct {
 // Minimum length of Announcement payload header without User Agent
 const announcementPayloadHeaderSize = 20
 
-// msgDecodeAnnouncement decodes the incoming announcement message. Returns nil if invalid.
-func msgDecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error) {
+// DecodeAnnouncement decodes the incoming announcement message. Returns nil if invalid.
+func DecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error) {
 	result = &MessageAnnouncement{
 		MessageRaw: msg,
 	}
@@ -228,19 +221,19 @@ func msgDecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err er
 
 // decodeKeys decodes keys. Header is 2 bytes (count) followed by the actual keys (each 32 bytes blake3 hash).
 func decodeKeys(data []byte) (keys []KeyHash, read int, valid bool) {
-	if len(data) < 2+hashSize { // minimum length
+	if len(data) < 2+HashSize { // minimum length
 		return nil, 0, false
 	}
 
 	count := binary.LittleEndian.Uint16(data[0:2])
 
-	if read = 2 + int(count)*hashSize; len(data) < read {
+	if read = 2 + int(count)*HashSize; len(data) < read {
 		return nil, 0, false
 	}
 
 	for n := 0; n < int(count); n++ {
-		key := make([]byte, hashSize)
-		copy(key, data[2+n*hashSize:2+n*hashSize+hashSize])
+		key := make([]byte, HashSize)
+		copy(key, data[2+n*HashSize:2+n*HashSize+HashSize])
 		keys = append(keys, KeyHash{Hash: key})
 	}
 
@@ -260,8 +253,8 @@ func decodeInfoStore(data []byte) (files []InfoStore, read int, valid bool) {
 
 	for n := 0; n < int(count); n++ {
 		file := InfoStore{}
-		file.ID.Hash = make([]byte, hashSize)
-		copy(file.ID.Hash, data[2+n*41:2+n*41+hashSize])
+		file.ID.Hash = make([]byte, HashSize)
+		copy(file.ID.Hash, data[2+n*41:2+n*41+HashSize])
 		file.Size = binary.LittleEndian.Uint64(data[2+n*41+32 : 2+n*41+32+8])
 		file.Type = data[2+n*41+40]
 
@@ -271,8 +264,8 @@ func decodeInfoStore(data []byte) (files []InfoStore, read int, valid bool) {
 	return files, read, true
 }
 
-// msgDecodeResponse decodes the incoming response message. Returns nil if invalid.
-func msgDecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
+// DecodeResponse decodes the incoming response message. Returns nil if invalid.
+func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 	result = &MessageResponse{
 		MessageRaw: msg,
 	}
@@ -346,7 +339,7 @@ func msgDecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 		}
 
 		for n := 0; n < int(countHashesNotFound); n++ {
-			hash := make([]byte, hashSize)
+			hash := make([]byte, HashSize)
 			copy(hash, data[n*32:n*32+32])
 
 			result.HashesNotFound = append(result.HashesNotFound, hash)
@@ -368,7 +361,7 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 			return nil, 0, false
 		}
 
-		hash := make([]byte, hashSize)
+		hash := make([]byte, HashSize)
 		copy(hash, data[index:index+32])
 		countField := binary.LittleEndian.Uint16(data[index+32:index+32+2]) & 0x7FFF
 		isLast := binary.LittleEndian.Uint16(data[index+32:index+32+2])&0x8000 > 0
@@ -418,7 +411,7 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 				return nil, 0, false
 			}
 
-			peer.NodeID = protocol.PublicKey2NodeID(peer.PublicKey)
+			peer.NodeID = PublicKey2NodeID(peer.PublicKey)
 
 			if reason == 0 { // Peer was returned because it is close to the requested hash
 				hash2Peer.Closest = append(hash2Peer.Closest, peer)
@@ -444,7 +437,7 @@ func decodeEmbeddedFile(data []byte, count int) (filesEmbed []EmbeddedFileData, 
 			return nil, 0, false
 		}
 
-		hash := make([]byte, hashSize)
+		hash := make([]byte, HashSize)
 		copy(hash, data[index:index+32])
 		sizeField := int(binary.LittleEndian.Uint16(data[index+32 : index+32+2]))
 		index += 34
@@ -459,7 +452,7 @@ func decodeEmbeddedFile(data []byte, count int) (filesEmbed []EmbeddedFileData, 
 		index += sizeField
 
 		// validate the hash
-		if !bytes.Equal(hash, protocol.HashData(fileData)) {
+		if !bytes.Equal(hash, HashData(fileData)) {
 			return nil, read, false
 		}
 
@@ -475,14 +468,14 @@ const udpMaxPacketSize = 65507
 
 // isPacketSizeExceed checks if the max packet size would be exceeded with the payload
 func isPacketSizeExceed(currentSize int, testSize int) bool {
-	return currentSize+testSize > udpMaxPacketSize-protocol.PacketLengthMin
+	return currentSize+testSize > udpMaxPacketSize-PacketLengthMin
 }
 
 // EncodeAnnouncement encodes an announcement message. It may return multiple messages if the input does not fit into one.
 // findPeer is a list of node IDs (blake3 hash of peer ID compressed form)
 // findValue is a list of hashes
 // files is a list of files stored to inform about
-func EncodeAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore, features byte, blockchainHeight, blockchainVersion uint64) (packetsRaw [][]byte) {
+func EncodeAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore, features byte, blockchainHeight, blockchainVersion uint64, userAgent string) (packetsRaw [][]byte) {
 createPacketLoop:
 	for {
 		raw := make([]byte, 64*1024) // max UDP packet size
@@ -497,7 +490,7 @@ createPacketLoop:
 
 		// only on initial announcement the User Agent must be provided according to the protocol spec
 		if sendUA {
-			userAgentB := []byte(UserAgent)
+			userAgentB := []byte(userAgent)
 			if len(userAgentB) > 255 {
 				userAgentB = userAgentB[:255]
 			}
@@ -609,11 +602,11 @@ createPacketLoop:
 }
 
 // EmbeddedFileSizeMax is the maximum size of embedded files in response messages. Any file exceeding that must be shared via regular file transfer.
-const EmbeddedFileSizeMax = udpMaxPacketSize - protocol.PacketLengthMin - announcementPayloadHeaderSize - 2 - 35
+const EmbeddedFileSizeMax = udpMaxPacketSize - PacketLengthMin - announcementPayloadHeaderSize - 2 - 35
 
-// msgEncodeResponse encodes a response message
+// EncodeResponse encodes a response message
 // hash2Peers will be modified.
-func msgEncodeResponse(sendUA bool, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte, features byte, blockchainHeight, blockchainVersion uint64) (packetsRaw [][]byte, err error) {
+func EncodeResponse(sendUA bool, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte, features byte, blockchainHeight, blockchainVersion uint64, userAgent string) (packetsRaw [][]byte, err error) {
 	for n := range filesEmbed {
 		if len(filesEmbed[n].Data) > EmbeddedFileSizeMax {
 			return nil, errors.New("embedded file too big")
@@ -634,7 +627,7 @@ createPacketLoop:
 
 		// only on initial response the User Agent must be provided according to the protocol spec
 		if sendUA {
-			userAgentB := []byte(UserAgent)
+			userAgentB := []byte(userAgent)
 			if len(userAgentB) > 255 {
 				userAgentB = userAgentB[:255]
 			}
@@ -782,10 +775,10 @@ func encodePeerRecord(raw []byte, peer *PeerRecord, reason uint8) {
 
 const traversePayloadHeaderSize = 76 + 65 + 28
 
-// msgDecodeTraverse decodes a traverse message.
+// DecodeTraverse decodes a traverse message.
 // It does not verify if the receiver is authorized to read or forward this message.
 // It validates the signature, but does not validate the signer.
-func msgDecodeTraverse(msg *MessageRaw) (result *MessageTraverse, err error) {
+func DecodeTraverse(msg *MessageRaw) (result *MessageTraverse, err error) {
 	result = &MessageTraverse{
 		MessageRaw: msg,
 	}
@@ -821,7 +814,7 @@ func msgDecodeTraverse(msg *MessageRaw) (result *MessageTraverse, err error) {
 
 	signature := msg.Payload[76+sizePacketEmbed : 76+sizePacketEmbed+65]
 
-	result.SignerPublicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, protocol.HashData(msg.Payload[:76+sizePacketEmbed]))
+	result.SignerPublicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, HashData(msg.Payload[:76+sizePacketEmbed]))
 	if err != nil {
 		return nil, err
 	}
@@ -850,8 +843,8 @@ func msgDecodeTraverse(msg *MessageRaw) (result *MessageTraverse, err error) {
 	return result, nil
 }
 
-// msgEncodeTraverse encodes a traverse message
-func msgEncodeTraverse(senderPrivateKey *btcec.PrivateKey, embeddedPacketRaw []byte, receiverEnd *btcec.PublicKey, relayPeer *btcec.PublicKey) (packetRaw []byte, err error) {
+// EncodeTraverse encodes a traverse message
+func EncodeTraverse(senderPrivateKey *btcec.PrivateKey, embeddedPacketRaw []byte, receiverEnd *btcec.PublicKey, relayPeer *btcec.PublicKey) (packetRaw []byte, err error) {
 	sizePacketEmbed := len(embeddedPacketRaw)
 	if isPacketSizeExceed(traversePayloadHeaderSize, sizePacketEmbed) {
 		return nil, errors.New("traverse encode: embedded packet too big")
@@ -871,7 +864,7 @@ func msgEncodeTraverse(senderPrivateKey *btcec.PrivateKey, embeddedPacketRaw []b
 	copy(raw[76:76+sizePacketEmbed], embeddedPacketRaw)
 
 	// add signature
-	signature, err := btcec.SignCompact(btcec.S256(), senderPrivateKey, protocol.HashData(raw[:76+sizePacketEmbed]), true)
+	signature, err := btcec.SignCompact(btcec.S256(), senderPrivateKey, HashData(raw[:76+sizePacketEmbed]), true)
 	if err != nil {
 		return nil, err
 	}
@@ -882,8 +875,8 @@ func msgEncodeTraverse(senderPrivateKey *btcec.PrivateKey, embeddedPacketRaw []b
 	return raw, nil
 }
 
-// msgEncodeTraverseSetAddress sets the IP and Port
-func msgEncodeTraverseSetAddress(raw []byte, IPv4 net.IP, PortIPv4, PortIPv4ReportedExternal uint16, IPv6 net.IP, PortIPv6, PortIPv6ReportedExternal uint16) (err error) {
+// EncodeTraverseSetAddress sets the IP and Port
+func EncodeTraverseSetAddress(raw []byte, IPv4 net.IP, PortIPv4, PortIPv4ReportedExternal uint16, IPv6 net.IP, PortIPv6, PortIPv6ReportedExternal uint16) (err error) {
 	if isPacketSizeExceed(len(raw), 0) {
 		return errors.New("traverse encode 2: embedded packet too big")
 	} else if len(raw) < traversePayloadHeaderSize {
@@ -896,14 +889,14 @@ func msgEncodeTraverseSetAddress(raw []byte, IPv4 net.IP, PortIPv4, PortIPv4Repo
 	}
 
 	// IPv4
-	if IPv4 != nil && IsIPv4(IPv4) {
+	if IPv4 != nil && len(IPv4) == net.IPv4len {
 		copy(raw[76+sizePacketEmbed+65:76+sizePacketEmbed+65+4], IPv4.To4())
 		binary.LittleEndian.PutUint16(raw[76+sizePacketEmbed+65+4:76+sizePacketEmbed+65+4+2], PortIPv4)
 		binary.LittleEndian.PutUint16(raw[76+sizePacketEmbed+65+6:76+sizePacketEmbed+65+6+2], PortIPv4ReportedExternal)
 	}
 
 	// IPv6
-	if IPv6 != nil && IsIPv6(IPv6) {
+	if IPv6 != nil && len(IPv6) == net.IPv6len {
 		copy(raw[76+sizePacketEmbed+65+8:76+sizePacketEmbed+65+8+16], IPv6.To16())
 		binary.LittleEndian.PutUint16(raw[76+sizePacketEmbed+65+24:76+sizePacketEmbed+65+24+2], PortIPv6)
 		binary.LittleEndian.PutUint16(raw[76+sizePacketEmbed+65+26:76+sizePacketEmbed+65+26+2], PortIPv6ReportedExternal)

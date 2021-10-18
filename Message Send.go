@@ -32,9 +32,9 @@ func (peer *PeerInfo) Chat(text string) {
 }
 
 // sendAnnouncement sends the announcement message. It acquires a new sequence for each message.
-func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore, sequenceData interface{}) {
+func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []protocol.KeyHash, findValue []protocol.KeyHash, files []protocol.InfoStore, sequenceData interface{}) {
 	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets := EncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files, FeatureSupport(), blockchainHeight, blockchainVersion)
+	packets := protocol.EncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files, FeatureSupport(), blockchainHeight, blockchainVersion, userAgent)
 
 	for _, packet := range packets {
 		raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packet, Sequence: networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, sequenceData).SequenceNumber}
@@ -44,9 +44,9 @@ func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []KeyHash
 }
 
 // sendResponse sends the response message
-func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte) (err error) {
+func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []protocol.Hash2Peer, filesEmbed []protocol.EmbeddedFileData, hashesNotFound [][]byte) (err error) {
 	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets, err := msgEncodeResponse(sendUA, hash2Peers, filesEmbed, hashesNotFound, FeatureSupport(), blockchainHeight, blockchainVersion)
+	packets, err := protocol.EncodeResponse(sendUA, hash2Peers, filesEmbed, hashesNotFound, FeatureSupport(), blockchainHeight, blockchainVersion, userAgent)
 
 	for _, packet := range packets {
 		raw := &protocol.PacketRaw{Command: protocol.CommandResponse, Payload: packet, Sequence: sequence}
@@ -59,7 +59,7 @@ func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []Ha
 
 // sendTraverse sends a traverse message
 func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd *btcec.PublicKey) (err error) {
-	packet.Protocol = ProtocolVersion
+	packet.Protocol = protocol.ProtocolVersion
 	// self-reported ports are not set, as this isn't sent via a specific network but a relay
 	//packet.SetSelfReportedPorts(c.Network.SelfReportedPorts())
 
@@ -68,7 +68,7 @@ func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd *btce
 		return err
 	}
 
-	packetRaw, err := msgEncodeTraverse(peerPrivateKey, embeddedPacketRaw, receiverEnd, peer.PublicKey)
+	packetRaw, err := protocol.EncodeTraverse(peerPrivateKey, embeddedPacketRaw, receiverEnd, peer.PublicKey)
 	if err != nil {
 		return err
 	}

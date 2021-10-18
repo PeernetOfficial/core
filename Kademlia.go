@@ -105,23 +105,23 @@ func (peer *PeerInfo) sendAnnouncementFindNode(request *dht.InformationRequest) 
 	if bytes.Equal(request.Key, nodeID) {
 		peer.sendAnnouncement(false, true, nil, nil, nil, request)
 	} else {
-		peer.sendAnnouncement(false, false, []KeyHash{{Hash: request.Key}}, nil, nil, request)
+		peer.sendAnnouncement(false, false, []protocol.KeyHash{{Hash: request.Key}}, nil, nil, request)
 	}
 }
 
 func (peer *PeerInfo) sendAnnouncementFindValue(request *dht.InformationRequest) {
 
 	findSelf := false
-	var findPeer []KeyHash
-	var findValue []KeyHash
+	var findPeer []protocol.KeyHash
+	var findValue []protocol.KeyHash
 
-	findValue = append(findValue, KeyHash{Hash: request.Key})
+	findValue = append(findValue, protocol.KeyHash{Hash: request.Key})
 
 	peer.sendAnnouncement(false, findSelf, findPeer, findValue, nil, request)
 }
 
 func (peer *PeerInfo) sendAnnouncementStore(fileHash []byte, fileSize uint64) {
-	peer.sendAnnouncement(false, false, nil, nil, []InfoStore{{ID: KeyHash{Hash: fileHash}, Size: fileSize, Type: 0}}, nil)
+	peer.sendAnnouncement(false, false, nil, nil, []protocol.InfoStore{{ID: protocol.KeyHash{Hash: fileHash}, Size: fileSize, Type: 0}}, nil)
 }
 
 // ---- CORE DATA FUNCTIONS ----

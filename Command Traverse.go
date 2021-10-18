@@ -15,7 +15,7 @@ import (
 )
 
 // cmdTraverseForward handles an incoming traverse message that should be forwarded to another peer
-func (peer *PeerInfo) cmdTraverseForward(msg *MessageTraverse) {
+func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse) {
 	// Verify the signature. This makes sure that a fowarded message cannot be replayed by others.
 	if !msg.SignerPublicKey.IsEqual(peer.PublicKey) || !msg.SignerPublicKey.IsEqual(msg.SenderPublicKey) {
 		return
@@ -35,8 +35,8 @@ func (peer *PeerInfo) cmdTraverseForward(msg *MessageTraverse) {
 	}
 
 	// Get the right IP:Port of the original sender to share to the target peer.
-	allowIPv4 := peerTarget.Features&(1<<FeatureIPv4Listen) > 0
-	allowIPv6 := peerTarget.Features&(1<<FeatureIPv6Listen) > 0
+	allowIPv4 := peerTarget.Features&(1<<protocol.FeatureIPv4Listen) > 0
+	allowIPv6 := peerTarget.Features&(1<<protocol.FeatureIPv6Listen) > 0
 	connectionIPv4 := peer.GetConnection2Share(false, allowIPv4, false)
 	connectionIPv6 := peer.GetConnection2Share(false, false, allowIPv6)
 
@@ -58,14 +58,14 @@ func (peer *PeerInfo) cmdTraverseForward(msg *MessageTraverse) {
 		PortIPv6ReportedExternal = connectionIPv6.PortExternal
 	}
 
-	if err := msgEncodeTraverseSetAddress(msg.Payload, IPv4, PortIPv4, PortIPv4ReportedExternal, IPv6, PortIPv6, PortIPv6ReportedExternal); err != nil {
+	if err := protocol.EncodeTraverseSetAddress(msg.Payload, IPv4, PortIPv4, PortIPv4ReportedExternal, IPv6, PortIPv6, PortIPv6ReportedExternal); err != nil {
 		return
 	}
 
 	peerTarget.send(&protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: msg.Payload})
 }
 
-func (peer *PeerInfo) cmdTraverseReceive(msg *MessageTraverse) {
+func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse) {
 	if msg.Expires.Before(time.Now()) {
 		return
 	}
@@ -114,13 +114,13 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *MessageTraverse) {
 	}
 
 	// process the packet and create a virtual peer
-	raw := &MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded}
+	raw := &protocol.MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded}
 	peerV := &PeerInfo{PublicKey: senderPublicKey, connectionActive: nil, connectionLatest: nil, NodeID: protocol.PublicKey2NodeID(senderPublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses}
 
 	// process it!
 	switch decoded.Command {
 	case protocol.CommandAnnouncement: // Announce
-		if announce, _ := msgDecodeAnnouncement(raw); announce != nil {
+		if announce, _ := protocol.DecodeAnnouncement(raw); announce != nil {
 			if len(announce.UserAgent) > 0 {
 				peerV.UserAgent = announce.UserAgent
 			}

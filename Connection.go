@@ -325,7 +325,7 @@ func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey *btcec.P
 		return errors.New("invalid connection")
 	}
 
-	packet.Protocol = ProtocolVersion
+	packet.Protocol = protocol.ProtocolVersion
 	packet.SetSelfReportedPorts(c.Network.SelfReportedPorts())
 
 	Filters.PacketOut(packet, receiverPublicKey, c)

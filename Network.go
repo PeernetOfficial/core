@@ -163,11 +163,11 @@ func (nets *Networks) packetWorker() {
 		connection.LastPacketIn = time.Now()
 
 		// process the packet
-		raw := &MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded}
+		raw := &protocol.MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded}
 
 		switch decoded.Command {
 		case protocol.CommandAnnouncement: // Announce
-			if announce, _ := msgDecodeAnnouncement(raw); announce != nil {
+			if announce, _ := protocol.DecodeAnnouncement(raw); announce != nil {
 				// Update known internal/external port and User Agent
 				connection.PortInternal = announce.PortInternal
 				connection.PortExternal = announce.PortExternal
@@ -184,9 +184,9 @@ func (nets *Networks) packetWorker() {
 			}
 
 		case protocol.CommandResponse: // Response
-			if response, _ := msgDecodeResponse(raw); response != nil {
+			if response, _ := protocol.DecodeResponse(raw); response != nil {
 				// Validate sequence number which prevents unsolicited responses.
-				sequenceInfo, valid, rtt := nets.Sequences.ValidateSequence(raw.SenderPublicKey, raw.Sequence, response.Actions&(1<<ActionSequenceLast) > 0, true)
+				sequenceInfo, valid, rtt := nets.Sequences.ValidateSequence(raw.SenderPublicKey, raw.Sequence, response.Actions&(1<<protocol.ActionSequenceLast) > 0, true)
 				if !valid {
 					//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 					continue
@@ -211,7 +211,7 @@ func (nets *Networks) packetWorker() {
 			}
 
 		case protocol.CommandLocalDiscovery: // Local discovery, sent via IPv4 broadcast and IPv6 multicast
-			if announce, _ := msgDecodeAnnouncement(raw); announce != nil {
+			if announce, _ := protocol.DecodeAnnouncement(raw); announce != nil {
 				if len(announce.UserAgent) > 0 {
 					peer.UserAgent = announce.UserAgent
 				}
@@ -248,7 +248,7 @@ func (nets *Networks) packetWorker() {
 			peer.cmdChat(raw, connection)
 
 		case protocol.CommandTraverse:
-			if traverse, _ := msgDecodeTraverse(raw); traverse != nil {
+			if traverse, _ := protocol.DecodeTraverse(raw); traverse != nil {
 				Filters.MessageIn(peer, raw, traverse)
 				if traverse.TargetPeer.IsEqual(peerPublicKey) && traverse.AuthorizedRelayPeer.IsEqual(peer.PublicKey) {
 					peer.cmdTraverseReceive(traverse)
@@ -337,10 +337,10 @@ func (network *Network) SelfReportedPorts() (portI, portE uint16) {
 // FeatureSupport returns supported features by this peer
 func FeatureSupport() (feature byte) {
 	if networks.countListen4 > 0 {
-		feature |= 1 << FeatureIPv4Listen
+		feature |= 1 << protocol.FeatureIPv4Listen
 	}
 	if networks.countListen6 > 0 {
-		feature |= 1 << FeatureIPv6Listen
+		feature |= 1 << protocol.FeatureIPv6Listen
 	}
 	return feature
 }

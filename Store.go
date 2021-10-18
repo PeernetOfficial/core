@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/store"
 )
 
@@ -27,7 +28,7 @@ func announcementGetData(hash []byte) (stored bool, data []byte) {
 		return false, nil
 	}
 
-	if len(data) <= EmbeddedFileSizeMax {
+	if len(data) <= protocol.EmbeddedFileSizeMax {
 		return true, data
 	}
 
@@ -35,7 +36,7 @@ func announcementGetData(hash []byte) (stored bool, data []byte) {
 }
 
 // announcementStore handles an incoming announcement by another peer about storing data
-func (peer *PeerInfo) announcementStore(records []InfoStore) {
+func (peer *PeerInfo) announcementStore(records []protocol.InfoStore) {
 	// TODO: Only store the other peers data if certain conditions are met:
 	// - enough storage available
 	// - not exceeding record count per peer

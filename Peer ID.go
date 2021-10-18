@@ -79,6 +79,11 @@ func SelfNodeID() []byte {
 	return nodeID
 }
 
+// SelfUserAgent returns the User Agent
+func SelfUserAgent() string {
+	return userAgent
+}
+
 // PeerInfo stores information about a single remote peer
 type PeerInfo struct {
 	PublicKey          *btcec.PublicKey // Public key
@@ -179,8 +184,7 @@ func PeerlistLookup(publicKey *btcec.PublicKey) (peer *PeerInfo) {
 	peerlistMutex.RLock()
 	defer peerlistMutex.RUnlock()
 
-	peer, _ = peerList[publicKey2Compressed(publicKey)]
-	return peer
+	return peerList[publicKey2Compressed(publicKey)]
 }
 
 // PeerlistCount returns the current count of peers in the peer list
@@ -199,9 +203,9 @@ func publicKey2Compressed(publicKey *btcec.PublicKey) [btcec.PubKeyBytesLenCompr
 
 // records2Nodes translates infoPeer structures to nodes. If the reported nodes are not in the peer table, it will create temporary PeerInfo structures.
 // LastContact is passed on in the Node.LastSeen field.
-func records2Nodes(records []PeerRecord, peerSource *PeerInfo) (nodes []*dht.Node) {
+func records2Nodes(records []protocol.PeerRecord, peerSource *PeerInfo) (nodes []*dht.Node) {
 	for _, record := range records {
-		if IsReturnedPeerBadQuality(&record) {
+		if isReturnedPeerBadQuality(&record) {
 			continue
 		}
 
@@ -212,7 +216,7 @@ func records2Nodes(records []PeerRecord, peerSource *PeerInfo) (nodes []*dht.Nod
 		} else if peer = PeerlistLookup(record.PublicKey); peer == nil {
 			// Create temporary peer which is not added to the global list and not added to Kademlia.
 			// traversePeer is set to the peer who provided the node information.
-			addresses := record.ToAddresses()
+			addresses := peerRecordToAddresses(&record)
 			if len(addresses) == 0 {
 				continue
 			}
@@ -227,8 +231,8 @@ func records2Nodes(records []PeerRecord, peerSource *PeerInfo) (nodes []*dht.Nod
 }
 
 // selfPeerRecord returns self as peer record
-func selfPeerRecord() (result PeerRecord) {
-	return PeerRecord{
+func selfPeerRecord() (result protocol.PeerRecord) {
+	return protocol.PeerRecord{
 		PublicKey: peerPublicKey,
 		NodeID:    nodeID,
 		//IP:          network.address.IP,

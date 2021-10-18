@@ -20,7 +20,7 @@ import (
 const respondClosesContactsCount = 5
 
 // cmdAnouncement handles an incoming announcement. Connection may be nil for traverse relayed messages.
-func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement, connection *Connection) {
+func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connection *Connection) {
 	// Filter function to only share peers that are "connectable" to the remote one. It checks IPv4, IPv6, and local connection.
 	filterFunc := func(allowLocal, allowIPv4, allowIPv6 bool) dht.NodeFilterFunc {
 		return func(node *dht.Node) (accept bool) {
@@ -28,18 +28,18 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement, connection *Conne
 		}
 	}
 
-	allowIPv4 := msg.Features&(1<<FeatureIPv4Listen) > 0
-	allowIPv6 := msg.Features&(1<<FeatureIPv6Listen) > 0
+	allowIPv4 := msg.Features&(1<<protocol.FeatureIPv4Listen) > 0
+	allowIPv6 := msg.Features&(1<<protocol.FeatureIPv6Listen) > 0
 
-	var hash2Peers []Hash2Peer
+	var hash2Peers []protocol.Hash2Peer
 	var hashesNotFound [][]byte
-	var filesEmbed []EmbeddedFileData
+	var filesEmbed []protocol.EmbeddedFileData
 
 	// FIND_SELF: Requesting peers close to the sender?
-	if msg.Actions&(1<<ActionFindSelf) > 0 {
-		Filters.IncomingRequest(peer, ActionFindSelf, peer.NodeID, nil)
+	if msg.Actions&(1<<protocol.ActionFindSelf) > 0 {
+		Filters.IncomingRequest(peer, protocol.ActionFindSelf, peer.NodeID, nil)
 
-		selfD := Hash2Peer{ID: KeyHash{peer.NodeID}}
+		selfD := protocol.Hash2Peer{ID: protocol.KeyHash{Hash: peer.NodeID}}
 
 		// do not respond the caller's own peer (add to ignore list)
 		for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, peer.NodeID, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
@@ -56,11 +56,11 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement, connection *Conne
 	}
 
 	// FIND_PEER: Find a different peer?
-	if msg.Actions&(1<<ActionFindPeer) > 0 && len(msg.FindPeerKeys) > 0 {
+	if msg.Actions&(1<<protocol.ActionFindPeer) > 0 && len(msg.FindPeerKeys) > 0 {
 		for _, findPeer := range msg.FindPeerKeys {
-			Filters.IncomingRequest(peer, ActionFindPeer, findPeer.Hash, nil)
+			Filters.IncomingRequest(peer, protocol.ActionFindPeer, findPeer.Hash, nil)
 
-			details := Hash2Peer{ID: findPeer}
+			details := protocol.Hash2Peer{ID: findPeer}
 
 			// Same as before, put self as ignoredNodes.
 			for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, findPeer.Hash, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
@@ -78,16 +78,16 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement, connection *Conne
 	}
 
 	// Find a value?
-	if msg.Actions&(1<<ActionFindValue) > 0 {
+	if msg.Actions&(1<<protocol.ActionFindValue) > 0 {
 		for _, findHash := range msg.FindDataKeys {
-			Filters.IncomingRequest(peer, ActionFindValue, findHash.Hash, nil)
+			Filters.IncomingRequest(peer, protocol.ActionFindValue, findHash.Hash, nil)
 
 			stored, data := announcementGetData(findHash.Hash)
 			if stored && len(data) > 0 {
-				filesEmbed = append(filesEmbed, EmbeddedFileData{ID: findHash, Data: data})
+				filesEmbed = append(filesEmbed, protocol.EmbeddedFileData{ID: findHash, Data: data})
 			} else if stored {
 				selfRecord := selfPeerRecord()
-				hash2Peers = append(hash2Peers, Hash2Peer{ID: findHash, Storing: []PeerRecord{selfRecord}})
+				hash2Peers = append(hash2Peers, protocol.Hash2Peer{ID: findHash, Storing: []protocol.PeerRecord{selfRecord}})
 			} else {
 				hashesNotFound = append(hashesNotFound, findHash.Hash)
 			}
@@ -95,9 +95,9 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement, connection *Conne
 	}
 
 	// Information about files stored by the sender?
-	if msg.Actions&(1<<ActionInfoStore) > 0 && len(msg.InfoStoreFiles) > 0 {
+	if msg.Actions&(1<<protocol.ActionInfoStore) > 0 && len(msg.InfoStoreFiles) > 0 {
 		for n := range msg.InfoStoreFiles {
-			Filters.IncomingRequest(peer, ActionInfoStore, msg.InfoStoreFiles[n].ID.Hash, &msg.InfoStoreFiles[n])
+			Filters.IncomingRequest(peer, protocol.ActionInfoStore, msg.InfoStoreFiles[n].ID.Hash, &msg.InfoStoreFiles[n])
 		}
 
 		peer.announcementStore(msg.InfoStoreFiles)
@@ -107,14 +107,14 @@ func (peer *PeerInfo) cmdAnouncement(msg *MessageAnnouncement, connection *Conne
 	peer.sendResponse(msg.Sequence, sendUA, hash2Peers, filesEmbed, hashesNotFound)
 }
 
-func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result *PeerRecord) {
+func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result *protocol.PeerRecord) {
 	connectionIPv4 := peer.GetConnection2Share(allowLocal, allowIPv4, false)
 	connectionIPv6 := peer.GetConnection2Share(allowLocal, false, allowIPv6)
 	if connectionIPv4 == nil && connectionIPv6 == nil {
 		return nil
 	}
 
-	result = &PeerRecord{
+	result = &protocol.PeerRecord{
 		PublicKey: peer.PublicKey,
 		NodeID:    peer.NodeID,
 	}
@@ -137,7 +137,7 @@ func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result
 }
 
 // cmdResponse handles the response to the announcement
-func (peer *PeerInfo) cmdResponse(msg *MessageResponse, connection *Connection) {
+func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Connection) {
 	// The sequence data is used to correlate this response with the announcement.
 	if msg.SequenceInfo == nil || msg.SequenceInfo.Data == nil {
 		// If there is no sequence data but there were results returned, it means we received unsolicited response data. It will be rejected.
@@ -191,7 +191,7 @@ func (peer *PeerInfo) cmdResponse(msg *MessageResponse, connection *Connection) 
 }
 
 // cmdPing handles an incoming ping message
-func (peer *PeerInfo) cmdPing(msg *MessageRaw, connection *Connection) {
+func (peer *PeerInfo) cmdPing(msg *protocol.MessageRaw, connection *Connection) {
 	// If PortInternal is 0, it means no incoming announcement or response message was received on that connection.
 	// This means the ping is unexpected. In that case for security reasons the remote peer is not asked for FIND_SELF.
 	if connection.PortInternal == 0 {
@@ -207,16 +207,16 @@ func (peer *PeerInfo) cmdPing(msg *MessageRaw, connection *Connection) {
 }
 
 // cmdPong handles an incoming pong message
-func (peer *PeerInfo) cmdPong(msg *MessageRaw, connection *Connection) {
+func (peer *PeerInfo) cmdPong(msg *protocol.MessageRaw, connection *Connection) {
 }
 
 // cmdChat handles a chat message [debug]
-func (peer *PeerInfo) cmdChat(msg *MessageRaw, connection *Connection) {
+func (peer *PeerInfo) cmdChat(msg *protocol.MessageRaw, connection *Connection) {
 	fmt.Printf("Chat from '%s': %s\n", connection.Address.String(), string(msg.PacketRaw.Payload))
 }
 
 // cmdLocalDiscovery handles an incoming announcement via local discovery
-func (peer *PeerInfo) cmdLocalDiscovery(msg *MessageAnnouncement, connection *Connection) {
+func (peer *PeerInfo) cmdLocalDiscovery(msg *protocol.MessageAnnouncement, connection *Connection) {
 	// 21.04.2021 update: Local peer discovery from public IPv4s is possible in datacenter situations. Keep it enabled for now.
 	// only accept local discovery message from private IPs for IPv4
 	// IPv6 DHCP routers typically assign public IPv6s and they can join multicast in the local network.
