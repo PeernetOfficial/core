@@ -186,12 +186,14 @@ func (nets *Networks) packetWorker() {
 		case protocol.CommandResponse: // Response
 			if response, _ := msgDecodeResponse(raw); response != nil {
 				// Validate sequence number which prevents unsolicited responses.
-				if valid, rtt := nets.Sequences.ValidateSequence(raw, response.Actions&(1<<ActionSequenceLast) > 0); !valid {
+				sequenceInfo, valid, rtt := nets.Sequences.ValidateSequence(raw.SenderPublicKey, raw.Sequence, response.Actions&(1<<ActionSequenceLast) > 0, true)
+				if !valid {
 					//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 					continue
 				} else if rtt > 0 {
 					connection.RoundTripTime = rtt
 				}
+				raw.SequenceInfo = sequenceInfo
 
 				// Update known internal/external port and User Agent
 				connection.PortInternal = response.PortInternal
@@ -228,12 +230,14 @@ func (nets *Networks) packetWorker() {
 
 		case protocol.CommandPong: // Ping
 			// Validate sequence number which prevents unsolicited responses.
-			if valid, rtt := nets.Sequences.ValidateSequence(raw, true); !valid {
+			sequenceInfo, valid, rtt := nets.Sequences.ValidateSequence(raw.SenderPublicKey, raw.Sequence, true, false)
+			if !valid {
 				//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 				continue
 			} else if rtt > 0 {
 				connection.RoundTripTime = rtt
 			}
+			raw.SequenceInfo = sequenceInfo
 
 			Filters.MessageIn(peer, raw, nil)
 

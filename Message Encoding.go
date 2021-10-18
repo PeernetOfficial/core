@@ -48,8 +48,8 @@ const (
 // MessageRaw is a high-level message between peers that has not been decoded
 type MessageRaw struct {
 	protocol.PacketRaw
-	SenderPublicKey *btcec.PublicKey // Sender Public Key, ECDSA (secp256k1) 257-bit
-	SequenceInfo    *SequenceExpiry  // Sequence
+	SenderPublicKey *btcec.PublicKey         // Sender Public Key, ECDSA (secp256k1) 257-bit
+	SequenceInfo    *protocol.SequenceExpiry // Sequence
 }
 
 // MessageAnnouncement is the decoded announcement message.

@@ -1,9 +1,10 @@
 /*
-File Name:  Message Sequence.go
+File Name:  Sequence.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
-Records and verifies message sequences. Sequence numbers are valid on a peer level, independent of which network connection was used.
+This code caches and verifies message sequences. Sequence numbers are valid on a peer level, independent of which network connection was used.
+They can be used to map incoming response messages to previous outgoing requests. The remote peer ID is used together with a consecutive sequence number as unique key.
 
 Advantages:
 * This secures against replay and poisoning attacks.
@@ -12,7 +13,7 @@ Advantages:
 * (future) It can be used to detect missed and lost replies.
 */
 
-package core
+package protocol
 
 import (
 	"math/rand"
@@ -21,7 +22,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/PeernetOfficial/core/protocol"
 	"github.com/btcsuite/btcd/btcec"
 )
 
@@ -111,13 +111,8 @@ func (manager *SequenceManager) ArbitrarySequence(publicKey *btcec.PublicKey, da
 }
 
 // ValidateSequence validates the sequence number of an incoming message. It will set raw.sequence if valid.
-func (manager *SequenceManager) ValidateSequence(raw *MessageRaw, invalidate bool) (valid bool, rtt time.Duration) {
-	// Only Response and Pong
-	if raw.Command != protocol.CommandResponse && raw.Command != protocol.CommandPong {
-		return true, rtt
-	}
-
-	key := string(raw.SenderPublicKey.SerializeCompressed()) + strconv.FormatUint(uint64(raw.Sequence), 10)
+func (manager *SequenceManager) ValidateSequence(publicKey *btcec.PublicKey, sequenceNumber uint32, invalidate, extendValidity bool) (sequenceInfo *SequenceExpiry, valid bool, rtt time.Duration) {
+	key := string(publicKey.SerializeCompressed()) + strconv.FormatUint(uint64(sequenceNumber), 10)
 
 	manager.Lock()
 	defer manager.Unlock()
@@ -125,7 +120,7 @@ func (manager *SequenceManager) ValidateSequence(raw *MessageRaw, invalidate boo
 	// lookup the sequence
 	sequence, ok := manager.sequences[key]
 	if !ok {
-		return false, rtt
+		return nil, false, rtt
 	}
 
 	// Initial reply: Store latest roundtrip time. That value might be distorted on Response vs Pong since Response messages might send data
@@ -139,24 +134,17 @@ func (manager *SequenceManager) ValidateSequence(raw *MessageRaw, invalidate boo
 	// invalidate the sequence immediately?
 	if invalidate {
 		delete(manager.sequences, key)
-	} else if raw.Command == protocol.CommandResponse {
-		// Special case CommandResponse: Extend validity in case there are follow-up responses by half of the round-trip time since they will be sent one-way.
+	} else if extendValidity {
+		// Special case CommandResponse: Extend validity in case there are follow-up responses, by half of the round-trip time since they will be sent one-way.
 		sequence.expires = time.Now().Add(time.Duration(manager.ReplyTimeout) * time.Second / 2)
 	}
 
-	raw.SequenceInfo = sequence
-
-	return sequence.expires.After(time.Now()), rtt
+	return sequence, sequence.expires.After(time.Now()), rtt
 }
 
 // InvalidateSequence invalidates the sequence number.
-func (manager *SequenceManager) InvalidateSequence(raw *MessageRaw) {
-	// Only Response
-	if raw.Command != protocol.CommandResponse {
-		return
-	}
-
-	key := string(raw.SenderPublicKey.SerializeCompressed()) + strconv.FormatUint(uint64(raw.Sequence), 10)
+func (manager *SequenceManager) InvalidateSequence(publicKey *btcec.PublicKey, sequenceNumber uint32) {
+	key := string(publicKey.SerializeCompressed()) + strconv.FormatUint(uint64(sequenceNumber), 10)
 
 	manager.Lock()
 	delete(manager.sequences, key)

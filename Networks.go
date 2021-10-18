@@ -6,7 +6,11 @@ Author:     Peter Kleissner
 
 package core
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/PeernetOfficial/core/protocol"
+)
 
 // Networks is the collection of all connected networks
 type Networks struct {
@@ -24,7 +28,7 @@ type Networks struct {
 	rawPacketsIncoming chan networkWire
 
 	// Sequences keeps track of all message sequence number, regardless of the network connection.
-	Sequences *SequenceManager
+	Sequences *protocol.SequenceManager
 
 	// ipListen keeps a simple list of IPs listened to. This allows quickly identifying if an IP matches with a listened one.
 	ipListen *ipList
@@ -40,7 +44,7 @@ func initMessageSequence() {
 
 	networks.rawPacketsIncoming = make(chan networkWire, 1000) // buffer up to 1000 UDP packets before they get buffered by the OS network stack and eventually dropped
 
-	networks.Sequences = NewSequenceManager(ReplyTimeout)
+	networks.Sequences = protocol.NewSequenceManager(ReplyTimeout)
 
 	networks.ipListen = NewIPList()
 }
