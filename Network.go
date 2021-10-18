@@ -34,17 +34,8 @@ type Network struct {
 	isTerminated    bool             // If true, the network was signaled for termination
 	terminateSignal chan interface{} // gets closed on termination signal, can be used in select via "case _ = <- network.terminateSignal:"
 	sync.RWMutex                     // for sychronized closing
+	networkGroup    *Networks        // Pointer to the pool of networks that this is part of
 }
-
-// networks is a list of all connected networks
-var networks4, networks6 []*Network
-
-// single mutex for both network lists. Higher granularity currently not needed.
-var networksMutex sync.RWMutex
-
-// countListenX is the number of networks listened to, excluding link-local only listeners. This number might be different than len(networksN).
-// This is useful to determine if there are any IPv4 or IPv6 listeners for potential external connections. This can be used to determine IPv4_LISTEN and IPv6_LISTEN.
-var countListen4, countListen6 int64
 
 // Default ports to use. This may be randomized in the future to prevent fingerprinting (and subsequent blocking) by corporate and ISP firewalls.
 const defaultPort = 'p' // 112
@@ -106,9 +97,9 @@ const maxPacketSize = 65536
 func (network *Network) Listen() {
 	if !network.address.IP.IsLinkLocalUnicast() {
 		if IsIPv4(network.address.IP) {
-			atomic.AddInt64(&countListen4, 1)
+			atomic.AddInt64(&network.networkGroup.countListen4, 1)
 		} else {
-			atomic.AddInt64(&countListen6, 1)
+			atomic.AddInt64(&network.networkGroup.countListen6, 1)
 		}
 	}
 
@@ -135,13 +126,13 @@ func (network *Network) Listen() {
 		}
 
 		// send the packet to a channel which is processed by multiple workers.
-		rawPacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverPublicKey: peerPublicKey, unicast: true}
+		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverPublicKey: peerPublicKey, unicast: true}
 	}
 }
 
 // packetWorker handles incoming packets.
-func packetWorker(packets <-chan networkWire) {
-	for packet := range packets {
+func (nets *Networks) packetWorker() {
+	for packet := range nets.rawPacketsIncoming {
 		decoded, senderPublicKey, err := protocol.PacketDecrypt(packet.raw, packet.receiverPublicKey)
 		if err != nil {
 			//Filters.LogError("packetWorker", "decrypting packet from '%s': %s\n", packet.sender.String(), err.Error())  // Only log for debug purposes.
@@ -195,7 +186,7 @@ func packetWorker(packets <-chan networkWire) {
 		case protocol.CommandResponse: // Response
 			if response, _ := msgDecodeResponse(raw); response != nil {
 				// Validate sequence number which prevents unsolicited responses.
-				if valid, rtt := networks.Sequences.ValidateSequence(raw, response.Actions&(1<<ActionSequenceLast) > 0); !valid {
+				if valid, rtt := nets.Sequences.ValidateSequence(raw, response.Actions&(1<<ActionSequenceLast) > 0); !valid {
 					//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 					continue
 				} else if rtt > 0 {
@@ -237,7 +228,7 @@ func packetWorker(packets <-chan networkWire) {
 
 		case protocol.CommandPong: // Ping
 			// Validate sequence number which prevents unsolicited responses.
-			if valid, rtt := networks.Sequences.ValidateSequence(raw, true); !valid {
+			if valid, rtt := nets.Sequences.ValidateSequence(raw, true); !valid {
 				//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 				continue
 			} else if rtt > 0 {
@@ -271,12 +262,12 @@ func packetWorker(packets <-chan networkWire) {
 }
 
 // GetNetworks returns the list of connected networks
-func GetNetworks(networkType int) (networks []*Network) {
+func GetNetworks(networkType int) (networksConnected []*Network) {
 	switch networkType {
 	case 4:
-		return networks4
+		return networks.networks4
 	case 6:
-		return networks6
+		return networks.networks6
 	}
 	return nil
 }
@@ -305,9 +296,9 @@ func (network *Network) Terminate() {
 
 	if !network.address.IP.IsLinkLocalUnicast() {
 		if IsIPv4(network.address.IP) {
-			atomic.AddInt64(&countListen4, -1)
+			atomic.AddInt64(&network.networkGroup.countListen4, -1)
 		} else {
-			atomic.AddInt64(&countListen6, -1)
+			atomic.AddInt64(&network.networkGroup.countListen6, -1)
 		}
 	}
 
@@ -316,7 +307,7 @@ func (network *Network) Terminate() {
 	close(network.terminateSignal) // safety guaranteed via lock
 	network.socket.Close()         // Will stop the listener from blocking on network.socket.ReadFromUDP
 
-	networks.ipListen.Remove(network.address)
+	network.networkGroup.ipListen.Remove(network.address)
 }
 
 // SelfReportedPorts returns the internal and external ports as self-reported by the peer to others.
@@ -341,10 +332,10 @@ func (network *Network) SelfReportedPorts() (portI, portE uint16) {
 
 // FeatureSupport returns supported features by this peer
 func FeatureSupport() (feature byte) {
-	if countListen4 > 0 {
+	if networks.countListen4 > 0 {
 		feature |= 1 << FeatureIPv4Listen
 	}
-	if countListen6 > 0 {
+	if networks.countListen6 > 0 {
 		feature |= 1 << FeatureIPv6Listen
 	}
 	return feature

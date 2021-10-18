@@ -68,7 +68,7 @@ func (network *Network) BroadcastIPv4Listen() {
 			continue
 		}
 
-		if networks.ipListen.IsAddressSelf(sender.(*net.UDPAddr)) {
+		if network.networkGroup.ipListen.IsAddressSelf(sender.(*net.UDPAddr)) {
 			continue
 		}
 
@@ -85,7 +85,7 @@ func (network *Network) BroadcastIPv4Listen() {
 		}
 
 		// send the packet to a channel which is processed by multiple workers.
-		rawPacketsIncoming <- networkWire{network: network, sender: sender.(*net.UDPAddr), raw: buffer[:length], receiverPublicKey: ipv4BroadcastPublicKey, unicast: false}
+		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender.(*net.UDPAddr), raw: buffer[:length], receiverPublicKey: ipv4BroadcastPublicKey, unicast: false}
 	}
 }
 

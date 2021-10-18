@@ -114,7 +114,7 @@ func (network *Network) MulticastIPv6Listen() {
 		}
 
 		// skip incoming packets that were looped back
-		if networks.ipListen.IsAddressSelf(sender.(*net.UDPAddr)) {
+		if network.networkGroup.ipListen.IsAddressSelf(sender.(*net.UDPAddr)) {
 			continue
 		}
 
@@ -131,7 +131,7 @@ func (network *Network) MulticastIPv6Listen() {
 		}
 
 		// send the packet to a channel which is processed by multiple workers.
-		rawPacketsIncoming <- networkWire{network: network, sender: sender.(*net.UDPAddr), raw: buffer[:length], receiverPublicKey: ipv6MulticastPublicKey, unicast: false}
+		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender.(*net.UDPAddr), raw: buffer[:length], receiverPublicKey: ipv6MulticastPublicKey, unicast: false}
 	}
 }
 

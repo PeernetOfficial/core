@@ -30,20 +30,16 @@ type networkWire struct {
 	unicast           bool             // True if the message was sent via unicast. False if sent via IPv4 broadcast or IPv6 multicast.
 }
 
-var (
-	rawPacketsIncoming chan networkWire // channel for processing incoming decoded packets by workers
-)
-
 // initNetwork sets up the network configuration and starts listening.
 func initNetwork() {
-	rawPacketsIncoming = make(chan networkWire, 1000) // buffer up to 1000 UDP packets before they get buffered by the OS network stack and eventually dropped
-	rand.Seed(time.Now().UnixNano())                  // we are not using "crypto/rand" for speed tradeoff
+	rand.Seed(time.Now().UnixNano()) // we are not using "crypto/rand" for speed tradeoff
 
+	// start listen workers
 	if config.ListenWorkers == 0 {
 		config.ListenWorkers = 2
 	}
 	for n := 0; n < config.ListenWorkers; n++ {
-		go packetWorker(rawPacketsIncoming)
+		go networks.packetWorker()
 	}
 
 	// check if user specified where to listen
@@ -110,7 +106,7 @@ func (nets *Networks) InterfaceStart(iface net.Interface, addresses []net.Addr) 
 			continue
 		}
 
-		networkNew, err := networks.PrepareListen(net1.IP.String(), 0)
+		networkNew, err := nets.PrepareListen(net1.IP.String(), 0)
 
 		if err != nil {
 			// Do not log common errors:
@@ -124,7 +120,7 @@ func (nets *Networks) InterfaceStart(iface net.Interface, addresses []net.Addr) 
 			continue
 		}
 
-		networks.ipListen.Add(networkNew.address)
+		nets.ipListen.Add(networkNew.address)
 
 		Filters.LogError("networks.InterfaceStart", "listen on network '%s' UDP %s\n", iface.Name, networkNew.address.String())
 
@@ -141,7 +137,7 @@ func (nets *Networks) PrepareListen(ipA string, port int) (network *Network, err
 		return nil, errors.New("invalid input IP")
 	}
 
-	network = new(Network)
+	network = &Network{networkGroup: nets}
 	network.terminateSignal = make(chan interface{})
 
 	// get the network interface that belongs to the IP
@@ -157,16 +153,16 @@ func (nets *Networks) PrepareListen(ipA string, port int) (network *Network, err
 		return nil, err
 	}
 
-	networksMutex.Lock()
+	nets.Lock()
 
 	// Success - port is open. Add to the list and start accepting incoming messages.
 	if IsIPv4(ip) {
-		networks4 = append(networks4, network)
-		networksMutex.Unlock()
+		nets.networks4 = append(nets.networks4, network)
+		nets.Unlock()
 		network.BroadcastIPv4()
 	} else {
-		networks6 = append(networks6, network)
-		networksMutex.Unlock()
+		nets.networks6 = append(nets.networks6, network)
+		nets.Unlock()
 		network.MulticastIPv6Join()
 	}
 

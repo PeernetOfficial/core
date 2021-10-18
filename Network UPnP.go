@@ -20,7 +20,7 @@ import (
 var upnpListInterfaces map[string]struct{}
 var upnpMutex sync.RWMutex
 
-func startUPnP() {
+func (nets *Networks) startUPnP() {
 	upnpListInterfaces = make(map[string]struct{})
 
 	for _, cidr := range []string{
@@ -40,7 +40,7 @@ func startUPnP() {
 		return
 	}
 
-	for _, network := range networks4 {
+	for _, network := range nets.networks4 {
 		go network.upnpAuto()
 	}
 }

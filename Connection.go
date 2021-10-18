@@ -351,7 +351,7 @@ func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey *btcec.P
 func (peer *PeerInfo) send(packet *protocol.PacketRaw) (err error) {
 	if peer.isVirtual { // special case for peers that were not contacted before
 		for _, address := range peer.targetAddresses {
-			sendAllNetworks(peer.PublicKey, packet, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, peer.traversePeer, nil)
+			networks.sendAllNetworks(peer.PublicKey, packet, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, peer.traversePeer, nil)
 		}
 		return
 	}
@@ -407,13 +407,13 @@ func (peer *PeerInfo) sendConnection(packet *protocol.PacketRaw, connection *Con
 
 // sendAllNetworks sends a raw packet via all networks. It assigns a new sequence for each sent packet.
 // receiverPortInternal is important for NAT detection and sending the traverse message.
-func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *protocol.PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, traversePeer *PeerInfo, sequenceData interface{}) (err error) {
-	networksMutex.RLock()
-	defer networksMutex.RUnlock()
+func (nets *Networks) sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *protocol.PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, traversePeer *PeerInfo, sequenceData interface{}) (err error) {
+	nets.RLock()
+	defer nets.RUnlock()
 
-	networksTarget := networks4
+	networksTarget := nets.networks4
 	if IsIPv6(remote.IP.To16()) {
-		networksTarget = networks6
+		networksTarget = nets.networks6
 	}
 
 	successCount := 0
@@ -426,7 +426,7 @@ func sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *protocol.Packet
 		}
 
 		if sequenceData != nil {
-			packet.Sequence = networks.Sequences.ArbitrarySequence(receiverPublicKey, sequenceData).SequenceNumber
+			packet.Sequence = nets.Sequences.ArbitrarySequence(receiverPublicKey, sequenceData).SequenceNumber
 		}
 		err = (&Connection{Network: network, Address: remote, PortInternal: receiverPortInternal, traversePeer: traversePeer}).send(packet, receiverPublicKey, isFirstPacket)
 		isFirstPacket = false

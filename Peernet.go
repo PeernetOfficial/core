@@ -25,9 +25,9 @@ func Init() {
 func Connect() {
 	go bootstrapKademlia()
 	go bootstrap()
-	go autoMulticastBroadcast()
+	go networks.autoMulticastBroadcast()
 	go autoPingAll()
-	go networkChangeMonitor()
+	go networks.networkChangeMonitor()
+	go networks.startUPnP()
 	go autoBucketRefresh()
-	go startUPnP()
 }

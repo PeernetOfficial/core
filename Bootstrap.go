@@ -165,18 +165,18 @@ func bootstrap() {
 	Filters.LogError("bootstrap", "unable to connect to at least 2 root peers, aborting\n")
 }
 
-func autoMulticastBroadcast() {
+func (nets *Networks) autoMulticastBroadcast() {
 	sendMulticastBroadcast := func() {
-		networksMutex.RLock()
-		defer networksMutex.RUnlock()
+		nets.RLock()
+		defer nets.RUnlock()
 
-		for _, network := range networks6 {
+		for _, network := range nets.networks6 {
 			if err := network.MulticastIPv6Send(); err != nil {
 				Filters.LogError("autoMulticastBroadcast", "multicast from network address '%s': %v\n", network.address.IP.String(), err.Error())
 			}
 		}
 
-		for _, network := range networks4 {
+		for _, network := range nets.networks4 {
 			if err := network.BroadcastIPv4Send(); err != nil {
 				Filters.LogError("autoMulticastBroadcast", "broadcast from network address '%s': %v\n", network.address.IP.String(), err.Error())
 			}
@@ -216,7 +216,7 @@ func contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, rece
 
 	Filters.MessageOutAnnouncement(publicKey, nil, raw, findSelf, nil, nil, nil)
 
-	sendAllNetworks(publicKey, raw, address, receiverPortInternal, nil, &bootstrapFindSelf{})
+	networks.sendAllNetworks(publicKey, raw, address, receiverPortInternal, nil, &bootstrapFindSelf{})
 
 	return true
 }
