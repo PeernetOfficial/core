@@ -65,6 +65,8 @@ These are the functions provided by the API:
 
 # API Documentation
 
+All times used by the API (both input and output) are UTC based. It is the frontend's responsibility to convert the times to the local time zone for visualization to the end user where appropriate.
+
 ## Informational Functions
 
 ### Status
@@ -578,6 +580,8 @@ type SearchRequestResponse struct {
 }
 ```
 
+Note that the date format for the `datefrom` and `dateto` fields is "2006-01-02 15:04:05" which is different to native JSON time encoding used elsewhere. The time zone is UTC.
+
 Example POST request to `http://127.0.0.1:112/search`:
 
 ```json
@@ -609,6 +613,8 @@ This function returns search results. The default limit is 100.
 If reset is set, all results will be filtered and sorted according to the provided parameters. This means that the new first result will be returned again and internal result offset is set to 0. Note that most filters must be set to -1 if they are not used (see the field comments in the `SearchRequest` structure in `/search` above).
 
 The statistics of all results (regardless of applied runtime filters) can be returned immediately in the `statistics` field by specifying `&stats=1`. If will be only provided if the statistics change, i.e. if at least one file is returned. The returned statistics is the `SearchStatisticData` structure and matches with what is returned by `/search/statistic`.
+
+Note that the date format for the `&from=` and `&to=` parameters is "2006-01-02 15:04:05" which is different to native JSON time encoding used elsewhere. The time zone is UTC.
 
 ```
 Request:    GET /search/result?id=[UUID]&limit=[max records]
