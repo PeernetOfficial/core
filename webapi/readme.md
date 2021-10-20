@@ -6,10 +6,9 @@ It can be used by local client software to connect to the Peernet network and us
 
 ## Use Considerations (when not to use it)
 
-Do not expose this API to the internet. The web API uses the core library which uses the user's public and private key to connect to the network.
-It shall only run on a loopback IP such as `127.0.0.1` or `::1`. Special HTTP headers (including the Access-Control headers) are intentionally not set.
+Do not expose this API to the internet or local network. The API is unauthenticated and provides direct access to the users blockchain. It also provide sensitive actions such as deleting the account (including the private key). An attacker could abuse the API to add any local file to the user's blockchain and then read it.
 
-The API is unauthenticated and provides direct access to the users blockchain.
+The API shall only run on a loopback IP such as `127.0.0.1` or `::1`. Special HTTP headers (including the Access-Control headers) are intentionally not set.
 
 ## Deployment
 
@@ -27,8 +26,10 @@ webapi.Router.HandleFunc("/newfunction", newFunction).Methods("GET")
 These are the functions provided by the API:
 
 ```
-/status                         Provides current connectivity status to the network
-/peer/self                      Provides information about the self peer details
+/status                         Provide current connectivity status to the network
+
+/account/info                   Information about the current account
+/account/delete                 Delete account
 
 /blockchain/header              Header of the blockchain
 /blockchain/append              Append a block to the blockchain
@@ -89,12 +90,14 @@ type apiResponseStatus struct {
 }
 ```
 
-### Self Information
+## Account API
+
+### Information
 
 This function returns information about the current peer.
 
 ```
-Request:    GET /peer/self
+Request:    GET /account/info
 Response:   200 with JSON structure apiResponsePeerSelf
 ```
 
@@ -105,6 +108,18 @@ type apiResponsePeerSelf struct {
     PeerID string `json:"peerid"` // Peer ID. This is derived from the public in compressed form.
     NodeID string `json:"nodeid"` // Node ID. This is the blake3 hash of the peer ID and used in the DHT.
 }
+```
+
+### Delete
+
+This deletes the account. This action is irreversible. After deleting the account, the backend shall no longer be used.
+
+Note that it currently does not send a termination message to other peers. As a result, other peers may retain data or metadata.
+
+```
+Request:    GET /account/delete?confirm=[0 or 1]
+Result:     204 if the user choses not to delete the account
+            200 if successfully deleted
 ```
 
 ## Blockchain Functions

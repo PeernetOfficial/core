@@ -41,7 +41,8 @@ func Start(ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKe
 
 	Router.HandleFunc("/test", apiTest).Methods("GET")
 	Router.HandleFunc("/status", apiStatus).Methods("GET")
-	Router.HandleFunc("/peer/self", apiPeerSelf).Methods("GET")
+	Router.HandleFunc("/account/info", apiAccountInfo).Methods("GET")
+	Router.HandleFunc("/account/delete", apiAccountDelete).Methods("GET")
 	Router.HandleFunc("/blockchain/header", apiBlockchainHeaderFunc).Methods("GET")
 	Router.HandleFunc("/blockchain/append", apiBlockchainAppend).Methods("POST")
 	Router.HandleFunc("/blockchain/read", apiBlockchainRead).Methods("GET")

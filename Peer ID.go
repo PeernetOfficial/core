@@ -267,3 +267,16 @@ func unregisterPeerMonitor(channel chan<- *PeerInfo) {
 		}
 	}
 }
+
+// DeleteAccount deletes the account
+func DeleteAccount() {
+	// delete the blockchain
+	UserBlockchain.DeleteBlockchain()
+
+	// delete the warehouse
+	UserWarehouse.DeleteWarehouse()
+
+	// delete the private key
+	config.PrivateKey = ""
+	saveConfig()
+}

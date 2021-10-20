@@ -9,6 +9,7 @@ package webapi
 import (
 	"encoding/hex"
 	"net/http"
+	"strconv"
 
 	"github.com/PeernetOfficial/core"
 )
@@ -50,11 +51,11 @@ type apiResponsePeerSelf struct {
 }
 
 /*
-apiPeerSelf provides information about the self peer details
-Request:    GET /peer/self
+apiAccountInfo provides information about the current account.
+Request:    GET /account/info
 Result:     200 with JSON structure apiResponsePeerSelf
 */
-func apiPeerSelf(w http.ResponseWriter, r *http.Request) {
+func apiAccountInfo(w http.ResponseWriter, r *http.Request) {
 	response := apiResponsePeerSelf{}
 	response.NodeID = hex.EncodeToString(core.SelfNodeID())
 
@@ -62,4 +63,22 @@ func apiPeerSelf(w http.ResponseWriter, r *http.Request) {
 	response.PeerID = hex.EncodeToString(publicKey.SerializeCompressed())
 
 	EncodeJSON(w, r, response)
+}
+
+/*
+apiAccountDelete deletes the current account. The confirm parameter must include the user's choice.
+Request:    GET /account/delete?confirm=[0 or 1]
+Result:     204 if the user choses not to delete the account
+            200 if successfully deleted
+*/
+func apiAccountDelete(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	if confirm, _ := strconv.ParseBool(r.Form.Get("confirm")); !confirm {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	core.DeleteAccount()
+
+	w.WriteHeader(http.StatusOK)
 }

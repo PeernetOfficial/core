@@ -328,3 +328,18 @@ func (blockchain *Blockchain) Read(number uint64) (decoded *BlockDecoded, status
 
 	return decoded, StatusOK, nil
 }
+
+// DeleteBlockchain deletes the entire blockchain
+func (blockchain *Blockchain) DeleteBlockchain() (status int, err error) {
+	blockchain.Lock()
+	defer blockchain.Unlock()
+
+	for n := uint64(0); n < blockchain.height; n++ {
+		blockchain.database.Delete(blockNumberToKey(n))
+	}
+
+	// update the blockchain header in the database, reset height, increase version
+	blockchain.headerWrite(0, blockchain.version+1)
+
+	return StatusOK, nil
+}

@@ -68,6 +68,15 @@ func (wh *Warehouse) FileExists(hash string) (path string, fileInfo os.FileInfo,
 	return "", nil, false
 }
 
+// DeleteWarehouse deletes all files in the warehouse
+func (wh *Warehouse) DeleteWarehouse() (err error) {
+	return wh.IterateFiles(func(Hash []byte, Size int64) (Continue bool) {
+		wh.DeleteFile(Hash)
+
+		return true
+	})
+}
+
 // ---- hash functions ----
 
 func ValidateHash(hash []byte) (hashA string, err error) {
@@ -95,4 +104,69 @@ func buildPath(storagePath, hash string) (directory string, filename string) {
 	newPath := filepath.Join(storagePath, part1, part2)
 
 	return newPath, filename
+}
+
+// IterateFiles iterates through all the files and calls the callback
+func (wh *Warehouse) IterateFiles(Callback func(Hash []byte, Size int64) (Continue bool)) (err error) {
+	// list all directories in the local Storage folder. We have to walk 2 levels down to see the actual files.
+	files, err := ioutil.ReadDir(wh.Directory)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		name1 := file.Name()
+		_, err = hex.DecodeString(name1)
+
+		// we are only looking for directories. Name has to be "XXXX" hex chars only.
+		if !file.IsDir() || len(name1) != 4 || err != nil {
+			continue
+		}
+
+		// iterate through the next level
+		files1, err := ioutil.ReadDir(filepath.Join(wh.Directory, name1))
+		if err != nil {
+			return err
+		}
+
+		for _, file2 := range files1 {
+			name2 := file2.Name()
+			_, err = hex.DecodeString(name2)
+
+			// we are only looking for directories. Name has to be "XXXX" hex chars only.
+			if !file2.IsDir() || len(name2) != 4 || err != nil {
+				continue
+			}
+
+			// iterate through the next level
+			files2, err := ioutil.ReadDir(filepath.Join(wh.Directory, name1, name2))
+			if err != nil {
+				return err
+			}
+
+			for _, file3 := range files2 {
+				name3 := file3.Name()
+				_, err = hex.DecodeString(name3)
+
+				// finally we are only looking for files
+				if file3.IsDir() || len(name3) != hashSize*2-8 || err != nil {
+					continue
+				}
+
+				size := file3.Size()
+
+				hash, err := hex.DecodeString(name1 + name2 + name3)
+				if err != nil {
+					return err
+				}
+
+				// found the hash! forward
+				if !Callback(hash, size) {
+					return nil
+				}
+			}
+		}
+	}
+
+	return nil
 }
