@@ -115,12 +115,13 @@ func DecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error
 
 	// INFO_STORE
 	if result.Actions&(1<<ActionInfoStore) > 0 {
-		files, read, valid := decodeInfoStore(data)
+		files, _, valid := decodeInfoStore(data)
 		if !valid {
 			return nil, errors.New("announcement: INFO_STORE invalid data")
 		}
 
-		data = data[read:]
+		// commented out because never used
+		//data = data[read:]
 		result.InfoStoreFiles = files
 	}
 
