@@ -1,10 +1,10 @@
 # Peernet Core
 
-The core library which is needed for any Peernet application. It provides connectivity to the network and all basic functions. For details about Peernet see https://peernet.org/. For the current technical roadmap and upcoming releases see the [Talk forum](https://talk.peernet.org/discussion/10/technical-roadmap).
+The core library which is needed for any Peernet application. It provides connectivity to the network and all basic functions. For details about Peernet see https://peernet.org/.
 
-Current version: Alpha 3
+Current version: Alpha 4
 
-Current development status: Initial connectivity works. DHT functionality is in development.
+Current development status: The last remaining features (file transfer, blockchain exchange, search) are in development and will be finished in the upcoming MVP (beta 1). ETA early November 2021.
 
 ## Use
 
@@ -25,8 +25,7 @@ func init() {
     }
 
     core.InitLog()
-    core.Init()
-    core.UserAgent = "Your application/1.0"
+    core.Init("Your application/1.0")
 }
 
 func main() {
