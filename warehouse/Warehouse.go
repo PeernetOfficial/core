@@ -24,9 +24,6 @@ type Warehouse struct {
 	Temp      string // Temporary folder
 }
 
-// LogError is called for any error. The caller can use it to capture any errors.
-//var LogError func(function, format string, v ...interface{}) = func(function, format string, v ...interface{}) {}
-
 // Init initializes the warehouse
 func Init(Directory string) (wh *Warehouse, err error) {
 	// The temp folder will always be a sub-folder named "_Temp"
@@ -40,41 +37,6 @@ func Init(Directory string) (wh *Warehouse, err error) {
 	}
 
 	return
-}
-
-// TempFile creates a temporary file in the Warehouse. Do not forget to delete.
-func (wh *Warehouse) TempFile() (file *os.File, err error) {
-	file, err = ioutil.TempFile(wh.Temp, "wh")
-
-	return
-}
-
-// createFilePath creates the file path for the specified hash and returns the full file path
-func (wh *Warehouse) createFilePath(hash string) (pathFull string, err error) {
-	path, filename := buildPath(wh.Directory, hash)
-	return filepath.Join(path, filename), createDirectory(path)
-}
-
-// FileExists checks if the file exists
-func (wh *Warehouse) FileExists(hash string) (path string, fileInfo os.FileInfo, valid bool) {
-	a, b := buildPath(wh.Directory, hash)
-	path = filepath.Join(a, b)
-
-	if fileInfo, err := os.Stat(path); err == nil {
-		// file exists
-		return path, fileInfo, true
-	}
-
-	return "", nil, false
-}
-
-// DeleteWarehouse deletes all files in the warehouse
-func (wh *Warehouse) DeleteWarehouse() (err error) {
-	return wh.IterateFiles(func(Hash []byte, Size int64) (Continue bool) {
-		wh.DeleteFile(Hash)
-
-		return true
-	})
 }
 
 // ---- hash functions ----
@@ -104,6 +66,19 @@ func buildPath(storagePath, hash string) (directory string, filename string) {
 	newPath := filepath.Join(storagePath, part1, part2)
 
 	return newPath, filename
+}
+
+// tempFile creates a temporary file in the Warehouse. Do not forget to delete.
+func (wh *Warehouse) tempFile() (file *os.File, err error) {
+	file, err = ioutil.TempFile(wh.Temp, "wh")
+
+	return
+}
+
+// createFilePath creates the file path for the specified hash and returns the full file path
+func (wh *Warehouse) createFilePath(hash []byte) (pathFull string, err error) {
+	path, filename := buildPath(wh.Directory, hex.EncodeToString(hash))
+	return filepath.Join(path, filename), createDirectory(path)
 }
 
 // IterateFiles iterates through all the files and calls the callback

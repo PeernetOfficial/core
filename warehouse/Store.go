@@ -7,9 +7,9 @@ Author:     Peter Kleissner
 package warehouse
 
 import (
-	"encoding/hex"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,7 +34,7 @@ const (
 // CreateFile creates a new file in the warehouse
 func (wh *Warehouse) CreateFile(data io.Reader) (hash []byte, status int, err error) {
 	// create a temporary file to hold the body content
-	tmpFile, err := wh.TempFile()
+	tmpFile, err := wh.tempFile()
 	if err != nil {
 		return nil, StatusErrorCreateTempFile, err
 	}
@@ -60,10 +60,9 @@ func (wh *Warehouse) CreateFile(data io.Reader) (hash []byte, status int, err er
 	}
 
 	hash = hashWriter.Sum(nil)
-	hashA := hex.EncodeToString(hash)
 
 	// Check if the file exists
-	if _, _, valid := wh.FileExists(hashA); valid {
+	if _, _, status, _ := wh.FileExists(hash); status == StatusOK {
 		// file exists already, temp file not needed
 		os.Remove(tmpFileName)
 
@@ -72,7 +71,7 @@ func (wh *Warehouse) CreateFile(data io.Reader) (hash []byte, status int, err er
 	}
 
 	// Destination
-	pathFull, err := wh.createFilePath(hashA)
+	pathFull, err := wh.createFilePath(hash)
 	if err != nil {
 		os.Remove(tmpFileName)
 		return nil, StatusErrorCreatePath, err
@@ -117,20 +116,13 @@ func (wh *Warehouse) CreateFileFromPath(file string) (hash []byte, status int, e
 // ReadFile reads a file from the warehouse and outputs it to the writer
 // Offset is the position in the file to start reading. Limit (0 = not used) defines how many bytes to read starting at the offset.
 func (wh *Warehouse) ReadFile(hash []byte, offset, limit int64, writer io.Writer) (status int, err error) {
-	hashA, err := ValidateHash(hash)
-	if err != nil {
-		return StatusInvalidHash, err
+	path, _, status, err := wh.FileExists(hash)
+	if status != StatusOK { // file does not exist or invalid hash
+		return status, err
 	}
 
+	// read the file from disk
 	var reader io.ReadSeeker
-
-	path, _, valid := wh.FileExists(hashA)
-	if !valid {
-		// file does not exist
-		return StatusFileNotFound, os.ErrNotExist
-	}
-
-	// read from drive
 	retryCount := 0
 retryOpenFile:
 
@@ -174,14 +166,9 @@ retryOpenFile:
 
 // DeleteFile deletes a file from the warehouse
 func (wh *Warehouse) DeleteFile(hash []byte) (status int, err error) {
-	hashA, err := ValidateHash(hash)
-	if err != nil {
-		return StatusInvalidHash, err
-	}
-
-	path, _, valid := wh.FileExists(hashA)
-	if !valid {
-		return StatusFileNotFound, os.ErrNotExist
+	path, _, status, err := wh.FileExists(hash)
+	if status != StatusOK {
+		return status, err
 	}
 
 	if err := os.Remove(path); err != nil {
@@ -189,4 +176,31 @@ func (wh *Warehouse) DeleteFile(hash []byte) (status int, err error) {
 	}
 
 	return StatusOK, nil
+}
+
+// FileExists checks if the file exists
+func (wh *Warehouse) FileExists(hash []byte) (path string, fileInfo os.FileInfo, status int, err error) {
+	hashA, err := ValidateHash(hash)
+	if err != nil {
+		return "", nil, StatusInvalidHash, err
+	}
+
+	a, b := buildPath(wh.Directory, hashA)
+	path = filepath.Join(a, b)
+
+	if fileInfo, err := os.Stat(path); err == nil {
+		// file exists
+		return path, fileInfo, StatusOK, nil
+	}
+
+	return "", nil, StatusFileNotFound, os.ErrNotExist
+}
+
+// DeleteWarehouse deletes all files in the warehouse
+func (wh *Warehouse) DeleteWarehouse() (err error) {
+	return wh.IterateFiles(func(Hash []byte, Size int64) (Continue bool) {
+		wh.DeleteFile(Hash)
+
+		return true
+	})
 }
