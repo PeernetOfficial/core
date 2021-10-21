@@ -177,7 +177,7 @@ func apiSearchResult(w http.ResponseWriter, r *http.Request) {
 	result.Status = 1 // No more results to expect
 
 	// embedded statistics?
-	if returnStats, _ := strconv.ParseBool(r.Form.Get("stats")); returnStats && len(result.Files) > 0 {
+	if returnStats, _ := strconv.ParseBool(r.Form.Get("stats")); returnStats {
 		result.Statistic = job.Statistics()
 	}
 
