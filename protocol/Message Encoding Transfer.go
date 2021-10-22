@@ -24,13 +24,13 @@ import (
 // MessageTransfer is the decoded transfer message.
 // It is sent to initiate a file transfer, and to send data as part of a file transfer. The actual file data is encapsulated via UDT.
 type MessageTransfer struct {
-	*MessageRaw              // Underlying raw message.
-	Control           uint8  // Control. See TransferControlX.
-	TransferProtocol  uint8  // Embedded transfer protocol: 0 = UDT
-	Hash              []byte // Hash of the file to transfer.
-	Offset            uint64 // Offset to start reading at. Only TransferControlRequestStart.
-	Limit             uint64 // Limit (count of bytes) to read starting at the offset. Only TransferControlRequestStart.
-	EmbeddedPacketRaw []byte // Embedded packet. Only TransferControlActive.
+	*MessageRaw             // Underlying raw message.
+	Control          uint8  // Control. See TransferControlX.
+	TransferProtocol uint8  // Embedded transfer protocol: 0 = UDT
+	Hash             []byte // Hash of the file to transfer.
+	Offset           uint64 // Offset to start reading at. Only TransferControlRequestStart.
+	Limit            uint64 // Limit (count of bytes) to read starting at the offset. Only TransferControlRequestStart.
+	Data             []byte // Embedded protocol data. Only TransferControlActive.
 }
 
 const (
@@ -68,21 +68,21 @@ func DecodeTransfer(msg *MessageRaw) (result *MessageTransfer, err error) {
 		result.Limit = binary.LittleEndian.Uint64(msg.Payload[42 : 42+8])
 
 	case TransferControlActive:
-		result.EmbeddedPacketRaw = msg.Payload[34:]
+		result.Data = msg.Payload[34:]
 
 	}
 
-	return nil, nil
+	return result, nil
 }
 
 // TransferMaxEmbedSize is the maximum size of embedded data inside the Transfer message.
 const TransferMaxEmbedSize = udpMaxPacketSize - PacketLengthMin - transferPayloadHeaderSize
 
 // EncodeTransfer encodes a transfer message. The embedded packet size must be smaller than TransferMaxEmbedSize.
-func EncodeTransfer(senderPrivateKey *btcec.PrivateKey, embeddedPacketRaw []byte, control, transferProtocol uint8, hash []byte, offset, limit uint64) (packetRaw []byte, err error) {
-	if control == TransferControlRequestStart && len(embeddedPacketRaw) != 0 {
+func EncodeTransfer(senderPrivateKey *btcec.PrivateKey, data []byte, control, transferProtocol uint8, hash []byte, offset, limit uint64) (packetRaw []byte, err error) {
+	if control == TransferControlRequestStart && len(data) != 0 {
 		return nil, errors.New("transfer encode: payload not allowed in start")
-	} else if isPacketSizeExceed(TransferMaxEmbedSize, len(embeddedPacketRaw)) {
+	} else if isPacketSizeExceed(transferPayloadHeaderSize, len(data)) {
 		return nil, errors.New("transfer encode: embedded packet too big")
 	}
 
@@ -90,7 +90,7 @@ func EncodeTransfer(senderPrivateKey *btcec.PrivateKey, embeddedPacketRaw []byte
 	if control == TransferControlRequestStart {
 		packetSize += 16
 	} else if control == TransferControlActive {
-		packetSize += len(embeddedPacketRaw)
+		packetSize += len(data)
 	}
 
 	raw := make([]byte, packetSize)
@@ -103,8 +103,13 @@ func EncodeTransfer(senderPrivateKey *btcec.PrivateKey, embeddedPacketRaw []byte
 		binary.LittleEndian.PutUint64(raw[34:34+8], offset)
 		binary.LittleEndian.PutUint64(raw[42:42+8], limit)
 	} else if control == TransferControlActive {
-		copy(raw[34:34+len(embeddedPacketRaw)], embeddedPacketRaw)
+		copy(raw[34:34+len(data)], data)
 	}
 
 	return raw, nil
+}
+
+// IsLast checks if the incoming message is the last one in this transfer.
+func (msg *MessageTransfer) IsLast() bool {
+	return msg.Control == TransferControlTerminate || msg.Control == TransferControlNotAvailable
 }

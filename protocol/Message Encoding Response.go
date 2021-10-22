@@ -435,3 +435,8 @@ func encodePeerRecord(raw []byte, peer *PeerRecord, reason uint8) {
 	binary.LittleEndian.PutUint16(raw[61:61+2], peer.IPv6PortReportedInternal)
 	binary.LittleEndian.PutUint16(raw[63:63+2], peer.IPv6PortReportedExternal)
 }
+
+// IsLast checks if the incoming message is the last expected response in this sequence.
+func (msg *MessageResponse) IsLast() bool {
+	return msg.Actions&(1<<ActionSequenceLast) > 0
+}
