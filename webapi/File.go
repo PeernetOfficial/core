@@ -148,9 +148,11 @@ func apiBlockchainFileAdd(w http.ResponseWriter, r *http.Request) {
 			if _, err := warehouse.ValidateHash(file.Hash); err != nil {
 				http.Error(w, "", http.StatusBadRequest)
 				return
-			} else if _, _, status, _ := core.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
+			} else if _, fileInfo, status, _ := core.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
 				EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
 				return
+			} else {
+				file.Size = uint64(fileInfo.Size())
 			}
 		}
 
@@ -231,14 +233,21 @@ func apiBlockchainFileUpdate(w http.ResponseWriter, r *http.Request) {
 	var filesAdd []blockchain.BlockRecordFile
 
 	for _, file := range input.Files {
+		if file.ID == uuid.Nil { // if the ID is not provided by the caller, abort
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
+
 		// Verify that the file exists in the warehouse. Folders are exempt from this check as they are only virtual.
 		if !file.IsVirtualFolder() {
 			if _, err := warehouse.ValidateHash(file.Hash); err != nil {
 				http.Error(w, "", http.StatusBadRequest)
 				return
-			} else if _, _, status, _ := core.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
+			} else if _, fileInfo, status, _ := core.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
 				EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
 				return
+			} else {
+				file.Size = uint64(fileInfo.Size())
 			}
 		}
 

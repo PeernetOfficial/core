@@ -248,7 +248,7 @@ Below is the list of defined metadata types. Undefined types may be used by clie
 
 ### Add File
 
-This adds a file with the provided information to the blockchain. The date field cannot be set by the caller and is ignored.
+This adds a file with the provided information to the blockchain. The date field cannot be set by the caller and is ignored. If the ID field is left empty, a random UUID is automatically assigned. The size field is ignored; it will be automatically set to the file size identified by the hash (via the Warehouse). The format and type fields need to be set by the caller; `/file/format` can be used to detect them.
 
 Any file added is publicly accessible. The user should be informed about this fact in advance. The user is responsible and liable for any files shared.
 
@@ -394,6 +394,8 @@ Example response indicating success:
 
 This updates files that are already published on the blockchain. This is useful for example when changing a file name or description.
 Just like with the add file function, the file must be already stored in the Warehouse, otherwise this function fails.
+
+The files are identified by their IDs. If an ID is not set, this function fails with HTTP 400. The size field is ignored; it will be automatically set to the file size identified by the hash (via the Warehouse).
 
 Note as this replaces the previous file record on the blockchain, all details (including special metadata fields) must be included.
 
