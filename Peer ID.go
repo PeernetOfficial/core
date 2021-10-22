@@ -280,3 +280,15 @@ func DeleteAccount() {
 	config.PrivateKey = ""
 	saveConfig()
 }
+
+// PublicKeyFromPeerID decodes the peer ID (hex encoded) into a public key. Returns nil if invalid.
+func PublicKeyFromPeerID(peerID string) (publicKey *btcec.PublicKey) {
+	hash, err := hex.DecodeString(peerID)
+	if err != nil || len(hash) != 33 {
+		return nil
+	}
+
+	publicKey, _ = btcec.ParsePubKey(hash, btcec.S256())
+
+	return publicKey
+}
