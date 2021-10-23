@@ -79,3 +79,17 @@ func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd *btce
 
 	return peer.send(raw)
 }
+
+// sendTransfer sends a transfer message
+func (peer *PeerInfo) sendTransfer(data []byte, control, transferProtocol uint8, hash []byte, offset, limit uint64, sequenceNumber uint32) (err error) {
+	packetRaw, err := protocol.EncodeTransfer(peerPrivateKey, data, control, transferProtocol, hash, offset, limit)
+	if err != nil {
+		return err
+	}
+
+	raw := &protocol.PacketRaw{Command: protocol.CommandTransfer, Payload: packetRaw, Sequence: sequenceNumber}
+
+	//Filters.MessageOutTransfer(peer, raw, control, transferProtocol, hash, offset, limit)
+
+	return peer.send(raw)
+}
