@@ -186,7 +186,8 @@ func (nets *Networks) packetWorker() {
 		case protocol.CommandResponse: // Response
 			if response, _ := protocol.DecodeResponse(raw); response != nil {
 				// Validate sequence number which prevents unsolicited responses.
-				sequenceInfo, valid, rtt := nets.Sequences.ValidateSequence(raw.SenderPublicKey, raw.Sequence, response.Actions&(1<<protocol.ActionSequenceLast) > 0, true)
+				isLast := response.IsLast()
+				sequenceInfo, valid, rtt := nets.Sequences.ValidateSequence(raw.SenderPublicKey, raw.Sequence, isLast, !isLast)
 				if !valid {
 					//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 					continue
@@ -255,6 +256,22 @@ func (nets *Networks) packetWorker() {
 				} else if traverse.AuthorizedRelayPeer.IsEqual(peerPublicKey) {
 					peer.cmdTraverseForward(traverse)
 				}
+			}
+
+		case protocol.CommandTransfer:
+			if msg, _ := protocol.DecodeTransfer(raw); msg != nil {
+				// Validate sequence number which prevents unsolicited responses.
+				isLast := msg.IsLast()
+				sequenceInfo, valid, rtt := nets.Sequences.ValidateSequenceBi(raw.SenderPublicKey, raw.Sequence, isLast)
+				if msg.Control != protocol.TransferControlRequestStart && !valid {
+					//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
+					continue
+				} else if rtt > 0 {
+					connection.RoundTripTime = rtt
+				}
+				raw.SequenceInfo = sequenceInfo
+
+				peer.cmdTransfer(msg, connection)
 			}
 
 		default: // Unknown command

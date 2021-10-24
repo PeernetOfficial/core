@@ -12,6 +12,7 @@ import (
 
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
+	"github.com/PeernetOfficial/core/warehouse"
 )
 
 // respondClosesContactsCount is the number of closest contact to respond.
@@ -232,5 +233,49 @@ func (peer *PeerInfo) cmdLocalDiscovery(msg *protocol.MessageAnnouncement, conne
 func SendChatAll(text string) {
 	for _, peer := range PeerlistGet() {
 		peer.Chat(text)
+	}
+}
+
+// cmdTransfer handles an incoming transfer message
+func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Connection) {
+	// Only UDT protocol is currently supported for file transfer.
+	if msg.TransferProtocol != 0 {
+		return
+	}
+
+	switch msg.Control {
+	case protocol.TransferControlRequestStart:
+		// First check if the file available in the warehouse.
+		if _, fileInfo, status, _ := UserWarehouse.FileExists(msg.Hash); status != warehouse.StatusOK {
+			// File not available.
+			peer.sendTransfer(nil, protocol.TransferControlNotAvailable, msg.TransferProtocol, msg.Hash, 0, 0, msg.Sequence)
+			return
+		} else if msg.Limit > 0 && fileInfo.Size() < int64(msg.Offset)+int64(msg.Limit) {
+			// If the read limit is out of bounds, this request is considered invalid and silently discarded.
+			return
+		}
+
+		// Create a local UDT client to connect to the remote UDT server and serve the file!
+		go peer.startFileTransferUDT(msg.Hash, msg.Offset, msg.Limit, msg.Sequence)
+
+	case protocol.TransferControlActive:
+		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+			v.receiveData(msg.Data)
+			return
+		}
+
+	case protocol.TransferControlNotAvailable:
+		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+			v.Terminate(false, 404)
+			return
+		}
+
+	case protocol.TransferControlTerminate:
+		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+			// Since an incoming terminate notice means the remote peer already terminated the connection, set sendNotice to false.
+			v.Terminate(false, 2)
+			return
+		}
+
 	}
 }

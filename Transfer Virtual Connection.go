@@ -143,7 +143,7 @@ func (v *virtualPacketConn) sequenceTerminate() {
 
 // Close closes the connection.
 func (v *virtualPacketConn) Close() (err error) {
-	return v.Terminate(true, 1)
+	return v.Terminate(false, 1)
 }
 
 // WriteTo writes a packet with payload p to addr.  WriteTo can be made to time out and return an Error after a fixed time limit.
