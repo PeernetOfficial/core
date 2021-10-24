@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -162,8 +163,8 @@ func (l *listener) readHandshake(m *multiplexer, hsPacket *packet.HandshakePacke
 }
 
 // ListenUDT listens for incoming UDT connections using the existing provided packet connection. It creates a UDT server.
-func ListenUDT(config *Config, packetConn net.PacketConn) net.Listener {
-	m := newMultiplexer(packetConn, config.MaxPacketSize)
+func ListenUDT(config *Config, closer io.Closer, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}) net.Listener {
+	m := newMultiplexer(closer, config.MaxPacketSize, incomingData, outgoingData, terminationSignal)
 
 	l := &listener{
 		m:      m,

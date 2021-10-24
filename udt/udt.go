@@ -12,12 +12,13 @@ implemented:
 */
 
 import (
+	"io"
 	"net"
 )
 
 // DialUDT establishes an outbound UDT connection using the existing provided packet connection. It creates a UDT client.
-func DialUDT(config *Config, packetConn net.PacketConn, isStream bool) (net.Conn, error) {
-	m := newMultiplexer(packetConn, config.MaxPacketSize)
+func DialUDT(config *Config, closer io.Closer, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}, isStream bool) (net.Conn, error) {
+	m := newMultiplexer(closer, config.MaxPacketSize, incomingData, outgoingData, terminationSignal)
 
 	s := m.newSocket(config, false, !isStream)
 	err := s.startConnect()

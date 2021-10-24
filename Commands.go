@@ -266,14 +266,14 @@ func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Con
 
 	case protocol.TransferControlNotAvailable:
 		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
-			v.Terminate(false, 404)
+			v.Terminate(404)
 			return
 		}
 
 	case protocol.TransferControlTerminate:
 		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
 			// Since an incoming terminate notice means the remote peer already terminated the connection, set sendNotice to false.
-			v.Terminate(false, 2)
+			v.Terminate(2)
 			return
 		}
 

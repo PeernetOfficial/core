@@ -4,8 +4,8 @@ package udt
 
 import (
 	"fmt"
+	"io"
 	"math/rand"
-	"net"
 	"sync"
 
 	"github.com/PeernetOfficial/core/udt/packet"
@@ -13,20 +13,27 @@ import (
 
 // A multiplexer is a single UDT socket over a single PacketConn.
 type multiplexer struct {
-	conn          net.PacketConn     // the UDPConn from which we read/write
-	socket        *udtSocket         // Socket
-	socketID      uint32             // Socket ID
-	listenSock    *listener          // the server socket listening to incoming connections, if there is one. Set by caller.
-	maxPacketSize uint               // the Maximum Transmission Unit of packets sent from this address
-	pktOut        chan packet.Packet // packets queued for immediate sending
-	sync.Mutex                       // Synchronized access to socket/listenSock
+	socket            *udtSocket         // Socket
+	socketID          uint32             // Socket ID
+	listenSock        *listener          // the server socket listening to incoming connections, if there is one. Set by caller.
+	maxPacketSize     uint               // the Maximum Transmission Unit of packets sent from this address
+	pktOut            chan packet.Packet // packets queued for immediate sending
+	sync.Mutex                           // Synchronized access to socket/listenSock
+	incomingData      <-chan []byte      // source to read packets from
+	outgoingData      chan<- []byte      // destination to send packets to
+	terminationSignal <-chan struct{}    // external termination signal to watch
+	closer            io.Closer          // external closer to call in case the local socket/listener closes
 }
 
-func newMultiplexer(conn net.PacketConn, maxPacketSize uint) (m *multiplexer) {
+// The closer is called when the socket/listener closes. The terminationSignal is an external (upstream) signal to watch for.
+func newMultiplexer(closer io.Closer, maxPacketSize uint, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}) (m *multiplexer) {
 	m = &multiplexer{
-		conn:          conn,
-		maxPacketSize: maxPacketSize,                 // to be verified?!
-		pktOut:        make(chan packet.Packet, 100), // todo: figure out how to size this
+		maxPacketSize:     maxPacketSize,
+		pktOut:            make(chan packet.Packet, 100),
+		closer:            closer,
+		incomingData:      incomingData,
+		outgoingData:      outgoingData,
+		terminationSignal: terminationSignal,
 	}
 
 	go m.goRead()
@@ -46,7 +53,7 @@ func (m *multiplexer) unlistenUDT(l *listener) {
 
 	m.listenSock = nil
 
-	m.conn.Close()
+	m.closer.Close()
 	close(m.pktOut)
 }
 
@@ -66,22 +73,23 @@ func (m *multiplexer) closeSocket(sockID uint32) {
 
 	m.socket = nil
 
-	m.conn.Close()
+	m.closer.Close()
 	close(m.pktOut)
 }
 
 // read runs in a goroutine and reads packets from conn using a buffer from the readBufferPool, or a new buffer.
 func (m *multiplexer) goRead() {
-	buf := make([]byte, m.maxPacketSize)
 	for {
-		numBytes, _, err := m.conn.ReadFrom(buf)
-		if err != nil {
+		var buf []byte
+		select {
+		case buf = <-m.incomingData:
+		case <-m.terminationSignal:
 			return
 		}
 
-		p, err := packet.DecodePacket(buf[0:numBytes])
+		p, err := packet.DecodePacket(buf)
 		if err != nil {
-			fmt.Printf("Unable to decode packet: %s\n", err)
+			fmt.Printf("Error decoding UDT packet: %s\n", err)
 			return
 		}
 
@@ -111,16 +119,16 @@ func (m *multiplexer) goRead() {
 func (m *multiplexer) goWrite() {
 	buf := make([]byte, m.maxPacketSize)
 	for pkt := range m.pktOut {
-		plen, err := pkt.WriteTo(buf)
+		plen, err := pkt.WriteTo(buf) // encode
 		if err != nil {
 			// TODO: handle write error
-			fmt.Printf("Unable to buffer out: %s\n", err.Error())
+			fmt.Printf("Error encoding UDT packet: %s\n", err.Error())
 			return
 		}
 
-		if _, err = m.conn.WriteTo(buf[0:plen], nil); err != nil {
-			// TODO: handle write error
-			fmt.Printf("Unable to write out: %s\n", err.Error())
+		select {
+		case m.outgoingData <- buf[0:plen]:
+		case <-m.terminationSignal:
 			return
 		}
 	}

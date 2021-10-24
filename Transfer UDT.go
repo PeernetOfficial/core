@@ -32,7 +32,7 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, offset, limit uint64, se
 	networks.Sequences.RegisterSequenceBi(peer.PublicKey, sequenceNumber, virtualConnection, transferSequenceTimeout, virtualConnection.sequenceTerminate)
 
 	// start UDT sender
-	udtConn, err := udt.DialUDT(udt.DefaultConfig(), virtualConnection, true)
+	udtConn, err := udt.DialUDT(udt.DefaultConfig(), virtualConnection, virtualConnection.incomingData, virtualConnection.outgoingData, virtualConnection.terminateChan, true)
 	if err != nil {
 		return err
 	}
@@ -40,25 +40,24 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, offset, limit uint64, se
 	_, err = UserWarehouse.ReadFile(hash, int64(offset), int64(limit), udtConn)
 
 	// close the UDT client and virtual connection in any case
-	udtConn.Close() // warning: This is currently blocking.
-	//virtualConnection.Terminate(false, 1)
+	udtConn.Close() // warning: This is currently blocking in case the other side does not call Close().
 
 	return err
 }
 
 // RequestFileTransferUDT creates a UDT server listening for incoming data transfer and requests a file transfer from a remote peer.
-func (peer *PeerInfo) RequestFileTransferUDT(hash []byte, offset, limit uint64) (udtConn net.Conn, udtListener net.Listener, err error) {
+func (peer *PeerInfo) RequestFileTransferUDT(hash []byte, offset, limit uint64) (udtConn net.Conn, err error) {
 	virtualConnection := newVirtualPacketConn(peer, 0, hash, offset, limit, true)
 
 	// new sequence
 	sequence := networks.Sequences.NewSequenceBi(peer.PublicKey, &peer.messageSequence, virtualConnection, transferSequenceTimeout, virtualConnection.sequenceTerminate)
 	if sequence == nil {
-		return nil, nil, errors.New("cannot acquire sequence")
+		return nil, errors.New("cannot acquire sequence")
 	}
 	virtualConnection.sequenceNumber = sequence.SequenceNumber
 
 	// start UDT receiver
-	udtListener = udt.ListenUDT(udt.DefaultConfig(), virtualConnection)
+	udtListener := udt.ListenUDT(udt.DefaultConfig(), virtualConnection, virtualConnection.incomingData, virtualConnection.outgoingData, virtualConnection.terminateChan)
 
 	// request file transfer
 	peer.sendTransfer(nil, protocol.TransferControlRequestStart, virtualConnection.transferProtocol, hash, offset, limit, virtualConnection.sequenceNumber)
@@ -67,8 +66,10 @@ func (peer *PeerInfo) RequestFileTransferUDT(hash []byte, offset, limit uint64) 
 	udtConn, err = udtListener.Accept()
 	if err != nil {
 		udtListener.Close()
-		return nil, nil, err
+		return nil, err
 	}
 
-	return udtConn, udtListener, nil
+	// We do not close the UDT listener here. It should automatically close after udtConn is closed.
+
+	return udtConn, nil
 }

@@ -165,9 +165,9 @@ func (manager *SequenceManager) ValidateSequence(publicKey *btcec.PublicKey, seq
 	return sequence, sequence.expires.After(time.Now()), rtt
 }
 
-// InvalidateSequence invalidates the sequence number.
-func (manager *SequenceManager) InvalidateSequence(publicKey *btcec.PublicKey, sequenceNumber uint32) {
-	key := sequence2Key(false, publicKey, sequenceNumber)
+// InvalidateSequence invalidates the sequence number. It does not call invalidateFunc.
+func (manager *SequenceManager) InvalidateSequence(publicKey *btcec.PublicKey, sequenceNumber uint32, bidirectional bool) {
+	key := sequence2Key(bidirectional, publicKey, sequenceNumber)
 
 	manager.Lock()
 	delete(manager.sequences, key)

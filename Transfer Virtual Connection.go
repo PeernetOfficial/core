@@ -3,23 +3,19 @@ File Name:  Transfer Virtual Connection.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
-This file defines a virtual net.PacketConn which sends transfer messages and can be used to embed other transfer protocols.
+This file defines a virtual connection between a transfer protocol and Peernet messages.
+If either the downstream transfer protocol or upstream Peernet messages indicate termination, the virtual connection ceases to exist.
 */
 
 package core
 
 import (
-	"errors"
-	"io"
-	"net"
 	"sync"
-	"time"
 
 	"github.com/PeernetOfficial/core/protocol"
 )
 
 // virtualPacketConn is a virtual connection.
-// The required functions are ReadFrom, WriteTo, Close, LocalAddr, SetDeadline, SetReadDeadline, SetWriteDeadline.
 type virtualPacketConn struct {
 	peer *PeerInfo
 
@@ -37,6 +33,7 @@ type virtualPacketConn struct {
 
 	// data channel
 	incomingData chan []byte
+	outgoingData chan []byte
 
 	// internal data
 	closed        bool
@@ -47,7 +44,7 @@ type virtualPacketConn struct {
 
 // newVirtualPacketConn creates a new virtual connection (both incomign and outgoing).
 func newVirtualPacketConn(peer *PeerInfo, protocol uint8, hash []byte, offset, limit uint64, isListen bool) (v *virtualPacketConn) {
-	return &virtualPacketConn{
+	v = &virtualPacketConn{
 		transferProtocol: protocol,
 		peer:             peer,
 		hash:             hash,
@@ -55,64 +52,44 @@ func newVirtualPacketConn(peer *PeerInfo, protocol uint8, hash []byte, offset, l
 		limit:            limit,
 		isListenMode:     isListen,
 		incomingData:     make(chan []byte),
+		outgoingData:     make(chan []byte),
 		terminateChan:    make(chan struct{}),
 	}
-}
 
-// ReadFrom reads a packet from the connection, copying the payload into p. It returns the number of bytes copied into p and the return address that was on the packet.
-func (v *virtualPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	if v.closed {
-		return 0, nil, errors.New("connection closed")
-	}
-
-	// The underlying transfer messages feature a message sequence timeout (via Sequences.RegisterSequenceBi and Sequences.NewSequenceBi).
-	// The sequence timeout triggers the virtualPacketConn.Terminate function which closes terminateChan.
-	// Therefore an additional timeout here would be redundant. Instead, a transfer-wide timeout, that closes terminateChan upon expiration, shall be used.
-
-	select {
-	case data := <-v.incomingData:
-		n = copy(p, data)
-	case <-v.terminateChan:
-		return n, nil, io.EOF
-	}
+	go v.writeForward()
 
 	return
 }
 
-// Write sends the data to the remote peer. It makes it possible to use virtualPacketConn as io.Writer.
-// Note: If the packet size exceed the limit from protocol.EncodeTransfer, this function fails.
-func (v *virtualPacketConn) Write(p []byte) (n int, err error) {
-	if v.IsTerminated() {
-		return 0, errors.New("connection closed")
-	}
+// writeForward forwards outgoing messages
+func (v *virtualPacketConn) writeForward() {
+	for {
+		select {
+		case data := <-v.outgoingData:
+			v.peer.sendTransfer(data, protocol.TransferControlActive, v.transferProtocol, v.hash, v.offset, v.limit, v.sequenceNumber)
 
-	// create a new packet
-	err = v.peer.sendTransfer(p, protocol.TransferControlActive, v.transferProtocol, v.hash, v.offset, v.limit, v.sequenceNumber)
-	if err == nil {
-		n = len(p)
+		case <-v.terminateChan:
+			return
+		}
 	}
-
-	return
 }
 
 // receiveData receives incoming data via an external message. Blocking until a read occurs or the connection is terminated!
-func (v *virtualPacketConn) receiveData(data []byte) (err error) {
+func (v *virtualPacketConn) receiveData(data []byte) {
 	if v.IsTerminated() {
-		return errors.New("connection closed")
+		return
 	}
 
-	// pass on the data
+	// pass the data on
 	select {
 	case v.incomingData <- data:
 	case <-v.terminateChan:
 	}
-
-	return
 }
 
-// Terminate closes the connection and optionally sends a termination message to the remote peer. Multiple termination signals have no effect.
-// Reason: 404 = Remote peer does not store file, 1 = Local termination signal, 2 = Remote termination signal, 3 = Sequence invalidation or expiration
-func (v *virtualPacketConn) Terminate(sendSignal bool, reason int) (err error) {
+// Terminate closes the connection. Do not call this function manually. Use the underlying protocol's function to close the connection.
+// Reason: 404 = Remote peer does not store file (upstream), 1 = Transfer Protocol indicated closing (downstream), 2 = Remote termination signal (upstream), 3 = Sequence invalidation or expiration (upstream)
+func (v *virtualPacketConn) Terminate(reason int) (err error) {
 	v.Lock()
 	defer v.Unlock()
 
@@ -124,10 +101,6 @@ func (v *virtualPacketConn) Terminate(sendSignal bool, reason int) (err error) {
 	v.reason = reason
 	close(v.terminateChan)
 
-	if sendSignal {
-		err = v.peer.sendTransfer(nil, protocol.TransferControlTerminate, v.transferProtocol, v.hash, 0, 0, v.sequenceNumber)
-	}
-
 	return
 }
 
@@ -138,35 +111,12 @@ func (v *virtualPacketConn) IsTerminated() bool {
 
 // sequenceTerminate is a wrapper for sequenece termination (invalidation or expiration)
 func (v *virtualPacketConn) sequenceTerminate() {
-	v.Terminate(false, 3)
+	v.Terminate(3)
 }
 
-// Close closes the connection.
+// Close provides a Close function to be called by the underlying transfer protocol.
+// Do not call the function manually; otherwise the underlying transfer protocol may not have time to send a termination message (and the remote peer would subsequently try to reconnect).
 func (v *virtualPacketConn) Close() (err error) {
-	return v.Terminate(false, 1)
-}
-
-// WriteTo writes a packet with payload p to addr.  WriteTo can be made to time out and return an Error after a fixed time limit.
-func (v *virtualPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	return v.Write(p)
-}
-
-// LocalAddr returns the local network address
-func (v *virtualPacketConn) LocalAddr() (addr net.Addr) {
-	return
-}
-
-// SetDeadline sets the read and write deadlines associated with the connection. It is equivalent to calling both SetReadDeadline and SetWriteDeadline.
-func (v *virtualPacketConn) SetDeadline(t time.Time) (err error) {
-	return nil
-}
-
-// SetReadDeadline sets the deadline for future ReadFrom calls and any currently-blocked ReadFrom call.
-func (v *virtualPacketConn) SetReadDeadline(t time.Time) (err error) {
-	return nil
-}
-
-// SetWriteDeadline sets the deadline for future WriteTo calls and any currently-blocked WriteTo call.
-func (v *virtualPacketConn) SetWriteDeadline(t time.Time) (err error) {
-	return nil
+	networks.Sequences.InvalidateSequence(v.peer.PublicKey, v.sequenceNumber, true)
+	return v.Terminate(1)
 }
