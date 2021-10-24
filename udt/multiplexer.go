@@ -13,20 +13,20 @@ import (
 
 // A multiplexer is a single UDT socket over a single PacketConn.
 type multiplexer struct {
-	conn       net.PacketConn     // the UDPConn from which we read/write
-	socket     *udtSocket         // Socket
-	socketID   uint32             // Socket ID
-	listenSock *listener          // the server socket listening to incoming connections, if there is one. Set by caller.
-	mtu        uint               // the Maximum Transmission Unit of packets sent from this address
-	pktOut     chan packet.Packet // packets queued for immediate sending
-	sync.Mutex                    // Synchronized access to socket/listenSock
+	conn          net.PacketConn     // the UDPConn from which we read/write
+	socket        *udtSocket         // Socket
+	socketID      uint32             // Socket ID
+	listenSock    *listener          // the server socket listening to incoming connections, if there is one. Set by caller.
+	maxPacketSize uint               // the Maximum Transmission Unit of packets sent from this address
+	pktOut        chan packet.Packet // packets queued for immediate sending
+	sync.Mutex                       // Synchronized access to socket/listenSock
 }
 
-func newMultiplexer(conn net.PacketConn, mtu uint) (m *multiplexer) {
+func newMultiplexer(conn net.PacketConn, maxPacketSize uint) (m *multiplexer) {
 	m = &multiplexer{
-		conn:   conn,
-		mtu:    mtu,                           // to be verified?!
-		pktOut: make(chan packet.Packet, 100), // todo: figure out how to size this
+		conn:          conn,
+		maxPacketSize: maxPacketSize,                 // to be verified?!
+		pktOut:        make(chan packet.Packet, 100), // todo: figure out how to size this
 	}
 
 	go m.goRead()
@@ -72,7 +72,7 @@ func (m *multiplexer) closeSocket(sockID uint32) {
 
 // read runs in a goroutine and reads packets from conn using a buffer from the readBufferPool, or a new buffer.
 func (m *multiplexer) goRead() {
-	buf := make([]byte, m.mtu)
+	buf := make([]byte, m.maxPacketSize)
 	for {
 		numBytes, _, err := m.conn.ReadFrom(buf)
 		if err != nil {
@@ -109,7 +109,7 @@ func (m *multiplexer) goRead() {
 
 // write runs in a goroutine and writes packets to conn using a buffer from the writeBufferPool, or a new buffer.
 func (m *multiplexer) goWrite() {
-	buf := make([]byte, m.mtu)
+	buf := make([]byte, m.maxPacketSize)
 	for pkt := range m.pktOut {
 		plen, err := pkt.WriteTo(buf)
 		if err != nil {

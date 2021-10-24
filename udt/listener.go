@@ -163,7 +163,7 @@ func (l *listener) readHandshake(m *multiplexer, hsPacket *packet.HandshakePacke
 
 // ListenUDT listens for incoming UDT connections using the existing provided packet connection. It creates a UDT server.
 func ListenUDT(config *Config, packetConn net.PacketConn) net.Listener {
-	m := newMultiplexer(packetConn, config.MTU)
+	m := newMultiplexer(packetConn, config.MaxPacketSize)
 
 	l := &listener{
 		m:      m,

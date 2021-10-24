@@ -84,7 +84,7 @@ func (s *udtSocketSend) SetPacketSendPeriod(snd time.Duration) {
 	// check to see if we have a bandwidth limit here
 	maxBandwidth := s.socket.Config.MaxBandwidth
 	if maxBandwidth > 0 {
-		minSP := time.Second / time.Duration(float64(maxBandwidth)/float64(s.socket.mtu.get()))
+		minSP := time.Second / time.Duration(float64(maxBandwidth)/float64(s.socket.maxPacketSize))
 		if snd < minSP {
 			snd = minSP
 		}
@@ -201,7 +201,7 @@ func (s *udtSocketSend) processDataMsg(isFirst bool, inChan <-chan sendMessage) 
 			s.msgSeq++
 		}
 
-		mtu := int(s.socket.mtu.get())
+		mtu := int(s.socket.maxPacketSize)
 		msgLen := len(partialSend.content)
 		if msgLen >= mtu {
 			// we are full -- send what we can and leave the rest

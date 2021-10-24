@@ -62,14 +62,14 @@ type udtSocket struct {
 	initPktSeq  packet.PacketID // initial packet sequence to start the connection with
 	connectWait *sync.WaitGroup // released when connection is complete (or failed)
 
-	sockState           sockState    // socket state - used mostly during handshakes
-	mtu                 atomicUint32 // the negotiated maximum packet size
-	maxFlowWinSize      uint         // receiver: maximum unacknowledged packet count
-	currPartialRead     []byte       // stream connections: currently reading message (for partial reads). Owned by client caller (Read)
-	readDeadline        *time.Timer  // if set, then calls to Read() will return "timeout" after this time
-	readDeadlinePassed  bool         // if set, then calls to Read() will return "timeout"
-	writeDeadline       *time.Timer  // if set, then calls to Write() will return "timeout" after this time
-	writeDeadlinePassed bool         // if set, then calls to Write() will return "timeout"
+	sockState           sockState   // socket state - used mostly during handshakes
+	maxPacketSize       uint32      // the maximum packet size
+	maxFlowWinSize      uint        // receiver: maximum unacknowledged packet count
+	currPartialRead     []byte      // stream connections: currently reading message (for partial reads). Owned by client caller (Read)
+	readDeadline        *time.Timer // if set, then calls to Read() will return "timeout" after this time
+	readDeadlinePassed  bool        // if set, then calls to Read() will return "timeout"
+	writeDeadline       *time.Timer // if set, then calls to Write() will return "timeout" after this time
+	writeDeadlinePassed bool        // if set, then calls to Write() will return "timeout"
 
 	rttProt sync.RWMutex // lock must be held before referencing rtt/rttVar
 	rtt     uint         // receiver: estimated roundtrip time. (in microseconds)
@@ -404,11 +404,6 @@ func (s *udtSocket) SetWriteDeadline(t time.Time) error {
 func newSocket(m *multiplexer, config *Config, sockID uint32, isServer bool, isDatagram bool) (s *udtSocket) {
 	now := time.Now()
 
-	mtu := m.mtu
-	if config.MaxPacketSize > 0 && config.MaxPacketSize < mtu {
-		mtu = config.MaxPacketSize
-	}
-
 	maxFlowWinSize := config.MaxFlowWinSize
 	if maxFlowWinSize == 0 {
 		maxFlowWinSize = DefaultConfig().MaxFlowWinSize
@@ -425,7 +420,7 @@ func newSocket(m *multiplexer, config *Config, sockID uint32, isServer bool, isD
 		sockState:      sockStateInit,
 		udtVer:         4,
 		isServer:       isServer,
-		mtu:            atomicUint32{val: uint32(mtu)},
+		maxPacketSize:  uint32(config.MaxPacketSize),
 		maxFlowWinSize: maxFlowWinSize,
 		isDatagram:     isDatagram,
 		sockID:         sockID,
@@ -510,10 +505,10 @@ func (s *udtSocket) sendHandshake(reqType packet.HandshakeReqType) {
 	}
 
 	p := &packet.HandshakePacket{
-		UdtVer:         uint32(s.udtVer),
-		SockType:       sockType,
-		InitPktSeq:     s.initPktSeq,
-		MaxPktSize:     s.mtu.get(),              // maximum packet size (including UDP/IP headers)
+		UdtVer:     uint32(s.udtVer),
+		SockType:   sockType,
+		InitPktSeq: s.initPktSeq,
+		//MaxPktSize:     s.maxPacketSize,          // maximum packet size (including UDP/IP headers)
 		MaxFlowWinSize: uint32(s.maxFlowWinSize), // maximum flow window size
 		ReqType:        reqType,
 		SockID:         s.sockID,
@@ -543,9 +538,10 @@ func (s *udtSocket) readHandshake(m *multiplexer, p *packet.HandshakePacket) boo
 		s.farSockID = p.SockID
 		s.isDatagram = p.SockType == packet.TypeDGRAM
 
-		if s.mtu.get() > p.MaxPktSize {
-			s.mtu.set(p.MaxPktSize)
-		}
+		// MTU negotiation is disabled. Packets may be sent across any network adapter; it would be impossible to use a per-adapter MTU.
+		//if s.mtu.get() > p.MaxPktSize {
+		//	s.mtu.set(p.MaxPktSize)
+		//}
 		s.launchProcessors()
 		s.recv.configureHandshake(p)
 		s.send.configureHandshake(p, true)
@@ -581,9 +577,10 @@ func (s *udtSocket) readHandshake(m *multiplexer, p *packet.HandshakePacket) boo
 		}
 		s.farSockID = p.SockID
 
-		if s.mtu.get() > p.MaxPktSize {
-			s.mtu.set(p.MaxPktSize)
-		}
+		// See documentation above MTU negotation above.
+		//if s.mtu.get() > p.MaxPktSize {
+		//	s.mtu.set(p.MaxPktSize)
+		//}
 		s.launchProcessors()
 		s.recv.configureHandshake(p)
 		s.send.configureHandshake(p, true)

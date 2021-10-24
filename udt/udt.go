@@ -17,7 +17,7 @@ import (
 
 // DialUDT establishes an outbound UDT connection using the existing provided packet connection. It creates a UDT client.
 func DialUDT(config *Config, packetConn net.PacketConn, isStream bool) (net.Conn, error) {
-	m := newMultiplexer(packetConn, config.MTU)
+	m := newMultiplexer(packetConn, config.MaxPacketSize)
 
 	s := m.newSocket(config, false, !isStream)
 	err := s.startConnect()

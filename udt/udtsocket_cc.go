@@ -208,7 +208,7 @@ func (s *udtSocketCc) GetRTT() time.Duration {
 
 // GetMSS is the largest packet size we can currently send (in bytes)
 func (s *udtSocketCc) GetMSS() uint {
-	return uint(s.socket.mtu.get())
+	return uint(s.socket.maxPacketSize)
 }
 
 // SetACKPerid sets the time between ACKs sent to the peer

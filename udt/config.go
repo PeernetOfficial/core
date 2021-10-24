@@ -15,7 +15,6 @@ type Config struct {
 	MaxBandwidth       uint64        // Maximum bandwidth to take with this connection (in bytes/sec, 0 = unlimited)
 	LingerTime         time.Duration // time to wait for retransmit requests after connection shutdown
 	MaxFlowWinSize     uint          // maximum number of unacknowledged packets to permit (minimum 32)
-	MTU                uint          // MTU is the maximum UDT packet size
 	SynTime            time.Duration // SynTime
 
 	CanAccept           func(hsPacket *packet.HandshakePacket) error // can this listener accept this connection?
@@ -30,7 +29,7 @@ func DefaultConfig() *Config {
 		ListenReplayWindow: 5 * time.Minute,
 		LingerTime:         10 * time.Second,
 		MaxFlowWinSize:     64,
-		MTU:                65535,
+		MaxPacketSize:      65535,
 		SynTime:            10000 * time.Microsecond,
 		CongestionForSocket: func(sock *udtSocket) CongestionControl {
 			return &NativeCongestionControl{}
