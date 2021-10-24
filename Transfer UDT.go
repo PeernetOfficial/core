@@ -25,7 +25,7 @@ var transferSequenceTimeout = time.Minute * 10
 // startFileTransferUDT starts a file transfer to a remote peer.
 // It creates a virtual UDT client to transfer data to a remote peer. Counterintuitively, this will be the "file server" peer.
 func (peer *PeerInfo) startFileTransferUDT(hash []byte, offset, limit uint64, sequenceNumber uint32) (err error) {
-	virtualConnection := newVirtualPacketConn(peer, 0, hash, offset, limit, false)
+	virtualConnection := newVirtualPacketConn(peer, 0, hash, offset, limit)
 
 	// register the sequence since packets are sent bi-directional
 	virtualConnection.sequenceNumber = sequenceNumber
@@ -47,7 +47,7 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, offset, limit uint64, se
 
 // RequestFileTransferUDT creates a UDT server listening for incoming data transfer and requests a file transfer from a remote peer.
 func (peer *PeerInfo) RequestFileTransferUDT(hash []byte, offset, limit uint64) (udtConn net.Conn, err error) {
-	virtualConnection := newVirtualPacketConn(peer, 0, hash, offset, limit, true)
+	virtualConnection := newVirtualPacketConn(peer, 0, hash, offset, limit)
 
 	// new sequence
 	sequence := networks.Sequences.NewSequenceBi(peer.PublicKey, &peer.messageSequence, virtualConnection, transferSequenceTimeout, virtualConnection.sequenceTerminate)

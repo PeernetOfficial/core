@@ -19,9 +19,6 @@ import (
 type virtualPacketConn struct {
 	peer *PeerInfo
 
-	// isListenMode puts this connection into listening mode (counterintuitively, a server).
-	isListenMode bool
-
 	// Transfer settings
 	transferProtocol uint8  // 0 = UDT
 	hash             []byte // The requested hash.
@@ -43,14 +40,13 @@ type virtualPacketConn struct {
 }
 
 // newVirtualPacketConn creates a new virtual connection (both incomign and outgoing).
-func newVirtualPacketConn(peer *PeerInfo, protocol uint8, hash []byte, offset, limit uint64, isListen bool) (v *virtualPacketConn) {
+func newVirtualPacketConn(peer *PeerInfo, protocol uint8, hash []byte, offset, limit uint64) (v *virtualPacketConn) {
 	v = &virtualPacketConn{
-		transferProtocol: protocol,
 		peer:             peer,
+		transferProtocol: protocol,
 		hash:             hash,
 		offset:           offset,
 		limit:            limit,
-		isListenMode:     isListen,
 		incomingData:     make(chan []byte),
 		outgoingData:     make(chan []byte),
 		terminateChan:    make(chan struct{}),
