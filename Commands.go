@@ -261,7 +261,7 @@ func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Con
 
 	case protocol.TransferControlActive:
 		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
-			v.receiveData(msg.Data)
+			go v.receiveData(msg.Data)
 			return
 		}
 
