@@ -2,7 +2,6 @@ package udt
 
 import (
 	"errors"
-	"fmt"
 	"math/rand"
 	"net"
 	"sync"
@@ -86,7 +85,6 @@ type udtSocket struct {
 	sendEvent     chan recvPktEvent    // sender: ingest the specified packet. Sender is readPacket, receiver is goSendEvent
 	sendPacket    chan packet.Packet   // packets to send out on the wire (once goManageConnection is running)
 	shutdownEvent chan shutdownMessage // channel signals the connection to be shutdown
-	sockShutdown  chan struct{}        // closed when socket is shutdown
 	sockClosed    chan struct{}        // closed when socket is closed
 
 	// timers
@@ -430,7 +428,6 @@ func newSocket(m *multiplexer, config *Config, sockID uint32, isServer bool, isD
 		recvEvent:      make(chan recvPktEvent, 256),
 		sendEvent:      make(chan recvPktEvent, 256),
 		sockClosed:     make(chan struct{}, 1),
-		sockShutdown:   make(chan struct{}, 1),
 		deliveryRate:   16,
 		bandwidth:      1,
 		sendPacket:     make(chan packet.Packet, 256),
@@ -467,21 +464,17 @@ func (s *udtSocket) startConnect() error {
 
 func (s *udtSocket) goManageConnection() {
 	sockClosed := s.sockClosed
-	sockShutdown := s.sockShutdown
 	for {
 		select {
 		case <-s.lingerTimer: // linger timer expired, shut everything down
-			s.m.closeSocket(s.sockID)
-			close(s.sockClosed)
+			s.shutdown(sockStateClosed, false, nil)
 			return
-		case _, _ = <-sockShutdown:
-			// catching this to force re-evaluation of this select (catching the linger timer)
 		case _, _ = <-sockClosed:
 			return
 		case p := <-s.sendPacket:
 			ts := uint32(time.Now().Sub(s.created) / time.Microsecond)
 			s.cong.onPktSent(p)
-			fmt.Printf("(id=%d) sending %s  (id=%d)\n", s.sockID, packet.PacketTypeName(p.PacketType()), s.farSockID)
+			//fmt.Printf("(id=%d) sending %s  (id=%d)\n", s.sockID, packet.PacketTypeName(p.PacketType()), s.farSockID)
 			s.m.sendPacket(s.farSockID, ts, p)
 		case sd := <-s.shutdownEvent: // connection shut down
 			s.shutdown(sd.sockState, sd.permitLinger, sd.err)
@@ -516,7 +509,7 @@ func (s *udtSocket) sendHandshake(reqType packet.HandshakeReqType) {
 
 	ts := uint32(time.Now().Sub(s.created) / time.Microsecond)
 	s.cong.onPktSent(p)
-	fmt.Printf("(id=%d) sending handshake(%d) (id=%d)\n", s.sockID, int(reqType), s.farSockID)
+	//fmt.Printf("(id=%d) sending handshake(%d) (id=%d)\n", s.sockID, int(reqType), s.farSockID)
 	s.m.sendPacket(s.farSockID, ts, p)
 }
 
@@ -611,17 +604,11 @@ func (s *udtSocket) shutdown(sockState sockState, permitLinger bool, err error) 
 	if !s.isOpen() {
 		return // already closed
 	}
-	if err != nil {
-		fmt.Printf("socket shutdown (type=%d), due to error: %s\n", int(sockState), err.Error())
-	} else {
-		fmt.Printf("socket shutdown (type=%d)\n", int(sockState))
-	}
-	if s.connectWait != nil {
-		s.connectWait.Done()
-		s.connectWait = nil
-	}
-	s.sockState = sockState
-	s.cong.close()
+	//if err != nil {
+	//	fmt.Printf("socket shutdown (type=%d), due to error: %s\n", int(sockState), err.Error())
+	//} else {
+	//	fmt.Printf("socket shutdown (type=%d) (permitLinger = %t, duration = %s)\n", int(sockState), permitLinger, s.Config.LingerTime.String())
+	//}
 
 	if permitLinger {
 		linger := s.Config.LingerTime
@@ -629,16 +616,22 @@ func (s *udtSocket) shutdown(sockState sockState, permitLinger bool, err error) 
 			linger = DefaultConfig().LingerTime
 		}
 		s.lingerTimer = time.After(linger)
+		return
 	}
+
+	if s.connectWait != nil {
+		s.connectWait.Done()
+		s.connectWait = nil
+	}
+	s.sockState = sockState
+	s.cong.close()
 
 	s.connTimeout = nil
 	s.connRetry = nil
-	if permitLinger {
-		close(s.sockShutdown)
-	} else {
-		s.m.closeSocket(s.sockID)
-		close(s.sockClosed)
-	}
+	s.m.closeSocket(s.sockID)
+	close(s.sockClosed)
+	close(s.recvEvent)
+
 	s.messageIn <- nil
 }
 

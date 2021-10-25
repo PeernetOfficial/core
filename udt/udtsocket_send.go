@@ -15,7 +15,6 @@ const (
 	sendStateSending                      // recently sent something, waiting for SND before sending more
 	sendStateWaiting                      // destination is full, waiting for them to process something and come back
 	sendStateProcessDrop                  // immediately re-process any drop list requests
-	sendStateShutdown                     // connection is shutdown
 )
 
 const (
@@ -25,7 +24,6 @@ const (
 type udtSocketSend struct {
 	// channels
 	sockClosed    <-chan struct{}        // closed when socket is closed
-	sockShutdown  <-chan struct{}        // closed when socket is shutdown
 	sendEvent     <-chan recvPktEvent    // sender: ingest the specified packet. Sender is readPacket, receiver is goSendEvent
 	messageOut    <-chan sendMessage     // outbound messages. Sender is client caller (Write), Receiver is goSendEvent. Closed when socket is closed
 	sendPacket    chan<- packet.Packet   // send a packet out on the wire
@@ -59,7 +57,6 @@ func newUdtSocketSend(s *udtSocket) *udtSocketSend {
 		expCount:       1,
 		sendPktSeq:     s.initPktSeq,
 		sockClosed:     s.sockClosed,
-		sockShutdown:   s.sockShutdown,
 		sendEvent:      s.sendEvent,
 		messageOut:     s.messageOut,
 		congestWindow:  atomicUint32{val: 16},
@@ -99,7 +96,6 @@ func (s *udtSocketSend) goSendEvent() {
 	sockClosed := s.sockClosed
 	for {
 		thisMsgChan := messageOut
-		sockShutdown := s.sockShutdown
 
 		switch s.sendState {
 		case sendStateIdle: // not waiting for anything, can send immediately
@@ -113,17 +109,11 @@ func (s *udtSocketSend) goSendEvent() {
 				s.processSendExpire()
 			}
 			continue
-		case sendStateShutdown:
-			sockShutdown = nil
-			thisMsgChan = nil
 		default:
 			thisMsgChan = nil
 		}
 
 		select {
-		case _, _ = <-sockShutdown:
-			s.sendState = sendStateShutdown
-			s.expTimerEvent = nil // don't process EXP events if we're shutting down
 		case msg, ok := <-thisMsgChan: // nil if we can't process outgoing messages right now
 			if !ok {
 				s.sendPacket <- &packet.ShutdownPacket{}

@@ -14,12 +14,11 @@ const (
 
 type udtSocketRecv struct {
 	// channels
-	sockClosed   <-chan struct{}      // closed when socket is closed
-	sockShutdown <-chan struct{}      // closed when socket is shutdown
-	recvEvent    <-chan recvPktEvent  // receiver: ingest the specified packet. Sender is readPacket, receiver is goReceiveEvent
-	messageIn    chan<- []byte        // inbound messages. Sender is goReceiveEvent->ingestData, Receiver is client caller (Read)
-	sendPacket   chan<- packet.Packet // send a packet out on the wire
-	socket       *udtSocket
+	sockClosed <-chan struct{}      // closed when socket is closed
+	recvEvent  <-chan recvPktEvent  // receiver: ingest the specified packet. Sender is readPacket, receiver is goReceiveEvent
+	messageIn  chan<- []byte        // inbound messages. Sender is goReceiveEvent->ingestData, Receiver is client caller (Read)
+	sendPacket chan<- packet.Packet // send a packet out on the wire
+	socket     *udtSocket
 
 	farNextPktSeq      packet.PacketID // the peer's next largest packet ID expected.
 	farRecdPktSeq      packet.PacketID // the peer's last "received" packet ID (before any loss events)
@@ -46,12 +45,11 @@ type udtSocketRecv struct {
 
 func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
 	sr := &udtSocketRecv{
-		socket:       s,
-		sockClosed:   s.sockClosed,
-		sockShutdown: s.sockShutdown,
-		recvEvent:    s.recvEvent,
-		messageIn:    s.messageIn,
-		sendPacket:   s.sendPacket,
+		socket:     s,
+		sockClosed: s.sockClosed,
+		recvEvent:  s.recvEvent,
+		messageIn:  s.messageIn,
+		sendPacket: s.sendPacket,
 	}
 	go sr.goReceiveEvent()
 	return sr
@@ -67,7 +65,6 @@ func (s *udtSocketRecv) configureHandshake(p *packet.HandshakePacket) {
 func (s *udtSocketRecv) goReceiveEvent() {
 	recvEvent := s.recvEvent
 	sockClosed := s.sockClosed
-	sockShutdown := s.sockShutdown
 	for {
 		select {
 		case evt, ok := <-recvEvent:
@@ -84,8 +81,6 @@ func (s *udtSocketRecv) goReceiveEvent() {
 			case *packet.ErrPacket:
 				s.ingestError(sp)
 			}
-		case _, _ = <-sockShutdown: // socket is shut down, no need to receive any further data
-			return
 		case _, _ = <-sockClosed: // socket is closed, leave now
 			return
 		case <-s.ackSentEvent:
