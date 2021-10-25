@@ -117,8 +117,8 @@ func (m *multiplexer) goRead() {
 
 // write runs in a goroutine and writes packets to conn using a buffer from the writeBufferPool, or a new buffer.
 func (m *multiplexer) goWrite() {
-	buf := make([]byte, m.maxPacketSize)
 	for pkt := range m.pktOut {
+		buf := make([]byte, m.maxPacketSize)
 		plen, err := pkt.WriteTo(buf) // encode
 		if err != nil {
 			// TODO: handle write error
