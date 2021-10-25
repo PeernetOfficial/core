@@ -453,7 +453,7 @@ func (s *udtSocketRecv) getRcvSpeeds() (recvSpeed, bandwidth int) {
 	}
 
 	// get median value, but cannot change the original value order in the window
-	if s.recvPktPairHistory == nil {
+	if s.recvPktPairHistory != nil {
 		ourProbeHistory := make(sortableDurnArray, len(s.recvPktPairHistory))
 		copy(ourProbeHistory, s.recvPktPairHistory)
 		n := len(ourProbeHistory)
