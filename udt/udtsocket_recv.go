@@ -42,18 +42,16 @@ type udtSocketRecv struct {
 	// timers
 	ackSentEvent2 <-chan time.Time // if an ACK packet has recently sent, don't include link information in the next one
 	ackSentEvent  <-chan time.Time // if an ACK packet has recently sent, wait before resending it
-	ackTimerEvent <-chan time.Time // controls when to send an ACK to our peer
 }
 
 func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
 	sr := &udtSocketRecv{
-		socket:        s,
-		sockClosed:    s.sockClosed,
-		sockShutdown:  s.sockShutdown,
-		recvEvent:     s.recvEvent,
-		messageIn:     s.messageIn,
-		sendPacket:    s.sendPacket,
-		ackTimerEvent: time.After(s.Config.SynTime),
+		socket:       s,
+		sockClosed:   s.sockClosed,
+		sockShutdown: s.sockShutdown,
+		recvEvent:    s.recvEvent,
+		messageIn:    s.messageIn,
+		sendPacket:   s.sendPacket,
 	}
 	go sr.goReceiveEvent()
 	return sr
@@ -94,8 +92,6 @@ func (s *udtSocketRecv) goReceiveEvent() {
 			s.ackSentEvent = nil
 		case <-s.ackSentEvent2:
 			s.ackSentEvent2 = nil
-		case <-s.ackTimerEvent:
-			s.ackEvent()
 		}
 	}
 }
@@ -364,7 +360,7 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 	s.unackPktCount++
 	ackInterval := uint(s.ackInterval.get())
 	if (ackInterval > 0) && (ackInterval <= s.unackPktCount) {
-		// ACK timer expired or ACK interval is reached
+		// ACK interval is reached
 		s.ackEvent()
 	} else if ackSelfClockInterval*s.lightAckCount <= s.unackPktCount {
 		//send a "light" ACK
@@ -584,12 +580,6 @@ func (s *udtSocketRecv) ingestError(p *packet.ErrPacket) {
 // assuming some condition has occured (ACK timer expired, ACK interval), send an ACK and reset the appropriate timer
 func (s *udtSocketRecv) ackEvent() {
 	s.sendACK()
-	ackTime := s.socket.Config.SynTime
-	ackPeriod := s.ackPeriod.get()
-	if ackPeriod > 0 {
-		ackTime = ackPeriod
-	}
-	s.ackTimerEvent = time.After(ackTime)
 	s.unackPktCount = 0
 	s.lightAckCount = 1
 }
