@@ -178,7 +178,7 @@ func (s *udtSocketSend) reevalSendState() sendState {
 		if cwnd > congestWindow {
 			cwnd = congestWindow
 		}
-		if cwnd >= uint(len(s.sendPktPend)) {
+		if uint(len(s.sendPktPend)) >= cwnd {
 			return sendStateWaiting
 		}
 	}
