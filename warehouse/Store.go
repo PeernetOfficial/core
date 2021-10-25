@@ -115,10 +115,10 @@ func (wh *Warehouse) CreateFileFromPath(file string) (hash []byte, status int, e
 
 // ReadFile reads a file from the warehouse and outputs it to the writer
 // Offset is the position in the file to start reading. Limit (0 = not used) defines how many bytes to read starting at the offset.
-func (wh *Warehouse) ReadFile(hash []byte, offset, limit int64, writer io.Writer) (status int, err error) {
+func (wh *Warehouse) ReadFile(hash []byte, offset, limit int64, writer io.Writer) (status int, bytesRead int64, err error) {
 	path, _, status, err := wh.FileExists(hash)
 	if status != StatusOK { // file does not exist or invalid hash
-		return status, err
+		return status, 0, err
 	}
 
 	// read the file from disk
@@ -136,7 +136,7 @@ retryOpenFile:
 			goto retryOpenFile
 		}
 
-		return StatusErrorOpenFile, err
+		return StatusErrorOpenFile, 0, err
 	}
 	defer file.Close()
 
@@ -145,23 +145,23 @@ retryOpenFile:
 	// seek to offset, if provided
 	if offset > 0 {
 		if _, err = reader.Seek(offset, io.SeekStart); err != nil {
-			return StatusErrorSeekFile, err
+			return StatusErrorSeekFile, 0, err
 		}
 	}
 
 	// read the file and copy it into the output
 	if limit > 0 {
-		_, err = io.Copy(writer, io.LimitReader(reader, limit))
+		bytesRead, err = io.Copy(writer, io.LimitReader(reader, limit))
 	} else {
-		_, err = io.Copy(writer, reader)
+		bytesRead, err = io.Copy(writer, reader)
 	}
 
 	// do not consider EOF an error if all bytes were read
 	if err != nil {
-		return StatusErrorReadFile, err
+		return StatusErrorReadFile, bytesRead, err
 	}
 
-	return StatusOK, nil
+	return StatusOK, bytesRead, nil
 }
 
 // DeleteFile deletes a file from the warehouse

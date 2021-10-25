@@ -246,7 +246,8 @@ func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Con
 	switch msg.Control {
 	case protocol.TransferControlRequestStart:
 		// First check if the file available in the warehouse.
-		if _, fileInfo, status, _ := UserWarehouse.FileExists(msg.Hash); status != warehouse.StatusOK {
+		_, fileInfo, status, _ := UserWarehouse.FileExists(msg.Hash)
+		if status != warehouse.StatusOK {
 			// File not available.
 			peer.sendTransfer(nil, protocol.TransferControlNotAvailable, msg.TransferProtocol, msg.Hash, 0, 0, msg.Sequence)
 			return
@@ -256,7 +257,7 @@ func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Con
 		}
 
 		// Create a local UDT client to connect to the remote UDT server and serve the file!
-		go peer.startFileTransferUDT(msg.Hash, msg.Offset, msg.Limit, msg.Sequence)
+		go peer.startFileTransferUDT(msg.Hash, uint64(fileInfo.Size()), msg.Offset, msg.Limit, msg.Sequence)
 
 	case protocol.TransferControlActive:
 		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {

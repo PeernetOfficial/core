@@ -34,7 +34,7 @@ type MessageTransfer struct {
 }
 
 const (
-	TransferControlRequestStart = 0 // Request start transfer of file. Data at byte 34 is offset and limit to read, each 8 bytes.
+	TransferControlRequestStart = 0 // Request start transfer of file. Data at byte 34 is offset and limit to read, each 8 bytes. Limit may be 0 to indicate entire file.
 	TransferControlNotAvailable = 1 // Requested file not available
 	TransferControlActive       = 2 // Active file transfer
 	TransferControlTerminate    = 3 // Terminate

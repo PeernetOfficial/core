@@ -81,7 +81,7 @@ func apiWarehouseReadFile(w http.ResponseWriter, r *http.Request) {
 	offset, _ := strconv.Atoi(r.Form.Get("offset"))
 	limit, _ := strconv.Atoi(r.Form.Get("limit"))
 
-	status, err := core.UserWarehouse.ReadFile(hash, int64(offset), int64(limit), w)
+	status, bytesRead, err := core.UserWarehouse.ReadFile(hash, int64(offset), int64(limit), w)
 
 	switch status {
 	case warehouse.StatusFileNotFound:
@@ -95,7 +95,7 @@ func apiWarehouseReadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		core.Filters.LogError("warehouese.ReadFile", "status %d error: %v", status, err)
+		core.Filters.LogError("warehouese.ReadFile", "status %d read %d error: %v", status, bytesRead, err)
 	}
 }
 
