@@ -48,7 +48,7 @@ func (l *listener) Close() (err error) {
 	close(a)
 	close(c)
 
-	l.m.unlistenUDT(l)
+	l.m.closer.Close()
 	return nil
 }
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"sync"
 
 	"github.com/PeernetOfficial/core/udt/packet"
 )
@@ -17,7 +16,6 @@ type multiplexer struct {
 	socketID          uint32          // Socket ID
 	listenSock        *listener       // the server socket listening to incoming connections, if there is one. Set by caller.
 	maxPacketSize     uint            // the Maximum Transmission Unit of packets sent from this address
-	sync.Mutex                        // Synchronized access to socket/listenSock
 	incomingData      <-chan []byte   // source to read packets from
 	outgoingData      chan<- []byte   // destination to send packets to
 	terminationSignal <-chan struct{} // external termination signal to watch
@@ -39,37 +37,10 @@ func newMultiplexer(closer io.Closer, maxPacketSize uint, incomingData <-chan []
 	return
 }
 
-// unlistenUDT is the closeListen equivalent
-func (m *multiplexer) unlistenUDT(l *listener) {
-	m.Lock()
-	defer m.Unlock()
-
-	if m.listenSock == nil {
-		return
-	}
-
-	m.listenSock = nil
-
-	m.closer.Close()
-}
-
 func (m *multiplexer) newSocket(config *Config, isServer bool, isDatagram bool) (s *udtSocket) {
 	m.socketID = rand.Uint32()
 	m.socket = newSocket(m, config, m.socketID, isServer, isDatagram)
 	return m.socket
-}
-
-func (m *multiplexer) closeSocket(sockID uint32) {
-	m.Lock()
-	defer m.Unlock()
-
-	if m.socket == nil {
-		return
-	}
-
-	m.socket = nil
-
-	m.closer.Close()
 }
 
 // read runs in a goroutine and reads packets from conn using a buffer from the readBufferPool, or a new buffer.
@@ -98,11 +69,9 @@ func (m *multiplexer) goRead() {
 				return
 			}
 
-			m.Lock()
 			if m.listenSock != nil {
 				m.listenSock.readHandshake(m, hsPacket)
 			}
-			m.Unlock()
 		}
 		if m.socketID == sockID && m.socket != nil {
 			m.socket.readPacket(m, p)
