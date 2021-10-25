@@ -295,7 +295,6 @@ func (s *udtSocket) Close() error {
 	}
 
 	close(s.messageOut)
-	_, _ = <-s.shutdownEvent
 	return nil
 }
 
@@ -691,7 +690,7 @@ func (s *udtSocket) readPacket(m *multiplexer, p packet.Packet) {
 	case *packet.HandshakePacket: // sent by both peers
 		s.readHandshake(m, sp)
 	case *packet.ShutdownPacket: // sent by either peer
-		s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: true}
+		s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: s.isServer} // if client tells us done, it is done.
 	case *packet.AckPacket, *packet.LightAckPacket, *packet.NakPacket: // receiver -> sender
 		s.sendEvent <- recvPktEvent{pkt: p, now: now}
 	case *packet.UserDefControlPacket:

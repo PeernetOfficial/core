@@ -117,7 +117,7 @@ func (s *udtSocketSend) goSendEvent() {
 		case msg, ok := <-thisMsgChan: // nil if we can't process outgoing messages right now
 			if !ok {
 				s.sendPacket <- &packet.ShutdownPacket{}
-				s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: true}
+				s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: !s.socket.isServer}
 				return
 			}
 			s.msgPartialSend = &msg
