@@ -226,7 +226,8 @@ func (s *udtSocketRecv) ingestData(p *packet.DataPacket, now time.Time) {
 	excluding) these two values into the receiver's loss list and
 	send them to the sender in an NAK packet. */
 	seqDiff := seq.BlindDiff(s.farNextPktSeq)
-	if seqDiff > 0 && false {
+	if seqDiff > 0 {
+		fmt.Printf("Warning sequence out of order :( Code that follows will crash. Expected %d but received is %d\n", s.farNextPktSeq, p.Seq)
 		newLoss := make(receiveLossHeap, 0, seqDiff)
 		for idx := s.farNextPktSeq; idx != seq; idx.Incr() {
 			newLoss = append(newLoss, recvLossEntry{packetID: seq})
@@ -257,6 +258,8 @@ func (s *udtSocketRecv) ingestData(p *packet.DataPacket, now time.Time) {
 		} else {
 			s.farRecdPktSeq, _ = s.recvLossList.Min(s.farRecdPktSeq, s.farNextPktSeq)
 		}
+	} else {
+		s.farNextPktSeq = seq.Add(1)
 	}
 
 	s.attemptProcessPacket(p, true)
