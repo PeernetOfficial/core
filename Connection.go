@@ -86,6 +86,14 @@ func (peer *PeerInfo) GetConnections(active bool) (connections []*Connection) {
 	return peer.connectionInactive
 }
 
+// IsConnectionActive checks if the peer has an active connection that can be used to send and receive messages
+func (peer *PeerInfo) IsConnectionActive() bool {
+	peer.RLock()
+	defer peer.RUnlock()
+
+	return len(peer.connectionActive) > 0
+}
+
 // IsConnectable checks if the peer is connectable to the given IP parameters.
 func (peer *PeerInfo) IsConnectable(allowLocal, allowIPv4, allowIPv6 bool) bool {
 	peer.RLock()

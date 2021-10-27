@@ -8,6 +8,7 @@ package core
 
 import (
 	"encoding/hex"
+	"errors"
 	"math/rand"
 	"net"
 	"os"
@@ -281,14 +282,12 @@ func DeleteAccount() {
 	saveConfig()
 }
 
-// PublicKeyFromPeerID decodes the peer ID (hex encoded) into a public key. Returns nil if invalid.
-func PublicKeyFromPeerID(peerID string) (publicKey *btcec.PublicKey) {
+// PublicKeyFromPeerID decodes the peer ID (hex encoded) into a public key.
+func PublicKeyFromPeerID(peerID string) (publicKey *btcec.PublicKey, err error) {
 	hash, err := hex.DecodeString(peerID)
 	if err != nil || len(hash) != 33 {
-		return nil
+		return nil, errors.New("invalid peer ID length")
 	}
 
-	publicKey, _ = btcec.ParsePubKey(hash, btcec.S256())
-
-	return publicKey
+	return btcec.ParsePubKey(hash, btcec.S256())
 }
