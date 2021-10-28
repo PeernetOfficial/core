@@ -3,3 +3,5 @@ log.txt
 *debug_bin
 self.*
 test.*
+# This for the GoLand editor 
+.idea/
