@@ -38,7 +38,7 @@ type HandshakePacket struct {
 func (p *HandshakePacket) WriteTo(buf []byte) (uint, error) {
 	l := len(buf)
 	if l < 64 {
-		return 0, errors.New("packet too small")
+		return 0, errors.New("handshake packet too small")
 	}
 
 	if _, err := p.writeHdrTo(buf, ptHandshake, 0); err != nil {
@@ -64,7 +64,7 @@ func (p *HandshakePacket) WriteTo(buf []byte) (uint, error) {
 func (p *HandshakePacket) readFrom(data []byte) error {
 	l := len(data)
 	if l < 64 {
-		return errors.New("packet too small")
+		return errors.New("handshake packet too small")
 	}
 	if _, err := p.readHdrFrom(data); err != nil {
 		return err

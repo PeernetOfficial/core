@@ -8,7 +8,6 @@ package webapi
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -81,6 +80,7 @@ func apiFileRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// start the reader
 	reader, fileSize, transferSize, err := FileStartReader(peer, fileHash, uint64(offset), uint64(limit))
 	if reader != nil {
 		defer reader.Close()
@@ -89,18 +89,98 @@ func apiFileRead(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	fmt.Printf("SUCCESS file size is %d transfer size is %d\n", fileSize, transferSize)
 
-	// Set the Content-Length header, always to the actual size of transferred data.
-	w.Header().Set("Content-Length", strconv.FormatUint(transferSize, 10))
+	// set the right headers
+	setContentLengthRangeHeader(w, uint64(offset), transferSize, fileSize, ranges)
 
-	// Set the Content-Range header if needed.
-	if len(ranges) == 1 {
-		w.Header().Set("Content-Range", "bytes "+strconv.Itoa(offset)+"-"+strconv.Itoa(offset+int(transferSize)-1)+"/"+strconv.FormatUint(fileSize, 10))
-		w.WriteHeader(http.StatusPartialContent)
-	} else {
-		w.WriteHeader(http.StatusOK)
+	// Start sending the data!
+	io.Copy(w, io.LimitReader(reader, int64(transferSize)))
+}
+
+/*
+apiFileView is similar to /file/read but but provides a format parameter. It set the Content-Type header and may manipulate the content on the fly.
+This endpoint supports the Range, Content-Range and Content-Length headers. Multipart ranges are not supported and result in HTTP 400.
+Instead of providing the node ID, the peer ID is also accepted in the &node= parameter.
+The default timeout for connecting to the peer is 10 seconds.
+Formats: 14 = Video
+
+Request:    GET /file/view?hash=[hash]&node=[node ID]&format=[format]
+            Optional: &offset=[offset]&limit=[limit] or via Range header.
+            Optional: &timeout=[seconds]
+Response:   200 with the content
+            206 with partial content
+            400 if the parameters are invalid
+            404 if the file was not found or other error on transfer initiate
+            502 if unable to find or connect to the remote peer in time
+*/
+func apiFileView(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	var err error
+
+	// validate hashes (must be blake3) and other input
+	fileHash, valid1 := DecodeBlake3Hash(r.Form.Get("hash"))
+	nodeID, valid2 := DecodeBlake3Hash(r.Form.Get("node"))
+	publicKey, err3 := core.PublicKeyFromPeerID(r.Form.Get("node"))
+	if !valid1 || (!valid2 && err3 != nil) {
+		http.Error(w, "", http.StatusBadRequest)
+		return
 	}
+
+	timeoutSeconds, _ := strconv.Atoi(r.Form.Get("timeout"))
+	if timeoutSeconds == 0 {
+		timeoutSeconds = 10
+	}
+	timeout := time.Duration(timeoutSeconds) * time.Second
+
+	offset, _ := strconv.Atoi(r.Form.Get("offset"))
+	limit, _ := strconv.Atoi(r.Form.Get("limit"))
+	format, _ := strconv.Atoi(r.Form.Get("format"))
+
+	// Range header?
+	var ranges []HTTPRange
+	if ranges, err = ParseRangeHeader(r.Header.Get("Range"), -1, true); err != nil || len(ranges) > 1 {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	} else if len(ranges) == 1 {
+		if ranges[0].length != -1 { // if length is not specified, limit remains 0 which is maximum
+			limit = ranges[0].length
+		}
+		offset = ranges[0].start
+	}
+
+	// try connecting via node ID or peer ID?
+	var peer *core.PeerInfo
+
+	if valid2 {
+		peer, err = PeerConnectNode(nodeID, timeout)
+	} else if err3 == nil {
+		peer, err = PeerConnectPublicKey(publicKey, timeout)
+	}
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
+
+	// start the reader
+	reader, fileSize, transferSize, err := FileStartReader(peer, fileHash, uint64(offset), uint64(limit))
+	if reader != nil {
+		defer reader.Close()
+	}
+	if err != nil || reader == nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Accept-Ranges", "bytes") // always indicate accepting of Range header
+
+	switch format {
+	case 14:
+		// Video: Indicate MP4 always. There are tons of other MIME types that could be used.
+		w.Header().Set("Content-Type", "video/mp4")
+	}
+
+	// set the right headers
+	setContentLengthRangeHeader(w, uint64(offset), transferSize, fileSize, ranges)
 
 	// Start sending the data!
 	io.Copy(w, io.LimitReader(reader, int64(transferSize)))

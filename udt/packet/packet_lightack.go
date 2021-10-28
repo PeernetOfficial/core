@@ -16,7 +16,7 @@ type LightAckPacket struct {
 func (p *LightAckPacket) WriteTo(buf []byte) (uint, error) {
 	l := len(buf)
 	if l < 20 {
-		return 0, errors.New("packet too small")
+		return 0, errors.New("lightack packet too small")
 	}
 
 	if _, err := p.writeHdrTo(buf, ptAck, 0); err != nil {
@@ -31,7 +31,7 @@ func (p *LightAckPacket) WriteTo(buf []byte) (uint, error) {
 func (p *LightAckPacket) readFrom(data []byte) (err error) {
 	l := len(data)
 	if l < 20 {
-		return errors.New("packet too small")
+		return errors.New("lightack packet too small")
 	}
 	if _, err = p.readHdrFrom(data); err != nil {
 		return err

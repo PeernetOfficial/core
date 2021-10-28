@@ -8,6 +8,7 @@ package webapi
 
 import (
 	"errors"
+	"net/http"
 	"net/textproto"
 	"strconv"
 	"strings"
@@ -91,4 +92,18 @@ func ParseRangeHeader(s string, size int, noMultiRange bool) ([]HTTPRange, error
 		}
 	}
 	return ranges, nil
+}
+
+// setContentLengthRangeHeader sets the appropriate Content-Length and Content-Range headers
+func setContentLengthRangeHeader(w http.ResponseWriter, offset, transferSize, fileSize uint64, ranges []HTTPRange) {
+	// Set the Content-Length header, always to the actual size of transferred data.
+	w.Header().Set("Content-Length", strconv.FormatUint(transferSize, 10))
+
+	// Set the Content-Range header if needed.
+	if len(ranges) == 1 {
+		w.Header().Set("Content-Range", "bytes "+strconv.FormatUint(offset, 10)+"-"+strconv.FormatUint(offset+transferSize-1, 10)+"/"+strconv.FormatUint(fileSize, 10))
+		w.WriteHeader(http.StatusPartialContent)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
 }

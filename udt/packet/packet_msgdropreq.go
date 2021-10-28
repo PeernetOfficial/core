@@ -18,7 +18,7 @@ type MsgDropReqPacket struct {
 func (p *MsgDropReqPacket) WriteTo(buf []byte) (uint, error) {
 	l := len(buf)
 	if l < 24 {
-		return 0, errors.New("packet too small")
+		return 0, errors.New("drop packet too small")
 	}
 
 	if _, err := p.writeHdrTo(buf, ptMsgDropReq, p.MsgID); err != nil {
@@ -34,7 +34,7 @@ func (p *MsgDropReqPacket) WriteTo(buf []byte) (uint, error) {
 func (p *MsgDropReqPacket) readFrom(data []byte) (err error) {
 	l := len(data)
 	if l < 24 {
-		return errors.New("packet too small")
+		return errors.New("drop packet too small")
 	}
 	if p.MsgID, err = p.readHdrFrom(data); err != nil {
 		return

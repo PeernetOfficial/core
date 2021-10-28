@@ -44,13 +44,16 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, fileSize uint64, offset,
 	virtualConnection.sequenceNumber = sequenceNumber
 	networks.Sequences.RegisterSequenceBi(peer.PublicKey, sequenceNumber, virtualConnection, transferSequenceTimeout, virtualConnection.sequenceTerminate)
 
+	udtConfig := udt.DefaultConfig()
+	udtConfig.MaxPacketSize = protocol.TransferMaxEmbedSize
+
 	// start UDT sender
-	udtConn, err := udt.DialUDT(udt.DefaultConfig(), virtualConnection, virtualConnection.incomingData, virtualConnection.outgoingData, virtualConnection.terminateChan, true)
+	udtConn, err := udt.DialUDT(udtConfig, virtualConnection, virtualConnection.incomingData, virtualConnection.outgoingData, virtualConnection.terminateChan, true)
 	if err != nil {
 		return err
 	}
 
-	defer udtConn.Close() // warning: This is currently blocking in case the other side does not call Close().
+	defer udtConn.Close()
 
 	// Start by sending the header: Total File Size and Transfer Size.
 	header := make([]byte, 16)
@@ -78,8 +81,11 @@ func (peer *PeerInfo) FileTransferRequestUDT(hash []byte, offset, limit uint64) 
 	}
 	virtualConnection.sequenceNumber = sequence.SequenceNumber
 
+	udtConfig := udt.DefaultConfig()
+	udtConfig.MaxPacketSize = protocol.TransferMaxEmbedSize
+
 	// start UDT receiver
-	udtListener := udt.ListenUDT(udt.DefaultConfig(), virtualConnection, virtualConnection.incomingData, virtualConnection.outgoingData, virtualConnection.terminateChan)
+	udtListener := udt.ListenUDT(udtConfig, virtualConnection, virtualConnection.incomingData, virtualConnection.outgoingData, virtualConnection.terminateChan)
 
 	// request file transfer
 	peer.sendTransfer(nil, protocol.TransferControlRequestStart, virtualConnection.transferProtocol, hash, offset, limit, virtualConnection.sequenceNumber)

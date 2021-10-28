@@ -134,7 +134,7 @@ func (h *ctrlHeader) SetHeader(destSockID uint32, ts uint32) {
 func (h *ctrlHeader) writeHdrTo(buf []byte, msgType PacketType, info uint32) (uint, error) {
 	l := len(buf)
 	if l < 16 {
-		return 0, errors.New("packet too small")
+		return 0, errors.New("ctrl packet too small")
 	}
 
 	// Sets the flag bit to indicate this is a control packet
@@ -151,7 +151,7 @@ func (h *ctrlHeader) writeHdrTo(buf []byte, msgType PacketType, info uint32) (ui
 func (h *ctrlHeader) readHdrFrom(data []byte) (addtlInfo uint32, err error) {
 	l := len(data)
 	if l < 16 {
-		return 0, errors.New("packet too small")
+		return 0, errors.New("ctrl packet too small")
 	}
 	addtlInfo = endianness.Uint32(data[4:8])
 	h.ts = endianness.Uint32(data[8:12])

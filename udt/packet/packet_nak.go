@@ -22,7 +22,7 @@ func (p *NakPacket) WriteTo(buf []byte) (uint, error) {
 
 	l := uint(len(buf))
 	if l < off+uint(4*len(p.CmpLossInfo)) {
-		return 0, errors.New("packet too small")
+		return 0, errors.New("nak packet too small")
 	}
 
 	for _, elm := range p.CmpLossInfo {

@@ -25,7 +25,7 @@ type AckPacket struct {
 func (p *AckPacket) WriteTo(buf []byte) (uint, error) {
 	l := len(buf)
 	if l < 32 {
-		return 0, errors.New("packet too small")
+		return 0, errors.New("ack packet too small")
 	}
 
 	if _, err := p.writeHdrTo(buf, ptAck, p.AckSeqNo); err != nil {
@@ -38,7 +38,7 @@ func (p *AckPacket) WriteTo(buf []byte) (uint, error) {
 	endianness.PutUint32(buf[28:32], p.BuffAvail)
 	if p.IncludeLink {
 		if l < 40 {
-			return 0, errors.New("packet too small")
+			return 0, errors.New("ack packet too small")
 		}
 		endianness.PutUint32(buf[32:36], p.PktRecvRate)
 		endianness.PutUint32(buf[36:40], p.EstLinkCap)
@@ -51,7 +51,7 @@ func (p *AckPacket) WriteTo(buf []byte) (uint, error) {
 func (p *AckPacket) readFrom(data []byte) (err error) {
 	l := len(data)
 	if l < 32 {
-		return errors.New("packet too small")
+		return errors.New("ack packet too small")
 	}
 	if p.AckSeqNo, err = p.readHdrFrom(data); err != nil {
 		return err

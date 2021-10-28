@@ -191,22 +191,17 @@ func (s *udtSocketSend) processDataMsg(isFirst bool, inChan <-chan sendMessage) 
 			s.msgSeq++
 		}
 
-		mtu := int(s.socket.maxPacketSize)
+		mtu := int(s.socket.maxPacketSize) - 16
 		msgLen := len(partialSend.content)
 		if msgLen >= mtu {
 			// we are full -- send what we can and leave the rest
-			var dp *packet.DataPacket
+			dp := &packet.DataPacket{
+				Seq:  s.sendPktSeq,
+				Data: partialSend.content[0:mtu],
+			}
 			if msgLen == mtu {
-				dp = &packet.DataPacket{
-					Seq:  s.sendPktSeq,
-					Data: partialSend.content,
-				}
 				s.msgPartialSend = nil
 			} else {
-				dp = &packet.DataPacket{
-					Seq:  s.sendPktSeq,
-					Data: partialSend.content[0:mtu],
-				}
 				s.msgPartialSend = &sendMessage{content: partialSend.content[mtu:], tim: partialSend.tim, ttl: partialSend.ttl}
 			}
 			s.sendPktSeq.Incr()

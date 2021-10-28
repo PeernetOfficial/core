@@ -17,7 +17,7 @@ func (p *UserDefControlPacket) WriteTo(buf []byte) (uint, error) {
 	l := len(buf)
 	ol := 16 + len(p.data)
 	if l < ol {
-		return 0, errors.New("packet too small")
+		return 0, errors.New("userdef packet too small")
 	}
 
 	// Sets the flag bit to indicate this is a control packet

@@ -65,7 +65,7 @@ func (dp *DataPacket) WriteTo(buf []byte) (uint, error) {
 	l := len(buf)
 	ol := 16 + len(dp.Data)
 	if l < ol {
-		return 0, errors.New("packet too small")
+		return 0, errors.New("write data packet too small")
 	}
 	endianness.PutUint32(buf[0:4], dp.Seq.Seq&0x7FFFFFFF)
 	endianness.PutUint32(buf[4:8], dp.msg)
@@ -79,7 +79,7 @@ func (dp *DataPacket) WriteTo(buf []byte) (uint, error) {
 func (dp *DataPacket) readFrom(data []byte) (err error) {
 	l := len(data)
 	if l < 16 {
-		return errors.New("packet too small")
+		return errors.New("read data packet too small")
 	}
 	//dp.seq = endianness.Uint32(data[0:4])
 	dp.msg = endianness.Uint32(data[4:8])
