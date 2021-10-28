@@ -160,7 +160,7 @@ func (ncc NativeCongestionControl) OnNAK(parms CongestionControlParms, losslist 
 			c. Record the current largest sent sequence number (LastDecSeq).
 	*/
 	pktSendPeriod := parms.GetPacketSendPeriod()
-	if ncc.lastDecSeq.BlindDiff(losslist[0]) > 0 {
+	if len(losslist) > 0 && ncc.lastDecSeq.BlindDiff(losslist[0]) > 0 {
 		ncc.lastDecPeriod = pktSendPeriod
 		parms.SetPacketSendPeriod(pktSendPeriod * 1125 / 1000)
 
