@@ -80,8 +80,8 @@ func apiFileRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// start the reader
-	reader, fileSize, transferSize, err := FileStartReader(peer, fileHash, uint64(offset), uint64(limit))
+	// Start the reader. If this HTTP request is canceled, r.Context().Done() acts as cancellation signal to the underlying UDT connection.
+	reader, fileSize, transferSize, err := FileStartReader(peer, fileHash, uint64(offset), uint64(limit), r.Context().Done())
 	if reader != nil {
 		defer reader.Close()
 	}
@@ -98,7 +98,7 @@ func apiFileRead(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
-apiFileView is similar to /file/read but but provides a format parameter. It set the Content-Type header and may manipulate the content on the fly.
+apiFileView is similar to /file/read but but provides a format parameter. It sets the Content-Type and Accept-Ranges headers.
 This endpoint supports the Range, Content-Range and Content-Length headers. Multipart ranges are not supported and result in HTTP 400.
 Instead of providing the node ID, the peer ID is also accepted in the &node= parameter.
 The default timeout for connecting to the peer is 10 seconds.
@@ -162,7 +162,7 @@ func apiFileView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// start the reader
-	reader, fileSize, transferSize, err := FileStartReader(peer, fileHash, uint64(offset), uint64(limit))
+	reader, fileSize, transferSize, err := FileStartReader(peer, fileHash, uint64(offset), uint64(limit), r.Context().Done())
 	if reader != nil {
 		defer reader.Close()
 	}
@@ -222,9 +222,10 @@ func PeerConnectNode(nodeID []byte, timeout time.Duration) (peer *core.PeerInfo,
 }
 
 // FileStartReader providers a reader to a remote file. The reader must be closed by the caller.
-// File Size is the full file size, regardless of the requested offset and limit.
+// File Size is the full file size reported by the remote peer, regardless of the requested offset and limit.
 // Transfer Size is the size in bytes that is actually going to be transferred. The reader should be closed after reading that amount.
-func FileStartReader(peer *core.PeerInfo, hash []byte, offset, limit uint64) (reader io.ReadCloser, fileSize, transferSize uint64, err error) {
+// The optional cancelChan can be used to stop the file transfer at any point.
+func FileStartReader(peer *core.PeerInfo, hash []byte, offset, limit uint64, cancelChan <-chan struct{}) (reader io.ReadCloser, fileSize, transferSize uint64, err error) {
 	if peer == nil {
 		return nil, 0, 0, errors.New("peer not provided")
 	} else if !peer.IsConnectionActive() {
@@ -236,6 +237,13 @@ func FileStartReader(peer *core.PeerInfo, hash []byte, offset, limit uint64) (re
 		return nil, 0, 0, err
 	}
 
+	if cancelChan != nil {
+		go func() {
+			<-cancelChan
+			udtConn.Close()
+		}()
+	}
+
 	fileSize, transferSize, err = core.FileTransferReadHeaderUDT(udtConn)
 	if err != nil {
 		udtConn.Close()
@@ -243,4 +251,24 @@ func FileStartReader(peer *core.PeerInfo, hash []byte, offset, limit uint64) (re
 	}
 
 	return udtConn, fileSize, transferSize, nil
+}
+
+// FileReadAll downloads the file from the peer.
+// This function should only be used for testing or as a basis to fork. The caller should develop a custom download function that handles timeouts and excessive file sizes.
+// It allocates whatever size is reported by the remote peer. This could lead to an out of memory crash.
+// This function is blocking and may take a long time depending on the remote peer and the network connection.
+func FileReadAll(peer *core.PeerInfo, hash []byte) (data []byte, err error) {
+	reader, _, transferSize, err := FileStartReader(peer, hash, 0, 0, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	// read all data
+	data = make([]byte, transferSize) // Warning: This could lead to an out of memory crash.
+	_, err = reader.Read(data)
+
+	// Note: This function does not verify if the returned data matches the hash and expected size.
+
+	return data, err
 }
