@@ -86,6 +86,8 @@ type udtSocket struct {
 	sendPacket    chan packet.Packet   // packets to send out on the wire (once goManageConnection is running)
 	shutdownEvent chan shutdownMessage // channel signals the connection to be shutdown
 	sockClosed    chan struct{}        // closed when socket is closed
+	closeMutex    sync.Mutex
+	isClosed      bool
 
 	// timers
 	connTimeout <-chan time.Time // connecting: fires when connection attempt times out
@@ -290,9 +292,14 @@ func (s *udtSocket) Write(p []byte) (n int, err error) {
 // Read operations will return an error
 // (required for net.Conn implementation)
 func (s *udtSocket) Close() error {
-	if !s.isOpen() {
+	s.closeMutex.Lock()
+	defer s.closeMutex.Unlock()
+
+	if s.isClosed || !s.isOpen() {
 		return nil // already closed
 	}
+
+	s.isClosed = true
 
 	close(s.messageOut)
 	return nil
@@ -462,13 +469,12 @@ func (s *udtSocket) startConnect() error {
 }
 
 func (s *udtSocket) goManageConnection() {
-	sockClosed := s.sockClosed
 	for {
 		select {
 		case <-s.lingerTimer: // linger timer expired, shut everything down
 			s.shutdown(sockStateClosed, false, nil)
 			return
-		case _, _ = <-sockClosed:
+		case <-s.sockClosed:
 			return
 		case p := <-s.sendPacket:
 			ts := uint32(time.Now().Sub(s.created) / time.Microsecond)
