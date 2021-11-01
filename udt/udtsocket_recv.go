@@ -221,7 +221,7 @@ func (s *udtSocketRecv) ingestData(p *packet.DataPacket, now time.Time) {
 		fmt.Printf("Warning sequence out of order :( Code that follows will crash. Expected %d but received is %d\n", s.farNextPktSeq, p.Seq)
 		newLoss := make(receiveLossHeap, 0, seqDiff)
 		for idx := s.farNextPktSeq; idx != seq; idx.Incr() {
-			newLoss = append(newLoss, recvLossEntry{packetID: seq})
+			newLoss = append(newLoss, recvLossEntry{packetID: idx})
 		}
 
 		if s.recvLossList == nil {
@@ -229,7 +229,7 @@ func (s *udtSocketRecv) ingestData(p *packet.DataPacket, now time.Time) {
 			heap.Init(&s.recvLossList)
 		} else {
 			for idx := s.farNextPktSeq; idx != seq; idx.Incr() {
-				heap.Push(&s.recvLossList, recvLossEntry{packetID: seq})
+				heap.Push(&s.recvLossList, recvLossEntry{packetID: idx})
 			}
 			heap.Init(&newLoss)
 		}
