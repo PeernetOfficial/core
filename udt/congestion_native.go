@@ -179,7 +179,7 @@ func (ncc NativeCongestionControl) OnNAK(parms CongestionControlParms, losslist 
 	} else {
 		if ncc.decCount < 5 {
 			ncc.nakCount++
-			if ncc.nakCount%ncc.decRandom != 0 {
+			if ncc.decRandom != 0 && ncc.nakCount%ncc.decRandom != 0 {
 				ncc.decCount++
 				return
 			}
