@@ -35,23 +35,34 @@ func (h *dataPacketHeap) Pop() interface{} {
 
 // Find does a binary search of the heap for the specified packetID which is returned
 func (h dataPacketHeap) Find(packetID packet.PacketID) (*packet.DataPacket, int) {
-	len := len(h)
-	idx := 0
-	for idx < len {
-		pid := h[idx].Seq
-		if pid == packetID {
-			return h[idx], idx
-		} else if pid.Seq > packetID.Seq {
-			idx = idx * 2
-		} else {
-			idx = idx*2 + 1
+	for n := 0; n < len(h); n++ {
+		if h[n].Seq == packetID {
+			return h[n], n
 		}
 	}
+
+	// len := len(h)
+	// idx := 0
+	// for idx < len {
+	// 	pid := h[idx].Seq
+	// 	if pid == packetID {
+	// 		return h[idx], idx
+	// 	} else if pid.Seq > packetID.Seq {
+	// 		idx = idx * 2
+	// 	} else {
+	// 		idx = idx*2 + 1
+	// 	}
+	// }
 	return nil, -1
 }
 
 // Min does a binary search of the heap for the entry with the lowest packetID greater than or equal to the specified value
 func (h dataPacketHeap) Min(greaterEqual packet.PacketID, lessEqual packet.PacketID) (*packet.DataPacket, int) {
+	if len(h) == 0 { // none available!
+		return nil, -1
+	}
+	return h[0], 0
+
 	len := len(h)
 	idx := 0
 	wrapped := greaterEqual.Seq > lessEqual.Seq

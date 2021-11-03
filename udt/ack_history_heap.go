@@ -41,17 +41,23 @@ func (h *ackHistoryHeap) Pop() interface{} {
 
 // Find does a binary search of the heap for the specified ackID which is returned
 func (h ackHistoryHeap) Find(ackID uint32) (*ackHistoryEntry, int) {
-	len := len(h)
-	idx := 0
-	for idx < len {
-		here := h[idx].ackID
-		if here == ackID {
-			return h[idx], idx
-		} else if here > ackID {
-			idx = idx * 2
-		} else {
-			idx = idx*2 + 1
+	for n := 0; n < len(h); n++ {
+		if h[n].ackID == ackID {
+			return h[n], n
 		}
 	}
+
+	// len := len(h)
+	// idx := 0
+	// for idx < len {
+	// 	here := h[idx].ackID
+	// 	if here == ackID {
+	// 		return h[idx], idx
+	// 	} else if here > ackID {
+	// 		idx = idx * 2
+	// 	} else {
+	// 		idx = idx*2 + 1
+	// 	}
+	// }
 	return nil, -1
 }

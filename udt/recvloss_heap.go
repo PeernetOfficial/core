@@ -42,6 +42,11 @@ func (h *receiveLossHeap) Pop() interface{} {
 
 // Min does a binary search of the heap for the entry with the lowest packetID greater than or equal to the specified value
 func (h receiveLossHeap) Min(greaterEqual packet.PacketID, lessEqual packet.PacketID) (packet.PacketID, int) {
+	if len(h) == 0 { // none available!
+		return packet.PacketID{Seq: 0}, -1
+	}
+	return h[0].packetID, 0
+
 	len := len(h)
 	idx := 0
 	wrapped := greaterEqual.Seq > lessEqual.Seq
@@ -77,18 +82,24 @@ func (h receiveLossHeap) Min(greaterEqual packet.PacketID, lessEqual packet.Pack
 
 // Find does a binary search of the heap for the specified packetID which is returned
 func (h receiveLossHeap) Find(packetID packet.PacketID) (*recvLossEntry, int) {
-	len := len(h)
-	idx := 0
-	for idx < len {
-		pid := h[idx].packetID
-		if pid == packetID {
-			return &h[idx], idx
-		} else if pid.Seq > packetID.Seq {
-			idx = idx * 2
-		} else {
-			idx = idx*2 + 1
+	for n := 0; n < len(h); n++ {
+		if h[n].packetID == packetID {
+			return &h[n], n
 		}
 	}
+
+	// len := len(h)
+	// idx := 0
+	// for idx < len {
+	// 	pid := h[idx].packetID
+	// 	if pid == packetID {
+	// 		return &h[idx], idx
+	// 	} else if pid.Seq > packetID.Seq {
+	// 		idx = idx * 2
+	// 	} else {
+	// 		idx = idx*2 + 1
+	// 	}
+	// }
 	return nil, -1
 }
 
