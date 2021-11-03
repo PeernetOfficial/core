@@ -1,4 +1,4 @@
-name: Core Release
+name: Core Release 
 on:
   create:
 jobs:
