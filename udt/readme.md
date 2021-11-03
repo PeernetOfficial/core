@@ -19,6 +19,16 @@ while the messaging semantics can be regarded as a subset of SCTP
 [RFC4960]. 
 ```
 
+From `udtSocket.Read`:
+
+```
+// for datagram sockets, block until we have a message to return and then return it
+// if the buffer isn't big enough, return a truncated message (discarding the rest) and return an error
+
+// for streaming sockets, block until we have at least something to return, then
+// fill up the passed buffer as far as we can without blocking again
+```
+
 ## Deviations
 
 MTU negotiation is disabled. Peernet uses a hardcoded max packet size (see protocol package). Packets may be routed through any network adapter, therefore pinning a MTU specific to a network adapter would not make much sense.

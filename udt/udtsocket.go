@@ -198,7 +198,7 @@ func (s *udtSocket) Read(p []byte) (n int, err error) {
 		}
 		n = copy(p, msg)
 		if n < len(msg) {
-			err = errors.New("Message truncated")
+			err = errors.New("Message truncated") // <- evil buggy
 		}
 	} else {
 		// for streaming sockets, block until we have at least something to return, then
@@ -260,7 +260,10 @@ func (s *udtSocket) Write(p []byte) (n int, err error) {
 		return
 	}
 
+	// previous bug: io.Writer documentation says "Implementations must not retain p.", but it was passed on in s.messageOut
 	n = len(p)
+	data := make([]byte, n)
+	copy(data, p)
 
 	for {
 		if s.writeDeadlinePassed {
@@ -272,7 +275,7 @@ func (s *udtSocket) Write(p []byte) (n int, err error) {
 			deadline = s.writeDeadline.C
 		}
 		select {
-		case s.messageOut <- sendMessage{content: p, tim: time.Now()}:
+		case s.messageOut <- sendMessage{content: data, tim: time.Now()}:
 			// send successful
 			return
 		case _, ok := <-deadline:
