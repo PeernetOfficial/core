@@ -193,57 +193,54 @@ func (s *udtSocketSend) processDataMsg(isFirst bool, inChan <-chan sendMessage) 
 
 		mtu := int(s.socket.maxPacketSize) - 16
 		msgLen := len(partialSend.content)
+
+		dp := &packet.DataPacket{
+			Seq: s.sendPktSeq,
+		}
+
 		if msgLen >= mtu {
 			// we are full -- send what we can and leave the rest
-			dp := &packet.DataPacket{
-				Seq:  s.sendPktSeq,
-				Data: partialSend.content[0:mtu],
-			}
+			dp.Data = partialSend.content[0:mtu]
 			if msgLen == mtu {
 				s.msgPartialSend = nil
 			} else {
 				s.msgPartialSend = &sendMessage{content: partialSend.content[mtu:], tim: partialSend.tim, ttl: partialSend.ttl}
 			}
-			s.sendPktSeq.Incr()
-			dp.SetMessageData(state, !s.socket.isDatagram, s.msgSeq)
-			s.sendDataPacket(sendPacketEntry{pkt: dp, tim: partialSend.tim, ttl: partialSend.ttl}, false)
-			return
-		}
-
-		// we are not full -- send only if this is a datagram or there's nothing obvious left
-		if s.socket.isDatagram {
-			if isFirst {
-				state = packet.MbOnly
-			} else {
-				state = packet.MbLast
-			}
 		} else {
-			select {
-			case morePartialSend, ok := <-inChan:
-				if ok {
-					// we have more data, concat and try again
-					s.msgPartialSend = &sendMessage{
-						content: append(s.msgPartialSend.content, morePartialSend.content...),
-						tim:     s.msgPartialSend.tim,
-						ttl:     s.msgPartialSend.ttl,
-					}
-					continue
+			// we are not full -- send only if this is a datagram or there's nothing obvious left
+			if s.socket.isDatagram {
+				// datagram
+				if isFirst {
+					state = packet.MbOnly
+				} else {
+					state = packet.MbLast
 				}
-			default:
-				// nothing immediately available, just send what we have
+			} else {
+				// streaming socket
+				select {
+				case morePartialSend, ok := <-inChan:
+					if ok {
+						// we have more data, concat and try again
+						s.msgPartialSend = &sendMessage{
+							content: append(s.msgPartialSend.content, morePartialSend.content...),
+							tim:     s.msgPartialSend.tim,
+							ttl:     s.msgPartialSend.ttl,
+						}
+						continue
+					}
+				default:
+					// nothing immediately available, just send what we have
+				}
 			}
+
+			partialSend = s.msgPartialSend
+			dp.Data = partialSend.content
+			s.msgPartialSend = nil
 		}
 
-		partialSend = s.msgPartialSend
-		dp := &packet.DataPacket{
-			Seq:  s.sendPktSeq,
-			Data: partialSend.content,
-		}
-		s.msgPartialSend = nil
 		s.sendPktSeq.Incr()
 		dp.SetMessageData(state, !s.socket.isDatagram, s.msgSeq)
 		s.sendDataPacket(sendPacketEntry{pkt: dp, tim: partialSend.tim, ttl: partialSend.ttl}, false)
-		return
 	}
 }
 
