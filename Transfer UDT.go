@@ -48,6 +48,7 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, fileSize uint64, offset,
 	udtConfig.MaxPacketSize = protocol.TransferMaxEmbedSize
 
 	// start UDT sender
+	// Set streaming to true, otherwise udtSocket.Read returns the error "Message truncated" in case the reader has a smaller buffer.
 	udtConn, err := udt.DialUDT(udtConfig, virtualConnection, virtualConnection.incomingData, virtualConnection.outgoingData, virtualConnection.terminateChan, true)
 	if err != nil {
 		return err
@@ -58,7 +59,7 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, fileSize uint64, offset,
 	// Start by sending the header: Total File Size and Transfer Size.
 	header := make([]byte, 16)
 	binary.LittleEndian.PutUint64(header[0:8], fileSize)
-	binary.LittleEndian.PutUint64(header[8:16], limit-offset)
+	binary.LittleEndian.PutUint64(header[8:16], limit)
 	if n, err := udtConn.Write(header); err != nil {
 		return err
 	} else if n != len(header) {
