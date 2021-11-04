@@ -62,18 +62,24 @@ func (h acceptSockHeap) compare(sockID uint32, initSeqNo packet.PacketID, idx in
 
 // Find does a binary search of the heap for the specified packetID which is returned
 func (h acceptSockHeap) Find(sockID uint32, initSeqNo packet.PacketID) (*udtSocket, int) {
-	len := len(h)
-	idx := 0
-	for idx < len {
-		cmp := h.compare(sockID, initSeqNo, idx)
-		if cmp == 0 {
-			return h[idx].sock, idx
-		} else if cmp > 0 {
-			idx = idx * 2
-		} else {
-			idx = idx*2 + 1
+	for n := 0; n < len(h); n++ {
+		if h[n].sock.sockID == sockID {
+			return h[n].sock, n
 		}
 	}
+
+	// len := len(h)
+	// idx := 0
+	// for idx < len {
+	// 	cmp := h.compare(sockID, initSeqNo, idx)
+	// 	if cmp == 0 {
+	// 		return h[idx].sock, idx
+	// 	} else if cmp > 0 {
+	// 		idx = idx * 2
+	// 	} else {
+	// 		idx = idx*2 + 1
+	// 	}
+	// }
 	return nil, -1
 }
 

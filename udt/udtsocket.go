@@ -86,6 +86,8 @@ type udtSocket struct {
 	sendPacket    chan packet.Packet   // packets to send out on the wire (once goManageConnection is running)
 	shutdownEvent chan shutdownMessage // channel signals the connection to be shutdown
 	sockClosed    chan struct{}        // closed when socket is closed
+	closeMutex    sync.Mutex
+	isClosed      bool
 
 	// timers
 	connTimeout <-chan time.Time // connecting: fires when connection attempt times out
@@ -196,7 +198,7 @@ func (s *udtSocket) Read(p []byte) (n int, err error) {
 		}
 		n = copy(p, msg)
 		if n < len(msg) {
-			err = errors.New("Message truncated")
+			err = errors.New("Message truncated") // <- evil buggy
 		}
 	} else {
 		// for streaming sockets, block until we have at least something to return, then
@@ -258,7 +260,10 @@ func (s *udtSocket) Write(p []byte) (n int, err error) {
 		return
 	}
 
+	// previous bug: io.Writer documentation says "Implementations must not retain p.", but it was passed on in s.messageOut
 	n = len(p)
+	data := make([]byte, n)
+	copy(data, p)
 
 	for {
 		if s.writeDeadlinePassed {
@@ -270,7 +275,7 @@ func (s *udtSocket) Write(p []byte) (n int, err error) {
 			deadline = s.writeDeadline.C
 		}
 		select {
-		case s.messageOut <- sendMessage{content: p, tim: time.Now()}:
+		case s.messageOut <- sendMessage{content: data, tim: time.Now()}:
 			// send successful
 			return
 		case _, ok := <-deadline:
@@ -290,9 +295,14 @@ func (s *udtSocket) Write(p []byte) (n int, err error) {
 // Read operations will return an error
 // (required for net.Conn implementation)
 func (s *udtSocket) Close() error {
-	if !s.isOpen() {
+	s.closeMutex.Lock()
+	defer s.closeMutex.Unlock()
+
+	if s.isClosed || !s.isOpen() {
 		return nil // already closed
 	}
+
+	s.isClosed = true
 
 	close(s.messageOut)
 	return nil
@@ -462,13 +472,12 @@ func (s *udtSocket) startConnect() error {
 }
 
 func (s *udtSocket) goManageConnection() {
-	sockClosed := s.sockClosed
 	for {
 		select {
 		case <-s.lingerTimer: // linger timer expired, shut everything down
 			s.shutdown(sockStateClosed, false, nil)
 			return
-		case _, _ = <-sockClosed:
+		case <-s.sockClosed:
 			return
 		case p := <-s.sendPacket:
 			ts := uint32(time.Now().Sub(s.created) / time.Microsecond)
