@@ -11,13 +11,12 @@ import (
 	"strconv"
 )
 
-// source: https://github.com/IamRaviTejaG/go-split-join/blob/master/sj/sj.go
-
 // Split method splits the files into part files of user defined lengths
-func Split(filename string, splitsize int)  error {
+func Split(filename string, splitsize float64)  error {
 	bufferSize := 1024 // 1 KB for optimal splitting
 	fileStats, _ := os.Stat(filename)
 	pieces := int(math.Ceil(float64(fileStats.Size()) / float64(splitsize*1048576)))
+	fmt.Println(pieces)
 	nTimes := int(math.Ceil(float64(splitsize*1048576) / float64(bufferSize)))
 	file, err := os.Open(filename)
 	hashFileName := filename + "-split-hash.txt"
@@ -52,6 +51,7 @@ func Split(filename string, splitsize int)  error {
 		i++
 	}
 	fileNameHash :=  protocol.HashData([]byte(filename))
+	fmt.Println(fileNameHash)
 	s := "Original file hash: " + string(fileNameHash) + "\n"
 	hashFile.WriteString(s)
 	file.Close()
