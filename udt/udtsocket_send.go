@@ -31,7 +31,7 @@ type udtSocketSend struct {
 	socket        *udtSocket
 
 	sendState      sendState       // current sender state
-	sendPktPend    sendPacketHeap  // list of packets that have been sent but not yet acknoledged
+	sendPktPend    sendPacketHeap  // list of packets that have been sent but not yet acknowledged
 	sendPktSeq     packet.PacketID // the current packet sequence number
 	msgPartialSend *sendMessage    // when a message can only partially fit in a socket, this is the remainder
 	msgSeq         uint32          // the current message sequence number
@@ -241,6 +241,9 @@ func (s *udtSocketSend) processDataMsg(isFirst bool, inChan <-chan sendMessage) 
 		s.sendPktSeq.Incr()
 		dp.SetMessageData(state, !s.socket.isDatagram, s.msgSeq)
 		s.sendDataPacket(sendPacketEntry{pkt: dp, tim: partialSend.tim, ttl: partialSend.ttl}, false)
+
+		// Return makes sense here so that the sending loop can stop in case the remote peer misses packets and reports a nak.
+		return
 	}
 }
 
@@ -329,11 +332,16 @@ func (s *udtSocketSend) processSendExpire() bool {
 
 // we have a packed packet and a green light to send, so lets send this and mark it
 func (s *udtSocketSend) sendDataPacket(dp sendPacketEntry, isResend bool) {
-	if s.sendPktPend == nil {
-		s.sendPktPend = sendPacketHeap{dp}
-		heap.Init(&s.sendPktPend)
-	} else {
-		heap.Push(&s.sendPktPend, dp)
+	// packets that are being resent are not stored on the 'to be acknowledged' list.
+	// It would not make any sense and introduce race condition with potential endless packet resends/ACKs.
+	// Once the remote peer ACKs a sent packet, it is removed from the list.
+	if !isResend {
+		if s.sendPktPend == nil {
+			s.sendPktPend = sendPacketHeap{dp}
+			heap.Init(&s.sendPktPend)
+		} else {
+			heap.Push(&s.sendPktPend, dp)
+		}
 	}
 
 	s.socket.cong.onDataPktSent(dp.pkt.Seq)
