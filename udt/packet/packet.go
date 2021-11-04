@@ -175,11 +175,7 @@ func DecodePacket(data []byte) (p Packet, err error) {
 		case ptKeepalive:
 			p = &KeepAlivePacket{}
 		case ptAck:
-			if len(data) == 20 {
-				p = &LightAckPacket{}
-			} else {
-				p = &AckPacket{}
-			}
+			p = &AckPacket{}
 		case ptNak:
 			p = &NakPacket{}
 		case ptCongestion:

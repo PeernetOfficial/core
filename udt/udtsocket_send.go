@@ -131,8 +131,6 @@ func (s *udtSocketSend) goSendEvent() {
 			switch sp := evt.pkt.(type) {
 			case *packet.AckPacket:
 				s.ingestAck(sp, evt.now)
-			case *packet.LightAckPacket:
-				s.ingestLightAck(sp, evt.now)
 			case *packet.NakPacket:
 				s.ingestNak(sp, evt.now)
 			case *packet.CongestionPacket:
@@ -362,18 +360,6 @@ func (s *udtSocketSend) sendDataPacket(dp sendPacketEntry, isResend bool) {
 	if snd > 0 {
 		s.sndEvent = time.After(snd)
 		s.sendState = sendStateSending
-	}
-}
-
-// ingestLightAck is called to process a "light" ACK packet
-func (s *udtSocketSend) ingestLightAck(p *packet.LightAckPacket, now time.Time) {
-	// Update the largest acknowledged sequence number.
-
-	pktSeqHi := p.PktSeqHi
-	diff := pktSeqHi.BlindDiff(s.recvAckSeq)
-	if diff > 0 {
-		s.flowWindowSize += uint(diff)
-		s.recvAckSeq = pktSeqHi
 	}
 }
 

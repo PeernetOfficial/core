@@ -690,7 +690,7 @@ func (s *udtSocket) readPacket(m *multiplexer, p packet.Packet) {
 		s.readHandshake(m, sp)
 	case *packet.ShutdownPacket: // sent by either peer
 		s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: s.isServer} // if client tells us done, it is done.
-	case *packet.AckPacket, *packet.LightAckPacket, *packet.NakPacket: // receiver -> sender
+	case *packet.AckPacket, *packet.NakPacket: // receiver -> sender
 		s.sendEvent <- recvPktEvent{pkt: p, now: now}
 	case *packet.UserDefControlPacket:
 		s.cong.onCustomMsg(*sp)
