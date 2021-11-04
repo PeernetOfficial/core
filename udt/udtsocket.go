@@ -2,7 +2,6 @@ package udt
 
 import (
 	"errors"
-	"math/rand"
 	"net"
 	"sync"
 	"syscall"
@@ -420,7 +419,7 @@ func newSocket(m *multiplexer, config *Config, sockID uint32, isServer bool, isD
 		maxFlowWinSize: maxFlowWinSize,
 		isDatagram:     isDatagram,
 		sockID:         sockID,
-		initPktSeq:     packet.PacketID{Seq: rand.Uint32()},
+		initPktSeq:     packet.RandomPacketSequence(),
 		messageIn:      make(chan []byte, 256),
 		messageOut:     make(chan sendMessage, 256),
 		recvEvent:      make(chan recvPktEvent, 256),
