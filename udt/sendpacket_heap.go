@@ -1,7 +1,8 @@
 package udt
 
 import (
-	"container/heap"
+	"fmt"
+	"sync"
 	"time"
 
 	"github.com/PeernetOfficial/core/udt/packet"
@@ -9,115 +10,83 @@ import (
 
 type sendPacketEntry struct {
 	pkt *packet.DataPacket
+
+	// data specific to sending packets
 	tim time.Time
 	ttl time.Duration
 }
 
-// receiveLossList defines a list of recvLossEntry records sorted by their packet ID
-type sendPacketHeap []sendPacketEntry
+// sendPacketHeap stores a list of packets. Packets are identified by their sequences.
+// Access to the list via functions is thread safe.
+// This isn't the fastest implementation on the planet since each operation iterates over the entire list. However, it works and is thread safe (the previous code was neither).
+type sendPacketHeap struct {
+	// list contains all packets
+	list []sendPacketEntry
 
-func (h sendPacketHeap) Len() int {
-	return len(h)
+	sync.RWMutex
 }
 
-func (h sendPacketHeap) Less(i, j int) bool {
-	return h[i].pkt.Seq.Seq < h[j].pkt.Seq.Seq
+func createSendPacketHeap() (heap *sendPacketHeap) {
+	return &sendPacketHeap{}
 }
 
-func (h sendPacketHeap) Swap(i, j int) {
-	h[i], h[j] = h[j], h[i]
+// Add adds a packet to the list. Deduplication is not performed.
+func (heap *sendPacketHeap) Add(newPacket sendPacketEntry) {
+	heap.Lock()
+	defer heap.Unlock()
+
+	fmt.Printf("sendPacketHeap add %d\n", newPacket.pkt.Seq.Seq)
+
+	heap.list = append(heap.list, newPacket)
 }
 
-func (h *sendPacketHeap) Push(x interface{}) { // Push and Pop use pointer receivers because they modify the slice's length, not just its contents.
-	*h = append(*h, x.(sendPacketEntry))
-}
+// Remove removes all packets with the sequence from the list.
+func (heap *sendPacketHeap) Remove(sequence uint32) {
+	heap.Lock()
+	defer heap.Unlock()
 
-func (h *sendPacketHeap) Pop() interface{} {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}
+	var newList []sendPacketEntry
 
-// Find does a binary search of the heap for the specified packetID which is returned
-func (h sendPacketHeap) Find(packetID packet.PacketID) (*sendPacketEntry, int) {
-	for n := 0; n < len(h); n++ {
-		if h[n].pkt.Seq == packetID {
-			return &h[n], n
+	for n := range heap.list {
+		if heap.list[n].pkt.Seq.Seq != sequence {
+			newList = append(newList, heap.list[n])
 		}
 	}
 
-	// buggy crappy implementation
-	// len := len(h)
-	// idx := 0
-	// for idx < len {
-	// 	pid := h[idx].pkt.Seq
-	// 	if pid == packetID {
-	// 		return &h[idx], idx
-	// 	} else if pid.Seq > packetID.Seq {
-	// 		idx = idx * 2
-	// 	} else {
-	// 		idx = idx*2 + 1
-	// 	}
-	// }
-	return nil, -1
+	heap.list = newList
 }
 
-// Min does a binary search of the heap for the entry with the lowest packetID greater than or equal to the specified value
-func (h sendPacketHeap) Min(greaterEqual packet.PacketID, lessEqual packet.PacketID) (*packet.DataPacket, int) {
-	if len(h) == 0 { // none available!
-		return nil, -1
-	}
-	return h[0].pkt, 0
-
-	len := len(h)
-	idx := 0
-	wrapped := greaterEqual.Seq > lessEqual.Seq
-	for idx < len {
-		pid := h[idx].pkt.Seq
-		var next int
-		if pid.Seq == greaterEqual.Seq {
-			return h[idx].pkt, idx
-		} else if pid.Seq >= greaterEqual.Seq {
-			next = idx * 2
-		} else {
-			next = idx*2 + 1
-		}
-		if next >= len && h[idx].pkt.Seq.Seq > greaterEqual.Seq && (wrapped || h[idx].pkt.Seq.Seq <= lessEqual.Seq) {
-			return h[idx].pkt, idx
-		}
-		idx = next
-	}
-
-	// can't find any packets with greater value, wrap around
-	if wrapped {
-		idx = 0
-		for {
-			next := idx * 2
-			if next >= len && h[idx].pkt.Seq.Seq <= lessEqual.Seq {
-				return h[idx].pkt, idx
-			}
-			idx = next
-		}
-	}
-	return nil, -1
+// Count returns the number of packets stored
+func (heap *sendPacketHeap) Count() (count int) {
+	return len(heap.list)
 }
 
-// Remove does a binary search of the heap for the specified packetID, which is removed
-func (h *sendPacketHeap) Remove(packetID packet.PacketID) bool {
-	len := len(*h)
-	idx := 0
-	for idx < len {
-		pid := (*h)[idx].pkt.Seq
-		if pid.Seq == packetID.Seq {
-			heap.Remove(h, idx)
-			return true
-		} else if pid.Seq > packetID.Seq {
-			idx = idx * 2
-		} else {
-			idx = idx*2 + 1
+// Find searches for the packet
+func (heap *sendPacketHeap) Find(sequence uint32) (result *sendPacketEntry) {
+	heap.RLock()
+	defer heap.RUnlock()
+
+	for n := range heap.list {
+		if heap.list[n].pkt.Seq.Seq == sequence {
+			return &heap.list[n]
 		}
 	}
-	return false
+
+	return nil // not found
+}
+
+// RemoveRange removes all packets that are within the given range. Check is from >= and to <.
+func (heap *sendPacketHeap) RemoveRange(sequenceFrom, sequenceTo uint32) {
+	heap.Lock()
+	defer heap.Unlock()
+
+	var newList []sendPacketEntry
+
+	for n := range heap.list {
+		if !(heap.list[n].pkt.Seq.Seq >= sequenceFrom && heap.list[n].pkt.Seq.Seq < sequenceTo) {
+			newList = append(newList, heap.list[n])
+		}
+	}
+
+	heap.list = newList
 }
