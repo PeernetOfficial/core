@@ -8,10 +8,6 @@ import (
 	"github.com/PeernetOfficial/core/udt/packet"
 )
 
-const (
-	ackSelfClockInterval = 64
-)
-
 type udtSocketRecv struct {
 	// channels
 	sockClosed <-chan struct{}      // closed when socket is closed
@@ -32,9 +28,7 @@ type udtSocketRecv struct {
 	recvLastArrival    time.Time       // time of the most recent data packet arrival
 	recvLastProbe      time.Time       // time of the most recent data packet probe packet
 	ackPeriod          atomicDuration  // (set by congestion control) delay between sending ACKs
-	ackInterval        atomicUint32    // (set by congestion control) number of data packets to send before sending an ACK
 	unackPktCount      uint            // number of packets we've received that we haven't sent an ACK for
-	lightAckCount      uint            // number of "light ACK" packets we've sent since the last ACK
 	recvPktHistory     []time.Duration // list of recently received packets.
 	recvPktPairHistory []time.Duration // probing packet window.
 
@@ -351,16 +345,12 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 		}
 	}
 
-	// we've received a data packet, do we need to send an ACK for it?
+	// Acknowledge the packet if the threshold is reached. This used to be a parameter s.ackInterval supposed to be set by congestion control, but never was.
+	// Before, there was both the (unused) ACK interval s.ackInterval and s.ackTimerEvent which fired at SynTime, which was way too often and basically a ddos.
+	// It makes more sense to just send the ACK x split of the congestion window.
 	s.unackPktCount++
-	ackInterval := uint(s.ackInterval.get())
-	if (ackInterval > 0) && (ackInterval <= s.unackPktCount) {
-		// ACK interval is reached
+	if s.unackPktCount >= s.socket.cong.GetCongestionWindowSize()/4 {
 		s.ackEvent()
-	} else if ackSelfClockInterval*s.lightAckCount <= s.unackPktCount {
-		//send a "light" ACK
-		s.sendLightACK()
-		s.lightAckCount++
 	}
 
 	if cannotContinue {
@@ -392,24 +382,6 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 	}
 	s.messageIn <- msg
 	return true
-}
-
-func (s *udtSocketRecv) sendLightACK() {
-	var ack packet.PacketID
-
-	// If there is no loss, the ACK is the current largest sequence number plus 1;
-	// Otherwise it is the smallest sequence number in the receiver loss list.
-	if s.recvLossList == nil {
-		ack = s.farNextPktSeq
-	} else {
-		ack = s.farRecdPktSeq.Add(1)
-	}
-
-	if ack != s.recvAck2 {
-		// send out a lite ACK
-		// to save time on buffer processing and bandwidth/AS measurement, a lite ACK only feeds back an ACK number
-		s.sendPacket <- &packet.LightAckPacket{PktSeqHi: ack}
-	}
 }
 
 func (s *udtSocketRecv) getRcvSpeeds() (recvSpeed, bandwidth int) {
@@ -576,5 +548,4 @@ func (s *udtSocketRecv) ingestError(p *packet.ErrPacket) {
 func (s *udtSocketRecv) ackEvent() {
 	s.sendACK()
 	s.unackPktCount = 0
-	s.lightAckCount = 1
 }
