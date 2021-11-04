@@ -31,7 +31,7 @@ type udtSocketSend struct {
 	socket        *udtSocket
 
 	sendState      sendState       // current sender state
-	sendPktPend    sendPacketHeap  // list of packets that have been sent but not yet acknowledged
+	sendPktPend    *sendPacketHeap // list of packets that have been sent but not yet acknowledged
 	sendPktSeq     packet.PacketID // the current packet sequence number
 	msgPartialSend *sendMessage    // when a message can only partially fit in a socket, this is the remainder
 	msgSeq         uint32          // the current message sequence number
@@ -61,6 +61,7 @@ func newUdtSocketSend(s *udtSocket) *udtSocketSend {
 		flowWindowSize: s.maxFlowWinSize,
 		sendPacket:     s.sendPacket,
 		shutdownEvent:  s.shutdownEvent,
+		sendPktPend:    createSendPacketHeap(),
 	}
 	ss.resetEXP(s.created)
 	go ss.goSendEvent()
@@ -155,17 +156,16 @@ func (s *udtSocketSend) reevalSendState() sendState {
 	if s.sndEvent != nil {
 		return sendStateSending
 	}
+
 	// Do we have too many unacknowledged packets for us to send any more?
-	if s.sendPktPend != nil {
-		congestWindow := uint(s.congestWindow.get())
-		cwnd := s.flowWindowSize
-		if cwnd > congestWindow {
-			cwnd = congestWindow
-		}
-		if uint(len(s.sendPktPend)) >= cwnd {
-			return sendStateWaiting
-		}
+	cwnd := uint(s.congestWindow.get())
+	if cwnd > s.flowWindowSize {
+		cwnd = s.flowWindowSize
 	}
+	if uint(s.sendPktPend.Count()) > cwnd {
+		return sendStateWaiting
+	}
+
 	return sendStateIdle
 }
 
@@ -243,7 +243,7 @@ func (s *udtSocketSend) processDataMsg(isFirst bool, inChan <-chan sendMessage) 
 
 // If the sender's loss list is not empty, retransmit the first packet in the list and remove it from the list.
 func (s *udtSocketSend) processSendLoss() bool {
-	if s.sendLossList == nil || s.sendPktPend == nil {
+	if s.sendLossList == nil || s.sendPktPend.Count() == 0 {
 		return false
 	}
 
@@ -260,7 +260,7 @@ func (s *udtSocketSend) processSendLoss() bool {
 			s.sendLossList = nil
 		}
 
-		dp, _ = s.sendPktPend.Find(minLoss)
+		dp = s.sendPktPend.Find(minLoss.Seq)
 		if dp == nil {
 			// can't find record of this packet, not much we can do really
 			continue
@@ -280,12 +280,12 @@ func (s *udtSocketSend) processSendLoss() bool {
 
 // evaluate our pending packet list to see if we have any expired messages
 func (s *udtSocketSend) processSendExpire() bool {
-	if s.sendPktPend == nil {
+	if s.sendPktPend.Count() == 0 {
 		return false
 	}
 
-	pktPend := make([]sendPacketEntry, len(s.sendPktPend))
-	copy(pktPend, s.sendPktPend)
+	pktPend := make([]sendPacketEntry, s.sendPktPend.Count())
+	copy(pktPend, s.sendPktPend.list)
 	for _, p := range pktPend {
 		if p.ttl != 0 && time.Now().Add(p.ttl).After(p.tim) {
 			// this message has expired, drop it
@@ -330,12 +330,7 @@ func (s *udtSocketSend) sendDataPacket(dp sendPacketEntry, isResend bool) {
 	// It would not make any sense and introduce race condition with potential endless packet resends/ACKs.
 	// Once the remote peer ACKs a sent packet, it is removed from the list.
 	if !isResend {
-		if s.sendPktPend == nil {
-			s.sendPktPend = sendPacketHeap{dp}
-			heap.Init(&s.sendPktPend)
-		} else {
-			heap.Push(&s.sendPktPend, dp)
-		}
+		s.sendPktPend.Add(dp)
 	}
 
 	s.socket.cong.onDataPktSent(dp.pkt.Seq)
@@ -397,18 +392,7 @@ func (s *udtSocketSend) ingestAck(p *packet.AckPacket, now time.Time) {
 	// Update estimated link capacity: B = (B * 7 + b) / 8, where b is the value carried in the ACK.
 
 	// Update sender's list of packets that have been sent but not yet acknowledged
-	if s.sendPktPend != nil {
-		for {
-			minLoss, minLossIdx := s.sendPktPend.Min(oldAckSeq, s.sendPktSeq)
-			if p.PktSeqHi.BlindDiff(minLoss.Seq) >= 0 || minLossIdx < 0 {
-				break
-			}
-			heap.Remove(&s.sendPktPend, minLossIdx)
-		}
-		if len(s.sendPktPend) == 0 {
-			s.sendPktPend = nil
-		}
-	}
+	s.sendPktPend.RemoveRange(oldAckSeq.Seq, p.PktSeqHi.Seq)
 
 	// Update sender's loss list (by removing all those that has been acknowledged).
 	if s.sendLossList != nil {
@@ -518,8 +502,8 @@ func (s *udtSocketSend) expEvent(currTime time.Time) {
 
 	// sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
 	// recver: Send out a keep-alive packet
-	if s.sendPktPend != nil {
-		if s.sendPktPend != nil && s.sendLossList == nil {
+	if s.sendPktPend.Count() > 0 {
+		if s.sendLossList == nil {
 			// resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
 			newLossList := make([]packet.PacketID, 0)
 			for span := s.recvAckSeq.Add(1); span != s.sendPktSeq.Add(1); span.Incr() {
