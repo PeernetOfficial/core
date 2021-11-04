@@ -17,8 +17,7 @@ func (p *PacketID) Decr() {
 
 // Add returns a packet ID after adding the specified offset
 func (p PacketID) Add(off int32) PacketID {
-	newSeq := (p.Seq + 1) & 0x7FFFFFFF
-	return PacketID{newSeq}
+	return PacketID{uint32((int32(p.Seq) + off)) & 0x7FFFFFFF}
 }
 
 // BlindDiff attempts to return the difference after subtracting the argument from itself
