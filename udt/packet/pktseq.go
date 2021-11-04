@@ -1,5 +1,7 @@
 package packet
 
+import "math/rand"
+
 // PacketID represents a UDT packet ID sequence
 type PacketID struct {
 	Seq uint32
@@ -27,4 +29,9 @@ func (p PacketID) BlindDiff(rhs PacketID) int32 {
 		result = result | 0x80000000
 	}
 	return int32(result)
+}
+
+// RandomPacketSequence returns a random packet sequence
+func RandomPacketSequence() PacketID {
+	return PacketID{rand.Uint32() & 0x7FFFFFFF}
 }
