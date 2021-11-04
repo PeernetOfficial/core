@@ -38,7 +38,6 @@ type udtSocketSend struct {
 	expCount       uint            // number of continuous EXP timeouts.
 	lastRecvTime   time.Time       // the last time we've heard something from the remote system
 	recvAckSeq     packet.PacketID // largest packetID we've received an ACK from
-	sentAck2       uint32          // largest ACK2 packet we've sent
 	sendLossList   packetIDHeap    // loss list
 	sndPeriod      atomicDuration  // (set by congestion control) delay between sending packets
 	rtoPeriod      atomicDuration  // (set by congestion control) override of EXP timer calculations
@@ -47,7 +46,6 @@ type udtSocketSend struct {
 
 	// timers
 	sndEvent      <-chan time.Time // if a packet is recently sent, this timer fires when SND completes
-	ack2SentEvent <-chan time.Time // if an ACK2 packet has recently sent, wait SYN before sending another one
 	expTimerEvent <-chan time.Time // Fires when we haven't heard from the peer in a while
 }
 
@@ -139,8 +137,6 @@ func (s *udtSocketSend) goSendEvent() {
 			s.sendState = s.reevalSendState()
 		case _, _ = <-sockClosed:
 			return
-		case <-s.ack2SentEvent: // ACK2 unlocked
-			s.ack2SentEvent = nil
 		case now := <-s.expTimerEvent: // EXP event
 			s.expEvent(now)
 		case <-s.sndEvent: // SND event
@@ -377,24 +373,15 @@ func (s *udtSocketSend) ingestAck(p *packet.AckPacket, now time.Time) {
 	// Update the largest acknowledged sequence number.
 
 	// Send back an ACK2 with the same ACK sequence number in this ACK.
-	if s.ack2SentEvent == nil && p.AckSeqNo == s.sentAck2 {
-		s.sentAck2 = p.AckSeqNo
-		s.sendPacket <- &packet.Ack2Packet{AckSeqNo: p.AckSeqNo}
-		s.ack2SentEvent = time.After(s.socket.Config.SynTime)
-	}
+	s.sendPacket <- &packet.Ack2Packet{AckSeqNo: p.AckSeqNo}
 
-	pktSeqHi := p.PktSeqHi
-	if !s.assertValidSentPktID("ACK", pktSeqHi) {
-		return
-	}
-	diff := pktSeqHi.BlindDiff(s.recvAckSeq)
-	if diff <= 0 {
+	if !s.assertValidSentPktID("ACK", p.PktSeqHi) || p.PktSeqHi.BlindDiff(s.recvAckSeq) <= 0 {
 		return
 	}
 
 	oldAckSeq := s.recvAckSeq
 	s.flowWindowSize = uint(p.BuffAvail)
-	s.recvAckSeq = pktSeqHi
+	s.recvAckSeq = p.PktSeqHi
 
 	// Update RTT and RTTVar.
 	s.socket.applyRTT(uint(p.Rtt))
@@ -404,16 +391,16 @@ func (s *udtSocketSend) ingestAck(p *packet.AckPacket, now time.Time) {
 		s.socket.applyReceiveRates(uint(p.PktRecvRate), uint(p.EstLinkCap))
 	}
 
-	s.socket.cong.onACK(pktSeqHi)
+	s.socket.cong.onACK(p.PktSeqHi)
 
 	// Update packet arrival rate: A = (A * 7 + a) / 8, where a is the value carried in the ACK.
 	// Update estimated link capacity: B = (B * 7 + b) / 8, where b is the value carried in the ACK.
 
-	// Update sender's buffer (by releasing the buffer that has been acknowledged).
+	// Update sender's list of packets that have been sent but not yet acknowledged
 	if s.sendPktPend != nil {
 		for {
 			minLoss, minLossIdx := s.sendPktPend.Min(oldAckSeq, s.sendPktSeq)
-			if pktSeqHi.BlindDiff(minLoss.Seq) >= 0 || minLossIdx < 0 {
+			if p.PktSeqHi.BlindDiff(minLoss.Seq) >= 0 || minLossIdx < 0 {
 				break
 			}
 			heap.Remove(&s.sendPktPend, minLossIdx)
@@ -427,7 +414,7 @@ func (s *udtSocketSend) ingestAck(p *packet.AckPacket, now time.Time) {
 	if s.sendLossList != nil {
 		for {
 			minLoss, minLossIdx := s.sendLossList.Min(oldAckSeq, s.sendPktSeq)
-			if pktSeqHi.BlindDiff(minLoss) >= 0 || minLossIdx < 0 {
+			if p.PktSeqHi.BlindDiff(minLoss) >= 0 || minLossIdx < 0 {
 				break
 			}
 			heap.Remove(&s.sendLossList, minLossIdx)
