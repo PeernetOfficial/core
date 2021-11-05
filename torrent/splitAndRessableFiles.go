@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/PeernetOfficial/core/protocol"
 	"io"
+	"io/ioutil"
 	"log"
 	"math"
 	"os"
@@ -98,17 +99,17 @@ func Split(filename string, splitsize float64, writelocation string)  (*fileChun
 }
 
 // Join method joins the split files into one, original file
-func Join(startFileName string, numberParts int) error {
-	a := len(startFileName)
+func (chunks *fileChunks)Join() error {
+	a := len(chunks.FileChunk[0].ChunkName)
 	b := a - 4
-	iFileName := startFileName[:b]
+	iFileName := chunks.WriteLocation + chunks.FileChunk[0].ChunkName[:b]
 	_, err := os.Create(iFileName)
 	jointFile, err := os.OpenFile(iFileName, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
 	if err != nil {
 		return err
 	}
 	i := 1
-	for i <= numberParts {
+	for i <= len(chunks.FileChunk) {
 		partFileName := iFileName + ".pt" + strconv.Itoa(i)
 		fmt.Println("Processing file:", partFileName)
 		pfile, _ := os.Open(partFileName)
@@ -154,6 +155,36 @@ func (chunks *fileChunks)writeFile() error {
 	}
 
 	return nil
+}
+
+// ReadHashes Reads -hashes.txt file
+// and adds the information to the struct
+// - hashesFile: path of the -hashesFile
+func ReadHashes(hashesFile string) (*fileChunks, error) {
+	jsonFile, err := os.Open(hashesFile)
+	// if we os.Open returns an error then handle it
+	if err != nil {
+		return nil,err
+	}
+
+
+	// defer the closing of our jsonFile so that we can parse it later on
+	defer jsonFile.Close()
+
+	// read our opened xmlFile as a byte array.
+	byteValue, err := ioutil.ReadAll(jsonFile)
+	if err != nil {
+		return nil, err
+	}
+
+	// we initialize our Users array
+	var FileChunks *fileChunks
+
+	// we unmarshal our byteArray which contains our
+	// jsonFile's content into 'users' which we defined above
+	json.Unmarshal(byteValue, &FileChunks)
+
+	return FileChunks, nil
 }
 
 // PrettyPrint Implementing a pretty print function to print struct output
