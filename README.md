@@ -4,7 +4,7 @@ The core library which is needed for any Peernet application. It provides connec
 
 Current version: Alpha 4
 
-Current development status: The last remaining features (file transfer, blockchain exchange, search) are in development and will be finished in the upcoming MVP (beta 1). ETA early November 2021.
+Current development status: The last remaining features (blockchain exchange, search) are in development and will be finished in the upcoming MVP (beta 1). ETA EOY 2021.
 
 ## Use
 
