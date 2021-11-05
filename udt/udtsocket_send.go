@@ -1,7 +1,6 @@
 package udt
 
 import (
-	"container/heap"
 	"fmt"
 	"time"
 
@@ -30,19 +29,19 @@ type udtSocketSend struct {
 	shutdownEvent chan<- shutdownMessage // channel signals the connection to be shutdown
 	socket        *udtSocket
 
-	sendState      sendState       // current sender state
-	sendPktPend    *sendPacketHeap // list of packets that have been sent but not yet acknowledged
-	sendPktSeq     packet.PacketID // the current packet sequence number
-	msgPartialSend *sendMessage    // when a message can only partially fit in a socket, this is the remainder
-	msgSeq         uint32          // the current message sequence number
-	expCount       uint            // number of continuous EXP timeouts.
-	lastRecvTime   time.Time       // the last time we've heard something from the remote system
-	recvAckSeq     packet.PacketID // largest packetID we've received an ACK from
-	sendLossList   packetIDHeap    // loss list
-	sndPeriod      atomicDuration  // (set by congestion control) delay between sending packets
-	rtoPeriod      atomicDuration  // (set by congestion control) override of EXP timer calculations
-	congestWindow  atomicUint32    // (set by congestion control) size of the current congestion window (in packets)
-	flowWindowSize uint            // negotiated maximum number of unacknowledged packets (in packets)
+	sendState      sendState        // current sender state
+	sendPktPend    *sendPacketHeap  // list of packets that have been sent but not yet acknowledged
+	sendPktSeq     packet.PacketID  // the current packet sequence number
+	msgPartialSend *sendMessage     // when a message can only partially fit in a socket, this is the remainder
+	msgSeq         uint32           // the current message sequence number
+	expCount       uint             // number of continuous EXP timeouts.
+	lastRecvTime   time.Time        // the last time we've heard something from the remote system
+	recvAckSeq     packet.PacketID  // largest packetID we've received an ACK from
+	sendLossList   *receiveLossHeap // loss list
+	sndPeriod      atomicDuration   // (set by congestion control) delay between sending packets
+	rtoPeriod      atomicDuration   // (set by congestion control) override of EXP timer calculations
+	congestWindow  atomicUint32     // (set by congestion control) size of the current congestion window (in packets)
+	flowWindowSize uint             // negotiated maximum number of unacknowledged packets (in packets)
 
 	// timers
 	sndEvent      <-chan time.Time // if a packet is recently sent, this timer fires when SND completes
@@ -62,6 +61,7 @@ func newUdtSocketSend(s *udtSocket) *udtSocketSend {
 		sendPacket:     s.sendPacket,
 		shutdownEvent:  s.shutdownEvent,
 		sendPktPend:    createPacketHeap(),
+		sendLossList:   createPacketIDHeap(),
 	}
 	ss.resetEXP(s.created)
 	go ss.goSendEvent()
@@ -243,24 +243,12 @@ func (s *udtSocketSend) processDataMsg(isFirst bool, inChan <-chan sendMessage) 
 
 // If the sender's loss list is not empty, retransmit the first packet in the list and remove it from the list.
 func (s *udtSocketSend) processSendLoss() bool {
-	if s.sendLossList == nil || s.sendPktPend.Count() == 0 {
+	if s.sendLossList.Count() == 0 || s.sendPktPend.Count() == 0 {
 		return false
 	}
 
-	var dp *sendPacketEntry
-	for {
-		minLoss, minLossIdx := s.sendLossList.Min(s.recvAckSeq, s.sendPktSeq)
-		if minLossIdx < 0 {
-			// empty loss list? shouldn't really happen as we don't keep empty lists, but check for it anyhow
-			return false
-		}
-
-		heap.Remove(&s.sendLossList, minLossIdx)
-		if len(s.sendLossList) == 0 {
-			s.sendLossList = nil
-		}
-
-		dp = s.sendPktPend.Find(minLoss.Seq)
+	for _, entry := range s.sendLossList.Range(s.recvAckSeq.Seq, s.sendPktSeq.Seq) {
+		dp := s.sendPktPend.Find(entry.packetID.Seq)
 		if dp == nil {
 			// can't find record of this packet, not much we can do really
 			continue
@@ -271,10 +259,9 @@ func (s *udtSocketSend) processSendLoss() bool {
 			continue
 		}
 
-		break
+		s.sendDataPacket(*dp, true)
 	}
 
-	s.sendDataPacket(*dp, true)
 	return true
 }
 
@@ -307,14 +294,7 @@ func (s *udtSocketSend) processSendExpire() bool {
 						dropMsg.LastSeq = p.pkt.Seq
 					}
 				}
-				if s.sendLossList != nil {
-					if _, slIdx := s.sendLossList.Find(p.pkt.Seq); slIdx >= 0 {
-						heap.Remove(&s.sendLossList, slIdx)
-					}
-				}
-			}
-			if s.sendLossList != nil && len(s.sendLossList) == 0 {
-				s.sendLossList = nil
+				s.sendLossList.Remove(p.pkt.Seq.Seq)
 			}
 
 			s.sendPacket <- dropMsg
@@ -395,23 +375,12 @@ func (s *udtSocketSend) ingestAck(p *packet.AckPacket, now time.Time) {
 	s.sendPktPend.RemoveRange(oldAckSeq.Seq, p.PktSeqHi.Seq)
 
 	// Update sender's loss list (by removing all those that has been acknowledged).
-	if s.sendLossList != nil {
-		for {
-			minLoss, minLossIdx := s.sendLossList.Min(oldAckSeq, s.sendPktSeq)
-			if p.PktSeqHi.BlindDiff(minLoss) >= 0 || minLossIdx < 0 {
-				break
-			}
-			heap.Remove(&s.sendLossList, minLossIdx)
-		}
-		if len(s.sendLossList) == 0 {
-			s.sendLossList = nil
-		}
-	}
+	s.sendLossList.RemoveRange(oldAckSeq.Seq, p.PktSeqHi.Seq)
 }
 
 // ingestNak is called to process an NAK packet
 func (s *udtSocketSend) ingestNak(p *packet.NakPacket, now time.Time) {
-	newLossList := make([]packet.PacketID, 0)
+	var lossList []packet.PacketID
 	clen := len(p.CmpLossInfo)
 	for idx := 0; idx < clen; idx++ {
 		thisEntry := p.CmpLossInfo[idx]
@@ -437,28 +406,20 @@ func (s *udtSocketSend) ingestNak(p *packet.NakPacket, now time.Time) {
 			}
 			idx++
 			for span := thisPktID; span != lastPktID; span.Incr() {
-				newLossList = append(newLossList, span)
+				s.sendLossList.Add(recvLossEntry{packetID: packet.PacketID{Seq: span.Seq}})
+				lossList = append(lossList, packet.PacketID{Seq: span.Seq})
 			}
 		} else {
 			thisPktID := packet.PacketID{Seq: thisEntry}
 			if !s.assertValidSentPktID("NAK", thisPktID) {
 				return
 			}
-			newLossList = append(newLossList, thisPktID)
+			s.sendLossList.Add(recvLossEntry{packetID: thisPktID})
+			lossList = append(lossList, thisPktID)
 		}
 	}
 
-	s.socket.cong.onNAK(newLossList)
-
-	if s.sendLossList == nil {
-		s.sendLossList = newLossList
-		heap.Init(&s.sendLossList)
-	} else {
-		llen := len(newLossList)
-		for idx := 0; idx < llen; idx++ {
-			heap.Push(&s.sendLossList, newLossList[idx])
-		}
-	}
+	s.socket.cong.onNAK(lossList)
 
 	s.sendState = sendStateProcessDrop // immediately restart transmission
 }
@@ -503,14 +464,11 @@ func (s *udtSocketSend) expEvent(currTime time.Time) {
 	// sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
 	// recver: Send out a keep-alive packet
 	if s.sendPktPend.Count() > 0 {
-		if s.sendLossList == nil {
+		if s.sendLossList.Count() == 0 {
 			// resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
-			newLossList := make([]packet.PacketID, 0)
 			for span := s.recvAckSeq.Add(1); span != s.sendPktSeq.Add(1); span.Incr() {
-				newLossList = append(newLossList, span)
+				s.sendLossList.Add(recvLossEntry{packetID: packet.PacketID{Seq: span.Seq}})
 			}
-			s.sendLossList = newLossList
-			heap.Init(&s.sendLossList)
 		}
 		s.socket.cong.onTimeout()
 		s.sendState = sendStateProcessDrop // immediately restart transmission

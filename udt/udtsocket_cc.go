@@ -115,12 +115,9 @@ func (s *udtSocketCc) onACK(pktID packet.PacketID) {
 
 // OnNAK to be called when a loss report is received
 func (s *udtSocketCc) onNAK(loss []packet.PacketID) {
-	var ourLoss = make([]packet.PacketID, len(loss))
-	copy(ourLoss, loss)
-
 	s.msgs <- congMsg{
 		mtyp: congOnNAK,
-		arg:  ourLoss,
+		arg:  loss,
 	}
 }
 

@@ -1,7 +1,6 @@
 package udt
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -34,8 +33,6 @@ func createPacketHeap() (heap *sendPacketHeap) {
 func (heap *sendPacketHeap) Add(newPacket sendPacketEntry) {
 	heap.Lock()
 	defer heap.Unlock()
-
-	fmt.Printf("sendPacketHeap add %d\n", newPacket.pkt.Seq.Seq)
 
 	heap.list = append(heap.list, newPacket)
 }
