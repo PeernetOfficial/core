@@ -61,7 +61,7 @@ func newUdtSocketSend(s *udtSocket) *udtSocketSend {
 		flowWindowSize: s.maxFlowWinSize,
 		sendPacket:     s.sendPacket,
 		shutdownEvent:  s.shutdownEvent,
-		sendPktPend:    createSendPacketHeap(),
+		sendPktPend:    createPacketHeap(),
 	}
 	ss.resetEXP(s.created)
 	go ss.goSendEvent()

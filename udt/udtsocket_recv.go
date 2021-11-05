@@ -20,7 +20,7 @@ type udtSocketRecv struct {
 	farRecdPktSeq      packet.PacketID // the peer's last "received" packet ID (before any loss events)
 	lastACK            uint32          // last ACK packet we've sent
 	largestACK         uint32          // largest ACK packet we've sent that has been acknowledged (by an ACK2).
-	recvPktPend        dataPacketHeap  // list of packets that are waiting to be processed.
+	recvPktPend        *sendPacketHeap // list of packets that are waiting to be processed.
 	recvLossList       receiveLossHeap // loss list.
 	ackHistory         ackHistoryHeap  // list of sent ACKs.
 	sentAck            packet.PacketID // largest packetID we've sent an ACK regarding
@@ -39,11 +39,12 @@ type udtSocketRecv struct {
 
 func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
 	sr := &udtSocketRecv{
-		socket:     s,
-		sockClosed: s.sockClosed,
-		recvEvent:  s.recvEvent,
-		messageIn:  s.messageIn,
-		sendPacket: s.sendPacket,
+		socket:      s,
+		sockClosed:  s.sockClosed,
+		recvEvent:   s.recvEvent,
+		messageIn:   s.messageIn,
+		sendPacket:  s.sendPacket,
+		recvPktPend: createPacketHeap(),
 	}
 	go sr.goReceiveEvent()
 	return sr
@@ -142,11 +143,7 @@ func (s *udtSocketRecv) ingestMsgDropReq(p *packet.MsgDropReqPacket, now time.Ti
 		}
 
 		// remove all pending packets with this message
-		if s.recvPktPend != nil {
-			if lossEntry, idx := s.recvPktPend.Find(pktID); lossEntry != nil {
-				heap.Remove(&s.recvPktPend, idx)
-			}
-		}
+		s.recvPktPend.Remove(pktID.Seq)
 
 	}
 
@@ -157,14 +154,10 @@ func (s *udtSocketRecv) ingestMsgDropReq(p *packet.MsgDropReqPacket, now time.Ti
 		s.farRecdPktSeq = s.farNextPktSeq.Add(-1)
 		s.recvLossList = nil
 	}
-	if s.recvPktPend != nil && len(s.recvPktPend) == 0 {
-		s.recvPktPend = nil
-	}
 
 	// try to push any pending packets out, now that we have dropped any blocking packets
-	for s.recvPktPend != nil && stopSeq != s.farNextPktSeq {
-		nextPkt, _ := s.recvPktPend.Min(stopSeq, s.farNextPktSeq)
-		if nextPkt == nil || !s.attemptProcessPacket(nextPkt, false) {
+	for _, nextPkt := range s.recvPktPend.Range(stopSeq.Seq, s.farNextPktSeq.Seq) {
+		if !s.attemptProcessPacket(nextPkt.pkt, false) {
 			break
 		}
 	}
@@ -258,12 +251,7 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 	if s.recvLossList != nil && mustOrder && s.farRecdPktSeq.Add(1) != seq {
 		// we're required to order these packets and we're missing prior packets, so push and return
 		if isNew {
-			if s.recvPktPend == nil {
-				s.recvPktPend = dataPacketHeap{p}
-				heap.Init(&s.recvPktPend)
-			} else {
-				heap.Push(&s.recvPktPend, p)
-			}
+			s.recvPktPend.Add(sendPacketEntry{pkt: p})
 		}
 		return false
 	}
@@ -274,10 +262,10 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 	switch boundary {
 	case packet.MbLast, packet.MbMiddle:
 		// we need prior packets, let's make sure we have them
-		if s.recvPktPend != nil {
+		if s.recvPktPend.Count() > 0 {
 			pieceSeq := seq.Add(-1)
 			for {
-				prevPiece, _ := s.recvPktPend.Find(pieceSeq)
+				prevPiece := s.recvPktPend.Find(pieceSeq.Seq)
 				if prevPiece == nil {
 					// we don't have the previous piece, is it missing?
 					if s.recvLossList != nil {
@@ -290,13 +278,13 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 					fmt.Printf("Message with id %d appears to be a broken fragment\n", msgID)
 					break
 				}
-				prevBoundary, _, prevMsg := prevPiece.GetMessageData()
+				prevBoundary, _, prevMsg := prevPiece.pkt.GetMessageData()
 				if prevMsg != msgID {
 					// ...oops? previous piece isn't in the same message
 					fmt.Printf("Message with id %d appears to be a broken fragment\n", msgID)
 					break
 				}
-				pieces = append([]*packet.DataPacket{prevPiece}, pieces...)
+				pieces = append([]*packet.DataPacket{prevPiece.pkt}, pieces...)
 				if prevBoundary == packet.MbFirst {
 					break
 				}
@@ -310,10 +298,10 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 		switch boundary {
 		case packet.MbFirst, packet.MbMiddle:
 			// we need following packets, let's make sure we have them
-			if s.recvPktPend != nil {
+			if s.recvPktPend.Count() > 0 {
 				pieceSeq := seq.Add(1)
 				for {
-					nextPiece, _ := s.recvPktPend.Find(pieceSeq)
+					nextPiece := s.recvPktPend.Find(pieceSeq.Seq)
 					if nextPiece == nil {
 						// we don't have the previous piece, is it missing?
 						if pieceSeq == s.farNextPktSeq {
@@ -330,13 +318,13 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 						// in any case we can't continue with this
 						break
 					}
-					nextBoundary, _, nextMsg := nextPiece.GetMessageData()
+					nextBoundary, _, nextMsg := nextPiece.pkt.GetMessageData()
 					if nextMsg != msgID {
 						// ...oops? previous piece isn't in the same message
 						fmt.Printf("Message with id %d appears to be a broken fragment\n", msgID)
 						break
 					}
-					pieces = append(pieces, nextPiece)
+					pieces = append(pieces, nextPiece.pkt)
 					if nextBoundary == packet.MbLast {
 						break
 					}
@@ -356,23 +344,15 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 	if cannotContinue {
 		// we need to wait for more packets, store and return
 		if isNew {
-			if s.recvPktPend == nil {
-				s.recvPktPend = dataPacketHeap{p}
-				heap.Init(&s.recvPktPend)
-			} else {
-				heap.Push(&s.recvPktPend, p)
-			}
+			s.recvPktPend.Add(sendPacketEntry{pkt: p})
 		}
 		return false
 	}
 
 	// we have a message, pull it from the pending heap (if necessary), assemble it into a message, and return it
-	if s.recvPktPend != nil {
+	if s.recvPktPend.Count() > 0 {
 		for _, piece := range pieces {
-			s.recvPktPend.Remove(piece.Seq)
-		}
-		if len(s.recvPktPend) == 0 {
-			s.recvPktPend = nil
+			s.recvPktPend.Remove(piece.Seq.Seq)
 		}
 	}
 

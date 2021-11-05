@@ -26,7 +26,7 @@ type sendPacketHeap struct {
 	sync.RWMutex
 }
 
-func createSendPacketHeap() (heap *sendPacketHeap) {
+func createPacketHeap() (heap *sendPacketHeap) {
 	return &sendPacketHeap{}
 }
 
@@ -89,4 +89,18 @@ func (heap *sendPacketHeap) RemoveRange(sequenceFrom, sequenceTo uint32) {
 	}
 
 	heap.list = newList
+}
+
+// Range returns all packets that are within the given range. Check is from >= and to <.
+func (heap *sendPacketHeap) Range(sequenceFrom, sequenceTo uint32) (result []sendPacketEntry) {
+	heap.RLock()
+	defer heap.RUnlock()
+
+	for n := range heap.list {
+		if heap.list[n].pkt.Seq.Seq >= sequenceFrom && heap.list[n].pkt.Seq.Seq < sequenceTo {
+			result = append(result, heap.list[n])
+		}
+	}
+
+	return result
 }
