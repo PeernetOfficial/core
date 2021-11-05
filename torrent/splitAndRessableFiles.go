@@ -39,7 +39,7 @@ func Split(filename string, splitsize float64, writelocation string)  (*fileChun
 	bufferSize := 1024 // 1 KB for optimal splitting
 	fileStats, _ := os.Stat(filename)
 	pieces := int(math.Ceil(float64(fileStats.Size()) / float64(splitsize*1048576)))
-	nTimes := int(float64(math.Ceil(splitsize*1048576) / float64(bufferSize)))
+	nTimes := int(float64(math.Ceil(splitsize*1048576)) / float64(bufferSize))
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func (chunks *fileChunks)Join() error {
 	i := 1
 	for i <= len(chunks.FileChunk) {
 		partFileName := iFileName + ".pt" + strconv.Itoa(i)
-		fmt.Println("Processing file:", partFileName)
+
 		pfile, _ := os.Open(partFileName)
 		pfileinfo, err := pfile.Stat()
 		if err != nil {
@@ -134,10 +134,6 @@ func (chunks *fileChunks)Join() error {
 		i++
 	}
 	jointFile.Close()
-
-	// TODO: --- To be removed ---
-	fmt.Printf("Combined successfully!")
-	// --- To be removed ---
 
 	return nil
 }

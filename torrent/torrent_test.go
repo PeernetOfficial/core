@@ -10,7 +10,7 @@ import (
 // TestSplit ensures the split function is happening as required
 func TestSplit(t *testing.T) {
 	// Splitting Test file with each of 100 kb
-	output, err := Split("TestingFiles/test.txt", 0.01,"TestingFiles/output/")
+	output, err := Split("TestingFiles/test.pdf", 1.0,"TestingFiles/output/")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()
@@ -22,7 +22,7 @@ func TestSplit(t *testing.T) {
 // Run TestSplit test before this no ensure the lime.epub-hashes file is generated
 // TestReadHashes displays the output of the ReadHashes function
 func TestReadHashes(t *testing.T) {
-	hashes, err := ReadHashes("TestingFiles/output/test.txt-hashes.txt")
+	hashes, err := ReadHashes("TestingFiles/output/test.pdf-hashes.txt")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()
@@ -32,7 +32,7 @@ func TestReadHashes(t *testing.T) {
 
 // TestFileChunks_Join Joining all chunks into a single file
 func TestFileChunks_Join(t *testing.T) {
-	hashes, err := ReadHashes("TestingFiles/output/test.txt-hashes.txt")
+	hashes, err := ReadHashes("TestingFiles/output/test.pdf-hashes.txt")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()
@@ -48,8 +48,8 @@ func TestFileChunks_Join(t *testing.T) {
 	// To ensure the join is successful we compare the hashes of the lime.epub
 	// in the TestingFile folder and the lime.epub in the TestingFile/output
 	// directory
-	CorrectHash := protocol.HashDataString([]byte("TestingFiles/test.txt"))
-	JoinedFilesHash := protocol.HashDataString([]byte("TestingFiles/output/test.txt"))
+	CorrectHash := protocol.HashDataString([]byte("TestingFiles/test.pdf"))
+	JoinedFilesHash := protocol.HashDataString([]byte("TestingFiles/output/test.pdf"))
 	if CorrectHash != JoinedFilesHash {
 		fmt.Println(errors.New("hashes do not match"))
 		fmt.Println("Expected Hash: " + CorrectHash)
