@@ -76,7 +76,7 @@ func DecodeTransfer(msg *MessageRaw) (result *MessageTransfer, err error) {
 }
 
 // TransferMaxEmbedSize is the maximum size of embedded data inside the Transfer message.
-const TransferMaxEmbedSize = udpMaxPacketSize - PacketLengthMin - transferPayloadHeaderSize
+const TransferMaxEmbedSize = internetSafeMTU - PacketLengthMin - transferPayloadHeaderSize
 
 // EncodeTransfer encodes a transfer message. The embedded packet size must be smaller than TransferMaxEmbedSize.
 func EncodeTransfer(senderPrivateKey *btcec.PrivateKey, data []byte, control, transferProtocol uint8, hash []byte, offset, limit uint64) (packetRaw []byte, err error) {
