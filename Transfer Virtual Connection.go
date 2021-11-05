@@ -47,7 +47,7 @@ func newVirtualPacketConn(peer *PeerInfo, protocol uint8, hash []byte, offset, l
 		hash:             hash,
 		offset:           offset,
 		limit:            limit,
-		incomingData:     make(chan []byte),
+		incomingData:     make(chan []byte, 100),
 		outgoingData:     make(chan []byte),
 		terminateChan:    make(chan struct{}),
 	}
