@@ -1,15 +1,9 @@
 package udt
 
 import (
-	"container/heap"
-	"fmt"
 	"time"
 
 	"github.com/PeernetOfficial/core/udt/packet"
-)
-
-const (
-	ackSelfClockInterval = 64
 )
 
 type udtSocketRecv struct {
@@ -20,23 +14,21 @@ type udtSocketRecv struct {
 	sendPacket chan<- packet.Packet // send a packet out on the wire
 	socket     *udtSocket
 
-	farNextPktSeq      packet.PacketID // the peer's next largest packet ID expected.
-	farRecdPktSeq      packet.PacketID // the peer's last "received" packet ID (before any loss events)
-	lastACK            uint32          // last ACK packet we've sent
-	largestACK         uint32          // largest ACK packet we've sent that has been acknowledged (by an ACK2).
-	recvPktPend        dataPacketHeap  // list of packets that are waiting to be processed.
-	recvLossList       receiveLossHeap // loss list.
-	ackHistory         ackHistoryHeap  // list of sent ACKs.
-	sentAck            packet.PacketID // largest packetID we've sent an ACK regarding
-	recvAck2           packet.PacketID // largest packetID we've received an ACK2 from
-	recvLastArrival    time.Time       // time of the most recent data packet arrival
-	recvLastProbe      time.Time       // time of the most recent data packet probe packet
-	ackPeriod          atomicDuration  // (set by congestion control) delay between sending ACKs
-	ackInterval        atomicUint32    // (set by congestion control) number of data packets to send before sending an ACK
-	unackPktCount      uint            // number of packets we've received that we haven't sent an ACK for
-	lightAckCount      uint            // number of "light ACK" packets we've sent since the last ACK
-	recvPktHistory     []time.Duration // list of recently received packets.
-	recvPktPairHistory []time.Duration // probing packet window.
+	farNextPktSeq      packet.PacketID  // the peer's next largest packet ID expected.
+	farRecdPktSeq      packet.PacketID  // the peer's last "received" packet ID (before any loss events)
+	lastACK            uint32           // last ACK packet we've sent
+	largestACK         uint32           // largest ACK packet we've sent that has been acknowledged (by an ACK2).
+	recvPktPend        *sendPacketHeap  // list of packets that are waiting to be processed.
+	recvLossList       *receiveLossHeap // loss list.
+	ackHistory         *ackHistoryHeap  // list of sent ACKs.
+	sentAck            packet.PacketID  // largest packetID we've sent an ACK regarding
+	recvAck2           packet.PacketID  // largest packetID we've received an ACK2 from
+	recvLastArrival    time.Time        // time of the most recent data packet arrival
+	recvLastProbe      time.Time        // time of the most recent data packet probe packet
+	ackPeriod          atomicDuration   // (set by congestion control) delay between sending ACKs
+	unackPktCount      uint             // number of packets we've received that we haven't sent an ACK for
+	recvPktHistory     []time.Duration  // list of recently received packets.
+	recvPktPairHistory []time.Duration  // probing packet window.
 
 	// timers
 	ackSentEvent2 <-chan time.Time // if an ACK packet has recently sent, don't include link information in the next one
@@ -45,11 +37,14 @@ type udtSocketRecv struct {
 
 func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
 	sr := &udtSocketRecv{
-		socket:     s,
-		sockClosed: s.sockClosed,
-		recvEvent:  s.recvEvent,
-		messageIn:  s.messageIn,
-		sendPacket: s.sendPacket,
+		socket:       s,
+		sockClosed:   s.sockClosed,
+		recvEvent:    s.recvEvent,
+		messageIn:    s.messageIn,
+		sendPacket:   s.sendPacket,
+		recvPktPend:  createPacketHeap(),
+		recvLossList: createPacketIDHeap(),
+		ackHistory:   createHistoryHeap(),
 	}
 	go sr.goReceiveEvent()
 	return sr
@@ -112,23 +107,17 @@ ACK is used to trigger an acknowledgement (ACK). Its period is set by
 
 // ingestAck2 is called to process an ACK2 packet
 func (s *udtSocketRecv) ingestAck2(p *packet.Ack2Packet, now time.Time) {
-	ackSeq := p.AckSeqNo
-	if s.ackHistory == nil {
-		return // no ACKs to search
-	}
-
-	ackHistEntry, ackIdx := s.ackHistory.Find(ackSeq)
+	ackHistEntry := s.ackHistory.Remove(p.AckSeqNo)
 	if ackHistEntry == nil {
 		return // this ACK not found
 	}
 	if s.recvAck2.BlindDiff(ackHistEntry.lastPacket) < 0 {
 		s.recvAck2 = ackHistEntry.lastPacket
 	}
-	heap.Remove(&s.ackHistory, ackIdx)
 
 	// Update the largest ACK number ever been acknowledged.
-	if s.largestACK < ackSeq {
-		s.largestACK = ackSeq
+	if s.largestACK < p.AckSeqNo {
+		s.largestACK = p.AckSeqNo
 	}
 
 	s.socket.applyRTT(uint(now.Sub(ackHistEntry.sendTime) / time.Microsecond))
@@ -141,36 +130,22 @@ func (s *udtSocketRecv) ingestMsgDropReq(p *packet.MsgDropReqPacket, now time.Ti
 	stopSeq := p.LastSeq.Add(1)
 	for pktID := p.FirstSeq; pktID != stopSeq; pktID.Incr() {
 		// remove all these packets from the loss list
-		if s.recvLossList != nil {
-			if lossEntry, idx := s.recvLossList.Find(pktID); lossEntry != nil {
-				heap.Remove(&s.recvLossList, idx)
-			}
-		}
+		s.recvLossList.Remove(pktID.Seq)
 
 		// remove all pending packets with this message
-		if s.recvPktPend != nil {
-			if lossEntry, idx := s.recvPktPend.Find(pktID); lossEntry != nil {
-				heap.Remove(&s.recvPktPend, idx)
-			}
-		}
-
+		s.recvPktPend.Remove(pktID.Seq)
 	}
 
 	if p.FirstSeq == s.farRecdPktSeq.Add(1) {
 		s.farRecdPktSeq = p.LastSeq
 	}
-	if s.recvLossList != nil && len(s.recvLossList) == 0 {
-		s.farRecdPktSeq = s.farNextPktSeq.Add(-1)
-		s.recvLossList = nil
-	}
-	if s.recvPktPend != nil && len(s.recvPktPend) == 0 {
-		s.recvPktPend = nil
-	}
+	// if s.recvLossList.Count() == 0 {
+	// 	s.farRecdPktSeq = s.farNextPktSeq.Add(-1)
+	// }
 
 	// try to push any pending packets out, now that we have dropped any blocking packets
-	for s.recvPktPend != nil && stopSeq != s.farNextPktSeq {
-		nextPkt, _ := s.recvPktPend.Min(stopSeq, s.farNextPktSeq)
-		if nextPkt == nil || !s.attemptProcessPacket(nextPkt, false) {
+	for _, nextPkt := range s.recvPktPend.Range(stopSeq.Seq, s.farNextPktSeq.Seq) {
+		if !s.attemptProcessPacket(nextPkt.pkt, false) {
 			break
 		}
 	}
@@ -218,36 +193,25 @@ func (s *udtSocketRecv) ingestData(p *packet.DataPacket, now time.Time) {
 	send them to the sender in an NAK packet. */
 	seqDiff := seq.BlindDiff(s.farNextPktSeq)
 	if seqDiff > 0 {
-		fmt.Printf("Warning sequence out of order :( Code that follows will crash. Expected %d but received is %d\n", s.farNextPktSeq, p.Seq)
-		newLoss := make(receiveLossHeap, 0, seqDiff)
-		for idx := s.farNextPktSeq; idx != seq; idx.Incr() {
-			newLoss = append(newLoss, recvLossEntry{packetID: idx})
+		for n := uint32(0); n < uint32(seqDiff); n++ {
+			s.recvLossList.Add(recvLossEntry{packetID: packet.PacketID{Seq: (s.farNextPktSeq.Seq + n) & 0x7FFFFFFF}})
 		}
 
-		if s.recvLossList == nil {
-			s.recvLossList = newLoss
-			heap.Init(&s.recvLossList)
-		} else {
-			for idx := s.farNextPktSeq; idx != seq; idx.Incr() {
-				heap.Push(&s.recvLossList, recvLossEntry{packetID: idx})
-			}
-			heap.Init(&newLoss)
-		}
-
-		s.sendNAK(newLoss)
+		s.sendNAK(s.farNextPktSeq.Seq, uint32(seqDiff))
 		s.farNextPktSeq = seq.Add(1)
 
 	} else if seqDiff < 0 {
 		// If the sequence number is less than LRSN, remove it from the receiver's loss list.
-		if !s.recvLossList.Remove(seq) {
+		if !s.recvLossList.Remove(seq.Seq) {
 			return // already previously received packet -- ignore
 		}
 
-		if len(s.recvLossList) == 0 {
+		if s.recvLossList.Count() == 0 {
 			s.farRecdPktSeq = s.farNextPktSeq.Add(-1)
-			s.recvLossList = nil
 		} else {
-			s.farRecdPktSeq, _ = s.recvLossList.Min(s.farRecdPktSeq, s.farNextPktSeq)
+			if minR := s.recvLossList.Min(s.farRecdPktSeq.Seq, s.farNextPktSeq.Seq); minR != nil {
+				s.farRecdPktSeq = packet.PacketID{Seq: minR.Seq}
+			}
 		}
 	} else {
 		s.farNextPktSeq = seq.Add(1)
@@ -261,15 +225,10 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 
 	// can we process this packet?
 	boundary, mustOrder, msgID := p.GetMessageData()
-	if s.recvLossList != nil && mustOrder && s.farRecdPktSeq.Add(1) != seq {
+	if s.recvLossList.Count() > 0 && mustOrder && s.farRecdPktSeq.Add(1) != seq {
 		// we're required to order these packets and we're missing prior packets, so push and return
 		if isNew {
-			if s.recvPktPend == nil {
-				s.recvPktPend = dataPacketHeap{p}
-				heap.Init(&s.recvPktPend)
-			} else {
-				heap.Push(&s.recvPktPend, p)
-			}
+			s.recvPktPend.Add(sendPacketEntry{pkt: p})
 		}
 		return false
 	}
@@ -280,29 +239,27 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 	switch boundary {
 	case packet.MbLast, packet.MbMiddle:
 		// we need prior packets, let's make sure we have them
-		if s.recvPktPend != nil {
+		if s.recvPktPend.Count() > 0 {
 			pieceSeq := seq.Add(-1)
 			for {
-				prevPiece, _ := s.recvPktPend.Find(pieceSeq)
+				prevPiece := s.recvPktPend.Find(pieceSeq.Seq)
 				if prevPiece == nil {
 					// we don't have the previous piece, is it missing?
-					if s.recvLossList != nil {
-						if lossEntry, _ := s.recvLossList.Find(pieceSeq); lossEntry != nil {
+					if s.recvLossList.Count() > 0 {
+						if s.recvLossList.Find(pieceSeq.Seq) != nil {
 							// it's missing, stop processing
 							cannotContinue = true
 						}
 					}
 					// in any case we can't continue with this
-					fmt.Printf("Message with id %d appears to be a broken fragment\n", msgID)
 					break
 				}
-				prevBoundary, _, prevMsg := prevPiece.GetMessageData()
+				prevBoundary, _, prevMsg := prevPiece.pkt.GetMessageData()
 				if prevMsg != msgID {
 					// ...oops? previous piece isn't in the same message
-					fmt.Printf("Message with id %d appears to be a broken fragment\n", msgID)
 					break
 				}
-				pieces = append([]*packet.DataPacket{prevPiece}, pieces...)
+				pieces = append([]*packet.DataPacket{prevPiece.pkt}, pieces...)
 				if prevBoundary == packet.MbFirst {
 					break
 				}
@@ -316,33 +273,31 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 		switch boundary {
 		case packet.MbFirst, packet.MbMiddle:
 			// we need following packets, let's make sure we have them
-			if s.recvPktPend != nil {
+			if s.recvPktPend.Count() > 0 {
 				pieceSeq := seq.Add(1)
 				for {
-					nextPiece, _ := s.recvPktPend.Find(pieceSeq)
+					nextPiece := s.recvPktPend.Find(pieceSeq.Seq)
 					if nextPiece == nil {
 						// we don't have the previous piece, is it missing?
 						if pieceSeq == s.farNextPktSeq {
 							// hasn't been received yet
 							cannotContinue = true
-						} else if s.recvLossList != nil {
-							if lossEntry, _ := s.recvLossList.Find(pieceSeq); lossEntry != nil {
+						} else if s.recvLossList.Count() > 0 {
+							if s.recvLossList.Find(pieceSeq.Seq) != nil {
 								// it's missing, stop processing
 								cannotContinue = true
 							}
 						} else {
-							fmt.Printf("Message with id %d appears to be a broken fragment\n", msgID)
 						}
 						// in any case we can't continue with this
 						break
 					}
-					nextBoundary, _, nextMsg := nextPiece.GetMessageData()
+					nextBoundary, _, nextMsg := nextPiece.pkt.GetMessageData()
 					if nextMsg != msgID {
 						// ...oops? previous piece isn't in the same message
-						fmt.Printf("Message with id %d appears to be a broken fragment\n", msgID)
 						break
 					}
-					pieces = append(pieces, nextPiece)
+					pieces = append(pieces, nextPiece.pkt)
 					if nextBoundary == packet.MbLast {
 						break
 					}
@@ -351,38 +306,27 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 		}
 	}
 
-	// we've received a data packet, do we need to send an ACK for it?
+	// Acknowledge the packet if the threshold is reached. This used to be a parameter s.ackInterval supposed to be set by congestion control, but never was.
+	// Before, there was both the (unused) ACK interval s.ackInterval and s.ackTimerEvent which fired at SynTime, which was way too often and basically a ddos.
+	// It makes more sense to just send the ACK x split of the congestion window.
 	s.unackPktCount++
-	ackInterval := uint(s.ackInterval.get())
-	if (ackInterval > 0) && (ackInterval <= s.unackPktCount) {
-		// ACK interval is reached
-		s.ackEvent()
-	} else if ackSelfClockInterval*s.lightAckCount <= s.unackPktCount {
-		//send a "light" ACK
-		s.sendLightACK()
-		s.lightAckCount++
-	}
+	// DEBUG: Always send ack for now
+	//if s.unackPktCount >= s.socket.cong.GetCongestionWindowSize()/4 {
+	s.ackEvent()
+	//}
 
 	if cannotContinue {
 		// we need to wait for more packets, store and return
 		if isNew {
-			if s.recvPktPend == nil {
-				s.recvPktPend = dataPacketHeap{p}
-				heap.Init(&s.recvPktPend)
-			} else {
-				heap.Push(&s.recvPktPend, p)
-			}
+			s.recvPktPend.Add(sendPacketEntry{pkt: p})
 		}
 		return false
 	}
 
 	// we have a message, pull it from the pending heap (if necessary), assemble it into a message, and return it
-	if s.recvPktPend != nil {
+	if s.recvPktPend.Count() > 0 {
 		for _, piece := range pieces {
-			s.recvPktPend.Remove(piece.Seq)
-		}
-		if len(s.recvPktPend) == 0 {
-			s.recvPktPend = nil
+			s.recvPktPend.Remove(piece.Seq.Seq)
 		}
 	}
 
@@ -392,24 +336,6 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 	}
 	s.messageIn <- msg
 	return true
-}
-
-func (s *udtSocketRecv) sendLightACK() {
-	var ack packet.PacketID
-
-	// If there is no loss, the ACK is the current largest sequence number plus 1;
-	// Otherwise it is the smallest sequence number in the receiver loss list.
-	if s.recvLossList == nil {
-		ack = s.farNextPktSeq
-	} else {
-		ack = s.farRecdPktSeq.Add(1)
-	}
-
-	if ack != s.recvAck2 {
-		// send out a lite ACK
-		// to save time on buffer processing and bandwidth/AS measurement, a lite ACK only feeds back an ACK number
-		s.sendPacket <- &packet.LightAckPacket{PktSeqHi: ack}
-	}
 }
 
 func (s *udtSocketRecv) getRcvSpeeds() (recvSpeed, bandwidth int) {
@@ -482,7 +408,7 @@ func (s *udtSocketRecv) sendACK() {
 
 	// If there is no loss, the ACK is the current largest sequence number plus 1;
 	// Otherwise it is the smallest sequence number in the receiver loss list.
-	if s.recvLossList == nil {
+	if s.recvLossList.Count() == 0 {
 		ack = s.farNextPktSeq
 	} else {
 		ack = s.farRecdPktSeq.Add(1)
@@ -499,17 +425,11 @@ func (s *udtSocketRecv) sendACK() {
 	s.sentAck = ack
 
 	s.lastACK++
-	ackHist := &ackHistoryEntry{
+	s.ackHistory.Add(ackHistoryEntry{
 		ackID:      s.lastACK,
 		lastPacket: ack,
 		sendTime:   time.Now(),
-	}
-	if s.ackHistory == nil {
-		s.ackHistory = ackHistoryHeap{ackHist}
-		heap.Init(&s.ackHistory)
-	} else {
-		heap.Push(&s.ackHistory, ackHist)
-	}
+	})
 
 	rtt, rttVar := s.socket.getRTT()
 
@@ -537,31 +457,10 @@ func (s *udtSocketRecv) sendACK() {
 	s.ackSentEvent = time.After(time.Duration(rtt+4*rttVar) * time.Microsecond)
 }
 
-func (s *udtSocketRecv) sendNAK(rl receiveLossHeap) {
+func (s *udtSocketRecv) sendNAK(sequenceFrom uint32, count uint32) {
 	lossInfo := make([]uint32, 0)
-
-	curPkt := s.farRecdPktSeq
-	for curPkt != s.farNextPktSeq {
-		minPkt, idx := rl.Min(curPkt, s.farRecdPktSeq)
-		if idx < 0 {
-			break
-		}
-
-		lastPkt := minPkt
-		for {
-			nextPkt := lastPkt.Add(1)
-			_, idx = rl.Find(nextPkt)
-			if idx < 0 {
-				break
-			}
-			lastPkt = nextPkt
-		}
-
-		if lastPkt == minPkt {
-			lossInfo = append(lossInfo, minPkt.Seq&0x7FFFFFFF)
-		} else {
-			lossInfo = append(lossInfo, minPkt.Seq|0x80000000, lastPkt.Seq&0x7FFFFFFF)
-		}
+	for n := uint32(0); n < count; n++ {
+		lossInfo = append(lossInfo, (sequenceFrom+n)&0x7FFFFFFF)
 	}
 
 	s.sendPacket <- &packet.NakPacket{CmpLossInfo: lossInfo}
@@ -576,5 +475,4 @@ func (s *udtSocketRecv) ingestError(p *packet.ErrPacket) {
 func (s *udtSocketRecv) ackEvent() {
 	s.sendACK()
 	s.unackPktCount = 0
-	s.lightAckCount = 1
 }

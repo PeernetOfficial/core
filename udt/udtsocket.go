@@ -2,7 +2,6 @@ package udt
 
 import (
 	"errors"
-	"math/rand"
 	"net"
 	"sync"
 	"syscall"
@@ -201,39 +200,28 @@ func (s *udtSocket) Read(p []byte) (n int, err error) {
 			err = errors.New("Message truncated") // <- evil buggy
 		}
 	} else {
-		// for streaming sockets, block until we have at least something to return, then
-		// fill up the passed buffer as far as we can without blocking again
-		idx := 0
-		l := len(p)
-		n = 0
-		for idx < l {
-			if s.currPartialRead == nil {
+		// for streaming sockets, block until we have at least something to return, then fill up the passed buffer as far as we can without blocking again
+		for offset := 0; offset < len(p); {
+			if len(s.currPartialRead) == 0 {
 				// Grab the next data packet
-				currPartialRead, rerr := s.fetchReadPacket(n == 0 && connErr == nil)
-				s.currPartialRead = currPartialRead
-				if rerr != nil {
-					err = rerr
-					return
+				if s.currPartialRead, err = s.fetchReadPacket(n == 0 && connErr == nil); err != nil {
+					return n, err
 				}
-				if s.currPartialRead == nil {
+				if len(s.currPartialRead) == 0 {
 					if n != 0 {
 						return
 					}
 					if connErr != nil {
-						err = connErr
-						return
+						return n, connErr
 					}
 				}
 			}
-			thisN := copy(p[idx:], s.currPartialRead)
-			n = n + thisN
-			idx = idx + thisN
-			if n >= len(s.currPartialRead) {
-				// we've exhausted the current data packet, reset to nil
-				s.currPartialRead = nil
-			} else {
-				s.currPartialRead = s.currPartialRead[n:]
-			}
+
+			thisN := copy(p[offset:], s.currPartialRead)
+
+			n += thisN
+			offset += thisN
+			s.currPartialRead = s.currPartialRead[thisN:]
 		}
 	}
 	return
@@ -431,7 +419,7 @@ func newSocket(m *multiplexer, config *Config, sockID uint32, isServer bool, isD
 		maxFlowWinSize: maxFlowWinSize,
 		isDatagram:     isDatagram,
 		sockID:         sockID,
-		initPktSeq:     packet.PacketID{Seq: rand.Uint32()},
+		initPktSeq:     packet.RandomPacketSequence(),
 		messageIn:      make(chan []byte, 256),
 		messageOut:     make(chan sendMessage, 256),
 		recvEvent:      make(chan recvPktEvent, 256),
@@ -701,7 +689,7 @@ func (s *udtSocket) readPacket(m *multiplexer, p packet.Packet) {
 		s.readHandshake(m, sp)
 	case *packet.ShutdownPacket: // sent by either peer
 		s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: s.isServer} // if client tells us done, it is done.
-	case *packet.AckPacket, *packet.LightAckPacket, *packet.NakPacket: // receiver -> sender
+	case *packet.AckPacket, *packet.NakPacket: // receiver -> sender
 		s.sendEvent <- recvPktEvent{pkt: p, now: now}
 	case *packet.UserDefControlPacket:
 		s.cong.onCustomMsg(*sp)

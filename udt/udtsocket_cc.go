@@ -115,12 +115,9 @@ func (s *udtSocketCc) onACK(pktID packet.PacketID) {
 
 // OnNAK to be called when a loss report is received
 func (s *udtSocketCc) onNAK(loss []packet.PacketID) {
-	var ourLoss = make([]packet.PacketID, len(loss))
-	copy(ourLoss, loss)
-
 	s.msgs <- congMsg{
 		mtyp: congOnNAK,
-		arg:  ourLoss,
+		arg:  loss,
 	}
 }
 
@@ -214,11 +211,6 @@ func (s *udtSocketCc) GetMSS() uint {
 // SetACKPerid sets the time between ACKs sent to the peer
 func (s *udtSocketCc) SetACKPeriod(ack time.Duration) {
 	s.socket.recv.ackPeriod.set(ack)
-}
-
-// SetACKInterval sets the number of packets sent to the peer before sending an ACK
-func (s *udtSocketCc) SetACKInterval(ack uint) {
-	s.socket.recv.ackInterval.set(uint32(ack))
 }
 
 // SetRTOPeriod overrides the default EXP timeout calculations waiting for data from the peer

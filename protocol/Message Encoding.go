@@ -26,6 +26,9 @@ type MessageRaw struct {
 // However, due to the MTU soft limit and fragmentation, packets should be as small as possible.
 const udpMaxPacketSize = 65507
 
+// internetSafeMTU is a value relatively safe to use for transmitting over the internet
+const internetSafeMTU = 1500 - 20 - 8
+
 // isPacketSizeExceed checks if the max packet size would be exceeded with the payload
 func isPacketSizeExceed(currentSize int, testSize int) bool {
 	return currentSize+testSize > udpMaxPacketSize-PacketLengthMin

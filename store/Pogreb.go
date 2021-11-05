@@ -8,6 +8,8 @@ package store
 
 import (
 	"errors"
+	"io"
+	"log"
 	"sync"
 	"time"
 
@@ -24,6 +26,8 @@ type PogrebStore struct {
 
 // NewPogrebStore create a properly initialized Pogreb store.
 func NewPogrebStore(filename string) (store *PogrebStore, err error) {
+	pogreb.SetLogger(log.New(io.Discard, "", 0))
+
 	// if the database does not exist, it will be created
 	db, err := pogreb.Open(filename, nil)
 	if err != nil {

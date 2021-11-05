@@ -106,6 +106,10 @@ func (ncc NativeCongestionControl) OnACK(parms CongestionControlParms, ack packe
 	var inc float64
 	const minInc float64 = 0.01
 
+	if pktSendPeriod == 0 { // fix divide by zero
+		pktSendPeriod = time.Nanosecond * 10
+	}
+
 	B := time.Duration(bandwidth) - time.Second/time.Duration(pktSendPeriod)
 	bandwidth9 := time.Duration(bandwidth / 9)
 	if (pktSendPeriod > ncc.lastDecPeriod) && (bandwidth9 < B) {
