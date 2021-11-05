@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package protocol
 
 import (
+	"encoding/hex"
 	"github.com/btcsuite/btcd/btcec"
 	"lukechampine.com/blake3"
 )
@@ -15,6 +16,13 @@ import (
 func HashData(data []byte) (hash []byte) {
 	hash32 := blake3.Sum256(data)
 	return hash32[:]
+}
+
+// HashDataString Return hash data as string
+func HashDataString(data []byte) string {
+	byteResult := HashData(data)
+	// Returning byte data as string
+	return hex.EncodeToString(byteResult)
 }
 
 // HashSize is blake3 hash digest size = 256 bits
