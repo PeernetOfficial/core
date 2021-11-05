@@ -1,6 +1,7 @@
 package udt
 
 import (
+	"sync"
 	"time"
 
 	"github.com/PeernetOfficial/core/udt/packet"
@@ -12,52 +13,47 @@ type ackHistoryEntry struct {
 	sendTime   time.Time
 }
 
-// receiveLossList defines a list of ACK records sorted by their ACK id
-type ackHistoryHeap []*ackHistoryEntry
+// receiveLossList defines a list of recvLossEntry records
+type ackHistoryHeap struct {
+	// list contains all entries
+	list []ackHistoryEntry
 
-func (h ackHistoryHeap) Len() int {
-	return len(h)
+	sync.RWMutex
 }
 
-func (h ackHistoryHeap) Less(i, j int) bool {
-	return h[i].ackID < h[j].ackID
+func createHistoryHeap() (heap *ackHistoryHeap) {
+	return &ackHistoryHeap{}
 }
 
-func (h ackHistoryHeap) Swap(i, j int) {
-	h[i], h[j] = h[j], h[i]
+// Add adds an entry to the list. Deduplication is not performed.
+func (heap *ackHistoryHeap) Add(newEntry ackHistoryEntry) {
+	heap.Lock()
+	defer heap.Unlock()
+
+	heap.list = append(heap.list, newEntry)
 }
 
-func (h *ackHistoryHeap) Push(x interface{}) { // Push and Pop use pointer receivers because they modify the slice's length, not just its contents.
-	*h = append(*h, x.(*ackHistoryEntry))
-}
+// Remove removes all IDs matching from the list.
+func (heap *ackHistoryHeap) Remove(sequence uint32) (found *ackHistoryEntry) {
+	heap.Lock()
+	defer heap.Unlock()
 
-func (h *ackHistoryHeap) Pop() interface{} {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}
+	var newList []ackHistoryEntry
 
-// Find does a binary search of the heap for the specified ackID which is returned
-func (h ackHistoryHeap) Find(ackID uint32) (*ackHistoryEntry, int) {
-	for n := 0; n < len(h); n++ {
-		if h[n].ackID == ackID {
-			return h[n], n
+	for n := range heap.list {
+		if heap.list[n].ackID != sequence {
+			newList = append(newList, heap.list[n])
+		} else {
+			found = &heap.list[n]
 		}
 	}
 
-	// len := len(h)
-	// idx := 0
-	// for idx < len {
-	// 	here := h[idx].ackID
-	// 	if here == ackID {
-	// 		return h[idx], idx
-	// 	} else if here > ackID {
-	// 		idx = idx * 2
-	// 	} else {
-	// 		idx = idx*2 + 1
-	// 	}
-	// }
-	return nil, -1
+	heap.list = newList
+
+	return found
+}
+
+// Count returns the number of packets stored
+func (heap *ackHistoryHeap) Count() (count int) {
+	return len(heap.list)
 }

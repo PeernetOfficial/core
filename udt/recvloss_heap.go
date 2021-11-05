@@ -1,122 +1,121 @@
 package udt
 
 import (
-	"container/heap"
+	"sync"
 	"time"
 
 	"github.com/PeernetOfficial/core/udt/packet"
 )
 
 type recvLossEntry struct {
-	packetID     packet.PacketID
+	packetID packet.PacketID
+
+	// data specific to loss entries
 	lastFeedback time.Time
 	numNAK       uint
 }
 
-// receiveLossList defines a list of recvLossEntry records sorted by their packet ID
-type receiveLossHeap []recvLossEntry
+// receiveLossList defines a list of recvLossEntry records
+type receiveLossHeap struct {
+	// list contains all entries
+	list []recvLossEntry
 
-func (h receiveLossHeap) Len() int {
-	return len(h)
+	sync.RWMutex
 }
 
-func (h receiveLossHeap) Less(i, j int) bool {
-	return h[i].packetID.Seq < h[j].packetID.Seq
+func createPacketIDHeap() (heap *receiveLossHeap) {
+	return &receiveLossHeap{}
 }
 
-func (h receiveLossHeap) Swap(i, j int) {
-	h[i], h[j] = h[j], h[i]
+// Add adds an entry to the list. Deduplication is not performed.
+func (heap *receiveLossHeap) Add(newEntry recvLossEntry) {
+	heap.Lock()
+	defer heap.Unlock()
+
+	heap.list = append(heap.list, newEntry)
 }
 
-func (h *receiveLossHeap) Push(x interface{}) { // Push and Pop use pointer receivers because they modify the slice's length, not just its contents.
-	*h = append(*h, x.(recvLossEntry))
-}
+// Remove removes all IDs matching from the list.
+func (heap *receiveLossHeap) Remove(sequence uint32) (found bool) {
+	heap.Lock()
+	defer heap.Unlock()
 
-func (h *receiveLossHeap) Pop() interface{} {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}
+	var newList []recvLossEntry
 
-// Min does a binary search of the heap for the entry with the lowest packetID greater than or equal to the specified value
-func (h receiveLossHeap) Min(greaterEqual packet.PacketID, lessEqual packet.PacketID) (packet.PacketID, int) {
-	if len(h) == 0 { // none available!
-		return packet.PacketID{Seq: 0}, -1
-	}
-	return h[0].packetID, 0
-
-	len := len(h)
-	idx := 0
-	wrapped := greaterEqual.Seq > lessEqual.Seq
-	for idx < len {
-		pid := h[idx].packetID
-		var next int
-		if pid.Seq == greaterEqual.Seq {
-			return h[idx].packetID, idx
-		} else if pid.Seq >= greaterEqual.Seq {
-			next = idx * 2
+	for n := range heap.list {
+		if heap.list[n].packetID.Seq != sequence {
+			newList = append(newList, heap.list[n])
 		} else {
-			next = idx*2 + 1
+			found = true
 		}
-		if next >= len && h[idx].packetID.Seq > greaterEqual.Seq && (wrapped || h[idx].packetID.Seq <= lessEqual.Seq) {
-			return h[idx].packetID, idx
-		}
-		idx = next
 	}
 
-	// can't find any packets with greater value, wrap around
-	if wrapped {
-		idx = 0
-		for {
-			next := idx * 2
-			if next >= len && h[idx].packetID.Seq <= lessEqual.Seq {
-				return h[idx].packetID, idx
+	heap.list = newList
+
+	return found
+}
+
+// Count returns the number of packets stored
+func (heap *receiveLossHeap) Count() (count int) {
+	return len(heap.list)
+}
+
+// Find searches for the packet
+func (heap *receiveLossHeap) Find(sequence uint32) (result *recvLossEntry) {
+	heap.RLock()
+	defer heap.RUnlock()
+
+	for n := range heap.list {
+		if heap.list[n].packetID.Seq == sequence {
+			return &heap.list[n]
+		}
+	}
+
+	return nil // not found
+}
+
+// Min returns the lowest matching value, if available. Otherwise returns first value.
+func (heap *receiveLossHeap) Min(sequenceFrom, sequenceTo uint32) (result *packet.PacketID) {
+	heap.RLock()
+	defer heap.RUnlock()
+
+	for n := range heap.list {
+		if heap.list[n].packetID.Seq >= sequenceFrom && heap.list[n].packetID.Seq < sequenceTo {
+			if result == nil || heap.list[n].packetID.Seq < result.Seq {
+				result = &heap.list[n].packetID
 			}
-			idx = next
 		}
 	}
-	return packet.PacketID{Seq: 0}, -1
+
+	return result
 }
 
-// Find does a binary search of the heap for the specified packetID which is returned
-func (h receiveLossHeap) Find(packetID packet.PacketID) (*recvLossEntry, int) {
-	for n := 0; n < len(h); n++ {
-		if h[n].packetID == packetID {
-			return &h[n], n
+// RemoveRange removes all packets that are within the given range. Check is from >= and to <.
+func (heap *receiveLossHeap) RemoveRange(sequenceFrom, sequenceTo uint32) {
+	heap.Lock()
+	defer heap.Unlock()
+
+	var newList []recvLossEntry
+
+	for n := range heap.list {
+		if !(heap.list[n].packetID.Seq >= sequenceFrom && heap.list[n].packetID.Seq < sequenceTo) {
+			newList = append(newList, heap.list[n])
 		}
 	}
 
-	// len := len(h)
-	// idx := 0
-	// for idx < len {
-	// 	pid := h[idx].packetID
-	// 	if pid == packetID {
-	// 		return &h[idx], idx
-	// 	} else if pid.Seq > packetID.Seq {
-	// 		idx = idx * 2
-	// 	} else {
-	// 		idx = idx*2 + 1
-	// 	}
-	// }
-	return nil, -1
+	heap.list = newList
 }
 
-// Remove does a binary search of the heap for the specified packetID, which is removed
-func (h *receiveLossHeap) Remove(packetID packet.PacketID) bool {
-	len := len(*h)
-	idx := 0
-	for idx < len {
-		pid := (*h)[idx].packetID
-		if pid == packetID {
-			heap.Remove(h, idx)
-			return true
-		} else if pid.Seq > packetID.Seq {
-			idx = idx * 2
-		} else {
-			idx = idx*2 + 1
+// Range returns all packets that are within the given range. Check is from >= and to <.
+func (heap *receiveLossHeap) Range(sequenceFrom, sequenceTo uint32) (result []recvLossEntry) {
+	heap.RLock()
+	defer heap.RUnlock()
+
+	for n := range heap.list {
+		if heap.list[n].packetID.Seq >= sequenceFrom && heap.list[n].packetID.Seq < sequenceTo {
+			result = append(result, heap.list[n])
 		}
 	}
-	return false
+
+	return result
 }
