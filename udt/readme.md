@@ -29,6 +29,8 @@ From `udtSocket.Read`:
 // fill up the passed buffer as far as we can without blocking again
 ```
 
+According to `DataPacket.SetMessageData`, datagram messages do not set the order flag (bit 29).
+
 ## Deviations
 
 MTU negotiation is disabled. Peernet uses a hardcoded max packet size (see protocol package). Packets may be routed through any network adapter, therefore pinning a MTU specific to a network adapter would not make much sense.
@@ -36,3 +38,5 @@ MTU negotiation is disabled. Peernet uses a hardcoded max packet size (see proto
 The "rendezvous" functionality has been removed since Peernet supports native Traverse messages for UDP hole punching.
 
 Multiplexing multiple UDT sockets to a single UDT connection is removed. It added complexity without benefits in this case. Peernet uses a single UDP port and UDP connection between two peers. Multiplexing has no effect other than breaking the concept and the security of Peernet message sequences.
+
+The order flag (bit 29) set for datagram messages is ignored for security reasons; the behavior whether incoming packets must be ordered or not is hardcoded to whether it is in streaming or datagram mode. 

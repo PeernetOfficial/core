@@ -74,31 +74,15 @@ func (heap *receiveLossHeap) Find(sequence uint32) (result *recvLossEntry) {
 	return nil // not found
 }
 
-// Min returns the lowest matching value, if available. Otherwise returns first value.
-func (heap *receiveLossHeap) Min(sequenceFrom, sequenceTo uint32) (result *packet.PacketID) {
-	heap.RLock()
-	defer heap.RUnlock()
-
-	for n := range heap.list {
-		if heap.list[n].packetID.Seq >= sequenceFrom && heap.list[n].packetID.Seq < sequenceTo {
-			if result == nil || heap.list[n].packetID.Seq < result.Seq {
-				result = &heap.list[n].packetID
-			}
-		}
-	}
-
-	return result
-}
-
 // RemoveRange removes all packets that are within the given range. Check is from >= and to <.
-func (heap *receiveLossHeap) RemoveRange(sequenceFrom, sequenceTo uint32) {
+func (heap *receiveLossHeap) RemoveRange(sequenceFrom, sequenceTo packet.PacketID) {
 	heap.Lock()
 	defer heap.Unlock()
 
 	var newList []recvLossEntry
 
 	for n := range heap.list {
-		if !(heap.list[n].packetID.Seq >= sequenceFrom && heap.list[n].packetID.Seq < sequenceTo) {
+		if !(heap.list[n].packetID.IsBiggerEqual(sequenceFrom) && heap.list[n].packetID.IsLess(sequenceTo)) {
 			newList = append(newList, heap.list[n])
 		}
 	}

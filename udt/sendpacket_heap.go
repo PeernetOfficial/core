@@ -73,14 +73,14 @@ func (heap *sendPacketHeap) Find(sequence uint32) (result *sendPacketEntry) {
 }
 
 // RemoveRange removes all packets that are within the given range. Check is from >= and to <.
-func (heap *sendPacketHeap) RemoveRange(sequenceFrom, sequenceTo uint32) {
+func (heap *sendPacketHeap) RemoveRange(sequenceFrom, sequenceTo packet.PacketID) {
 	heap.Lock()
 	defer heap.Unlock()
 
 	var newList []sendPacketEntry
 
 	for n := range heap.list {
-		if !(heap.list[n].pkt.Seq.Seq >= sequenceFrom && heap.list[n].pkt.Seq.Seq < sequenceTo) {
+		if !(heap.list[n].pkt.Seq.IsBiggerEqual(sequenceFrom) && heap.list[n].pkt.Seq.IsLess(sequenceTo)) {
 			newList = append(newList, heap.list[n])
 		}
 	}
@@ -89,12 +89,12 @@ func (heap *sendPacketHeap) RemoveRange(sequenceFrom, sequenceTo uint32) {
 }
 
 // Range returns all packets that are within the given range. Check is from >= and to <.
-func (heap *sendPacketHeap) Range(sequenceFrom, sequenceTo uint32) (result []sendPacketEntry) {
+func (heap *sendPacketHeap) Range(sequenceFrom, sequenceTo packet.PacketID) (result []sendPacketEntry) {
 	heap.RLock()
 	defer heap.RUnlock()
 
 	for n := range heap.list {
-		if heap.list[n].pkt.Seq.Seq >= sequenceFrom && heap.list[n].pkt.Seq.Seq < sequenceTo {
+		if heap.list[n].pkt.Seq.IsBiggerEqual(sequenceFrom) && heap.list[n].pkt.Seq.IsLess(sequenceTo) {
 			result = append(result, heap.list[n])
 		}
 	}

@@ -372,10 +372,10 @@ func (s *udtSocketSend) ingestAck(p *packet.AckPacket, now time.Time) {
 	// Update estimated link capacity: B = (B * 7 + b) / 8, where b is the value carried in the ACK.
 
 	// Update sender's list of packets that have been sent but not yet acknowledged
-	s.sendPktPend.RemoveRange(oldAckSeq.Seq, p.PktSeqHi.Seq)
+	s.sendPktPend.RemoveRange(oldAckSeq, p.PktSeqHi)
 
 	// Update sender's loss list (by removing all those that has been acknowledged).
-	s.sendLossList.RemoveRange(oldAckSeq.Seq, p.PktSeqHi.Seq)
+	s.sendLossList.RemoveRange(oldAckSeq, p.PktSeqHi)
 }
 
 // ingestNak is called to process an NAK packet
