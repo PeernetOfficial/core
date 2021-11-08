@@ -116,7 +116,7 @@ func (s *udtSocketSend) goSendEvent() {
 		case msg, ok := <-thisMsgChan: // nil if we can't process outgoing messages right now
 			if !ok {
 				s.sendPacket <- &packet.ShutdownPacket{}
-				s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: !s.socket.isServer}
+				s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: !s.socket.isServer, reason: TerminateReasonCannotProcessOutgoing}
 				return
 			}
 			s.msgPartialSend = &msg
@@ -334,10 +334,10 @@ func (s *udtSocketSend) sendDataPacket(dp sendPacketEntry, isResend bool) {
 	}
 }
 
-func (s *udtSocketSend) assertValidSentPktID(pktType string, pktSeq packet.PacketID) bool {
+func (s *udtSocketSend) assertValidSentPktID(pktType string, pktSeq packet.PacketID, reason int) bool {
 	if s.sendPktSeq.BlindDiff(pktSeq) < 0 {
 		s.shutdownEvent <- shutdownMessage{sockState: sockStateCorrupted, permitLinger: false,
-			err: fmt.Errorf("FAULT: Received an %s for packet %d, but the largest packet we've sent has been %d", pktType, pktSeq.Seq, s.sendPktSeq.Seq)}
+			err: fmt.Errorf("FAULT: Received an %s for packet %d, but the largest packet we've sent has been %d", pktType, pktSeq.Seq, s.sendPktSeq.Seq), reason: reason}
 		return false
 	}
 	return true
@@ -350,7 +350,7 @@ func (s *udtSocketSend) ingestAck(p *packet.AckPacket, now time.Time) {
 	// Send back an ACK2 with the same ACK sequence number in this ACK.
 	s.sendPacket <- &packet.Ack2Packet{AckSeqNo: p.AckSeqNo}
 
-	if !s.assertValidSentPktID("ACK", p.PktSeqHi) || p.PktSeqHi.BlindDiff(s.recvAckSeq) <= 0 {
+	if !s.assertValidSentPktID("ACK", p.PktSeqHi, TerminateReasonInvalidPacketIDAck) || p.PktSeqHi.BlindDiff(s.recvAckSeq) <= 0 {
 		return
 	}
 
@@ -388,20 +388,20 @@ func (s *udtSocketSend) ingestNak(p *packet.NakPacket, now time.Time) {
 			thisPktID := packet.PacketID{Seq: thisEntry & 0x7FFFFFFF}
 			if idx+1 == clen {
 				s.shutdownEvent <- shutdownMessage{sockState: sockStateCorrupted, permitLinger: false,
-					err: fmt.Errorf("FAULT: While unpacking a NAK, the last entry (%x) was describing a start-of-range", thisEntry)}
+					err: fmt.Errorf("FAULT: While unpacking a NAK, the last entry (%x) was describing a start-of-range", thisEntry), reason: TerminateReasonCorruptPacketNak}
 				return
 			}
-			if !s.assertValidSentPktID("NAK", thisPktID) {
+			if !s.assertValidSentPktID("NAK", thisPktID, TerminateReasonInvalidPacketIDNak) {
 				return
 			}
 			lastEntry := p.CmpLossInfo[idx+1]
 			if lastEntry&0x80000000 != 0 {
 				s.shutdownEvent <- shutdownMessage{sockState: sockStateCorrupted, permitLinger: false,
-					err: fmt.Errorf("FAULT: While unpacking a NAK, a start-of-range (%x) was followed by another start-of-range (%x)", thisEntry, lastEntry)}
+					err: fmt.Errorf("FAULT: While unpacking a NAK, a start-of-range (%x) was followed by another start-of-range (%x)", thisEntry, lastEntry), reason: TerminateReasonCorruptPacketNak}
 				return
 			}
 			lastPktID := packet.PacketID{Seq: lastEntry}
-			if !s.assertValidSentPktID("NAK", lastPktID) {
+			if !s.assertValidSentPktID("NAK", lastPktID, TerminateReasonInvalidPacketIDNak) {
 				return
 			}
 			idx++
@@ -411,7 +411,7 @@ func (s *udtSocketSend) ingestNak(p *packet.NakPacket, now time.Time) {
 			}
 		} else {
 			thisPktID := packet.PacketID{Seq: thisEntry}
-			if !s.assertValidSentPktID("NAK", thisPktID) {
+			if !s.assertValidSentPktID("NAK", thisPktID, TerminateReasonInvalidPacketIDNak) {
 				return
 			}
 			s.sendLossList.Add(recvLossEntry{packetID: thisPktID})
@@ -457,7 +457,7 @@ func (s *udtSocketSend) expEvent(currTime time.Time) {
 	// timeout: at least 16 expirations and must be greater than 10 seconds
 	if (s.expCount > 16) && (currTime.Sub(s.lastRecvTime) > 5*time.Second) {
 		// Connection is broken.
-		s.shutdownEvent <- shutdownMessage{sockState: sockStateTimeout, permitLinger: true}
+		s.shutdownEvent <- shutdownMessage{sockState: sockStateTimeout, permitLinger: true, reason: TerminateReasonExpireTimer}
 		return
 	}
 

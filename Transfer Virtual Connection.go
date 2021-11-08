@@ -33,23 +33,23 @@ type virtualPacketConn struct {
 	outgoingData chan []byte
 
 	// internal data
-	closed        bool
-	terminateChan chan struct{}
-	reason        int // Reason why it was closed
+	closed            bool
+	terminationSignal chan struct{} // The termination signal shall be used by the underlying protocol to detect upstream termination.
+	reason            int           // Reason why it was closed
 	sync.Mutex
 }
 
 // newVirtualPacketConn creates a new virtual connection (both incomign and outgoing).
 func newVirtualPacketConn(peer *PeerInfo, protocol uint8, hash []byte, offset, limit uint64) (v *virtualPacketConn) {
 	v = &virtualPacketConn{
-		peer:             peer,
-		transferProtocol: protocol,
-		hash:             hash,
-		offset:           offset,
-		limit:            limit,
-		incomingData:     make(chan []byte, 100),
-		outgoingData:     make(chan []byte),
-		terminateChan:    make(chan struct{}),
+		peer:              peer,
+		transferProtocol:  protocol,
+		hash:              hash,
+		offset:            offset,
+		limit:             limit,
+		incomingData:      make(chan []byte, 100),
+		outgoingData:      make(chan []byte),
+		terminationSignal: make(chan struct{}),
 	}
 
 	go v.writeForward()
@@ -64,7 +64,7 @@ func (v *virtualPacketConn) writeForward() {
 		case data := <-v.outgoingData:
 			v.peer.sendTransfer(data, protocol.TransferControlActive, v.transferProtocol, v.hash, v.offset, v.limit, v.sequenceNumber)
 
-		case <-v.terminateChan:
+		case <-v.terminationSignal:
 			return
 		}
 	}
@@ -79,12 +79,13 @@ func (v *virtualPacketConn) receiveData(data []byte) {
 	// pass the data on
 	select {
 	case v.incomingData <- data:
-	case <-v.terminateChan:
+	case <-v.terminationSignal:
 	}
+	// TODO: Add read timeout
 }
 
 // Terminate closes the connection. Do not call this function manually. Use the underlying protocol's function to close the connection.
-// Reason: 404 = Remote peer does not store file (upstream), 1 = Transfer Protocol indicated closing (downstream), 2 = Remote termination signal (upstream), 3 = Sequence invalidation or expiration (upstream)
+// Reason: 404 = Remote peer does not store file (upstream), 2 = Remote termination signal (upstream), 3 = Sequence invalidation or expiration (upstream), 1000+ = Transfer protocol indicated closing (downstream)
 func (v *virtualPacketConn) Terminate(reason int) (err error) {
 	v.Lock()
 	defer v.Unlock()
@@ -95,7 +96,7 @@ func (v *virtualPacketConn) Terminate(reason int) (err error) {
 
 	v.closed = true
 	v.reason = reason
-	close(v.terminateChan)
+	close(v.terminationSignal)
 
 	return
 }
@@ -112,7 +113,20 @@ func (v *virtualPacketConn) sequenceTerminate() {
 
 // Close provides a Close function to be called by the underlying transfer protocol.
 // Do not call the function manually; otherwise the underlying transfer protocol may not have time to send a termination message (and the remote peer would subsequently try to reconnect).
-func (v *virtualPacketConn) Close() (err error) {
+// Rather, use the underlying transfer protocol's close function.
+func (v *virtualPacketConn) Close(reason int) (err error) {
 	networks.Sequences.InvalidateSequence(v.peer.PublicKey, v.sequenceNumber, true)
-	return v.Terminate(1)
+	return v.Terminate(reason)
+}
+
+// CloseLinger is to be called by the underlying transfer protocol when it will close the socket soon after lingering around.
+// Lingering happens to resend packets at the end of transfer, when it is not immediately known whether the remote peer received all packets.
+func (v *virtualPacketConn) CloseLinger(reason int) (err error) {
+	v.reason = reason
+	return nil
+}
+
+// GetTerminateReason returns the termination reason. 0 = Not yet terminated.
+func (v *virtualPacketConn) GetTerminateReason() int {
+	return v.reason
 }

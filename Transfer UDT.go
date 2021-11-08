@@ -49,7 +49,7 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, fileSize uint64, offset,
 
 	// start UDT sender
 	// Set streaming to true, otherwise udtSocket.Read returns the error "Message truncated" in case the reader has a smaller buffer.
-	udtConn, err := udt.DialUDT(udtConfig, virtualConnection, virtualConnection.incomingData, virtualConnection.outgoingData, virtualConnection.terminateChan, true)
+	udtConn, err := udt.DialUDT(udtConfig, virtualConnection, virtualConnection.incomingData, virtualConnection.outgoingData, virtualConnection.terminationSignal, true)
 	if err != nil {
 		return err
 	}
@@ -72,35 +72,36 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, fileSize uint64, offset,
 }
 
 // FileTransferRequestUDT creates a UDT server listening for incoming data transfer and requests a file transfer from a remote peer.
-func (peer *PeerInfo) FileTransferRequestUDT(hash []byte, offset, limit uint64) (udtConn net.Conn, err error) {
-	virtualConnection := newVirtualPacketConn(peer, 0, hash, offset, limit)
+// The caller must call udtConn.Close() when done. Do not use any of the closing functions of virtualConn.
+func (peer *PeerInfo) FileTransferRequestUDT(hash []byte, offset, limit uint64) (udtConn net.Conn, virtualConn *virtualPacketConn, err error) {
+	virtualConn = newVirtualPacketConn(peer, 0, hash, offset, limit)
 
 	// new sequence
-	sequence := networks.Sequences.NewSequenceBi(peer.PublicKey, &peer.messageSequence, virtualConnection, transferSequenceTimeout, virtualConnection.sequenceTerminate)
+	sequence := networks.Sequences.NewSequenceBi(peer.PublicKey, &peer.messageSequence, virtualConn, transferSequenceTimeout, virtualConn.sequenceTerminate)
 	if sequence == nil {
-		return nil, errors.New("cannot acquire sequence")
+		return nil, nil, errors.New("cannot acquire sequence")
 	}
-	virtualConnection.sequenceNumber = sequence.SequenceNumber
+	virtualConn.sequenceNumber = sequence.SequenceNumber
 
 	udtConfig := udt.DefaultConfig()
 	udtConfig.MaxPacketSize = protocol.TransferMaxEmbedSize
 
 	// start UDT receiver
-	udtListener := udt.ListenUDT(udtConfig, virtualConnection, virtualConnection.incomingData, virtualConnection.outgoingData, virtualConnection.terminateChan)
+	udtListener := udt.ListenUDT(udtConfig, virtualConn, virtualConn.incomingData, virtualConn.outgoingData, virtualConn.terminationSignal)
 
 	// request file transfer
-	peer.sendTransfer(nil, protocol.TransferControlRequestStart, virtualConnection.transferProtocol, hash, offset, limit, virtualConnection.sequenceNumber)
+	peer.sendTransfer(nil, protocol.TransferControlRequestStart, virtualConn.transferProtocol, hash, offset, limit, virtualConn.sequenceNumber)
 
 	// accept the connection
 	udtConn, err = udtListener.Accept()
 	if err != nil {
 		udtListener.Close()
-		return nil, err
+		return nil, nil, err
 	}
 
 	// We do not close the UDT listener here. It should automatically close after udtConn is closed.
 
-	return udtConn, nil
+	return udtConn, virtualConn, nil
 }
 
 // FileTransferReadHeaderUDT starts reading a file via UDT. It will only read the header and keeps the connection open.
