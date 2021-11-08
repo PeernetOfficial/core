@@ -91,12 +91,12 @@ func (heap *receiveLossHeap) RemoveRange(sequenceFrom, sequenceTo packet.PacketI
 }
 
 // Range returns all packets that are within the given range. Check is from >= and to <.
-func (heap *receiveLossHeap) Range(sequenceFrom, sequenceTo uint32) (result []recvLossEntry) {
+func (heap *receiveLossHeap) Range(sequenceFrom, sequenceTo packet.PacketID) (result []recvLossEntry) {
 	heap.RLock()
 	defer heap.RUnlock()
 
 	for n := range heap.list {
-		if heap.list[n].packetID.Seq >= sequenceFrom && heap.list[n].packetID.Seq < sequenceTo {
+		if heap.list[n].packetID.IsBiggerEqual(sequenceFrom) && heap.list[n].packetID.IsLess(sequenceTo) {
 			result = append(result, heap.list[n])
 		}
 	}
