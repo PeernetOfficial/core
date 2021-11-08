@@ -2,6 +2,7 @@ package udt
 
 import (
 	"errors"
+	"io"
 	"net"
 	"sync"
 	"syscall"
@@ -141,6 +142,9 @@ func (s *udtSocket) fetchReadPacket(blocking bool) ([]byte, error) {
 			}
 			select {
 			case result = <-s.messageIn:
+				if result == nil { // nil result indicates EOF
+					return nil, io.EOF
+				}
 				return result, nil
 			case _, ok := <-deadline:
 				if !ok {
@@ -158,6 +162,9 @@ func (s *udtSocket) fetchReadPacket(blocking bool) ([]byte, error) {
 	default:
 		// ok we've read some stuff and there's nothing immediately available
 		return nil, nil
+	}
+	if result == nil { // nil result indicates EOF. Using this instead of socket state allows to drain any buffered data first.
+		return nil, io.EOF
 	}
 	return result, nil
 }
