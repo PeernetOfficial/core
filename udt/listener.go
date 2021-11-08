@@ -4,7 +4,6 @@ import (
 	"container/heap"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -62,7 +61,7 @@ func (l *listener) checkValidHandshake(m *multiplexer, p *packet.HandshakePacket
 }
 
 func (l *listener) rejectHandshake(m *multiplexer, hsPacket *packet.HandshakePacket) {
-	fmt.Printf("(listener) sending handshake(reject) (id=%d)\n", hsPacket.SockID)
+	//fmt.Printf("(listener) sending handshake(reject) (id=%d)\n", hsPacket.SockID)
 	m.sendPacket(hsPacket.SockID, 0, &packet.HandshakePacket{
 		UdtVer:   hsPacket.UdtVer,
 		SockType: hsPacket.SockType,
@@ -72,7 +71,7 @@ func (l *listener) rejectHandshake(m *multiplexer, hsPacket *packet.HandshakePac
 
 func (l *listener) readHandshake(m *multiplexer, hsPacket *packet.HandshakePacket) bool {
 	if hsPacket.ReqType == packet.HsRequest {
-		fmt.Printf("(listener) sending handshake(request)  (id=%d)\n", hsPacket.SockID)
+		//fmt.Printf("(listener) sending handshake(request)  (id=%d)\n", hsPacket.SockID)
 
 		m.sendPacket(hsPacket.SockID, 0, &packet.HandshakePacket{
 			UdtVer:     hsPacket.UdtVer,
@@ -111,19 +110,19 @@ func (l *listener) readHandshake(m *multiplexer, hsPacket *packet.HandshakePacke
 	l.acceptHistProt.Unlock()
 
 	if !l.config.CanAcceptDgram && hsPacket.SockType == packet.TypeDGRAM {
-		fmt.Printf("Refusing new socket creation from listener requesting DGRAM\n")
+		//fmt.Printf("Refusing new socket creation from listener requesting DGRAM\n")
 		l.rejectHandshake(m, hsPacket)
 		return false
 	}
 	if !l.config.CanAcceptStream && hsPacket.SockType == packet.TypeSTREAM {
-		fmt.Printf("Refusing new socket creation from listener requesting STREAM\n")
+		//fmt.Printf("Refusing new socket creation from listener requesting STREAM\n")
 		l.rejectHandshake(m, hsPacket)
 		return false
 	}
 	if l.config.CanAccept != nil {
 		err := l.config.CanAccept(hsPacket)
 		if err != nil {
-			fmt.Printf("New socket creation from listener rejected by config: %s\n", err.Error())
+			//fmt.Printf("New socket creation from listener rejected by config: %s\n", err.Error())
 			l.rejectHandshake(m, hsPacket)
 			return false
 		}

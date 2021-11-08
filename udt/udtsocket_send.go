@@ -238,7 +238,7 @@ func (s *udtSocketSend) processSendLoss() bool {
 		return false
 	}
 
-	for _, entry := range s.sendLossList.Range(s.recvAckSeq.Seq, s.sendPktSeq.Seq) {
+	for _, entry := range s.sendLossList.Range(s.recvAckSeq, s.sendPktSeq) {
 		dp := s.sendPktPend.Find(entry.packetID.Seq)
 		if dp == nil {
 			// can't find record of this packet, not much we can do really
@@ -372,12 +372,13 @@ func (s *udtSocketSend) ingestAck(p *packet.AckPacket, now time.Time) {
 // ingestNak is called to process an NAK packet
 func (s *udtSocketSend) ingestNak(p *packet.NakPacket, now time.Time) {
 	var lossList []packet.PacketID
-	clen := len(p.CmpLossInfo)
-	for idx := 0; idx < clen; idx++ {
-		thisEntry := p.CmpLossInfo[idx]
+
+	for n := 0; n < len(p.CmpLossInfo); n++ {
+		thisEntry := p.CmpLossInfo[n]
+
 		if thisEntry&0x80000000 != 0 {
 			thisPktID := packet.PacketID{Seq: thisEntry & 0x7FFFFFFF}
-			if idx+1 == clen {
+			if n+1 == len(p.CmpLossInfo) {
 				s.shutdownEvent <- shutdownMessage{sockState: sockStateCorrupted, permitLinger: false,
 					err: fmt.Errorf("FAULT: While unpacking a NAK, the last entry (%x) was describing a start-of-range", thisEntry), reason: TerminateReasonCorruptPacketNak}
 				return
@@ -385,7 +386,7 @@ func (s *udtSocketSend) ingestNak(p *packet.NakPacket, now time.Time) {
 			if !s.assertValidSentPktID("NAK", thisPktID, TerminateReasonInvalidPacketIDNak) {
 				return
 			}
-			lastEntry := p.CmpLossInfo[idx+1]
+			lastEntry := p.CmpLossInfo[n+1]
 			if lastEntry&0x80000000 != 0 {
 				s.shutdownEvent <- shutdownMessage{sockState: sockStateCorrupted, permitLinger: false,
 					err: fmt.Errorf("FAULT: While unpacking a NAK, a start-of-range (%x) was followed by another start-of-range (%x)", thisEntry, lastEntry), reason: TerminateReasonCorruptPacketNak}
@@ -395,7 +396,7 @@ func (s *udtSocketSend) ingestNak(p *packet.NakPacket, now time.Time) {
 			if !s.assertValidSentPktID("NAK", lastPktID, TerminateReasonInvalidPacketIDNak) {
 				return
 			}
-			idx++
+			n++
 			for span := thisPktID; span != lastPktID; span.Incr() {
 				s.sendLossList.Add(recvLossEntry{packetID: packet.PacketID{Seq: span.Seq}})
 				lossList = append(lossList, packet.PacketID{Seq: span.Seq})
