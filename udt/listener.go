@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -48,7 +47,7 @@ func (l *listener) Close() (err error) {
 	close(a)
 	close(c)
 
-	l.m.closer.Close()
+	l.m.closer.Close(TerminateReasonListenerClosed)
 	return nil
 }
 
@@ -163,7 +162,7 @@ func (l *listener) readHandshake(m *multiplexer, hsPacket *packet.HandshakePacke
 }
 
 // ListenUDT listens for incoming UDT connections using the existing provided packet connection. It creates a UDT server.
-func ListenUDT(config *Config, closer io.Closer, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}) net.Listener {
+func ListenUDT(config *Config, closer Closer, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}) net.Listener {
 	m := newMultiplexer(closer, config.MaxPacketSize, incomingData, outgoingData, terminationSignal)
 
 	l := &listener{

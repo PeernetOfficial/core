@@ -204,7 +204,7 @@ func PeerConnectPublicKey(publicKey *btcec.PublicKey, timeout time.Duration) (pe
 	}
 
 	// otherwise not found :(
-	return nil, errors.New("peer not found :(")
+	return nil, errors.New("peer not found")
 }
 
 // PeerConnectNode tries to connect via the node ID
@@ -218,7 +218,8 @@ func PeerConnectNode(nodeID []byte, timeout time.Duration) (peer *core.PeerInfo,
 		return peer, nil
 	}
 
-	return nil, nil
+	// otherwise not found :(
+	return nil, errors.New("peer not found")
 }
 
 // FileStartReader providers a reader to a remote file. The reader must be closed by the caller.
@@ -232,7 +233,7 @@ func FileStartReader(peer *core.PeerInfo, hash []byte, offset, limit uint64, can
 		return nil, 0, 0, errors.New("no valid connection to peer")
 	}
 
-	udtConn, err := peer.FileTransferRequestUDT(hash, offset, limit)
+	udtConn, _, err := peer.FileTransferRequestUDT(hash, offset, limit)
 	if err != nil {
 		return nil, 0, 0, err
 	}

@@ -4,7 +4,6 @@ package udt
 
 import (
 	"fmt"
-	"io"
 	"math/rand"
 
 	"github.com/PeernetOfficial/core/udt/packet"
@@ -19,11 +18,11 @@ type multiplexer struct {
 	incomingData      <-chan []byte   // source to read packets from
 	outgoingData      chan<- []byte   // destination to send packets to
 	terminationSignal <-chan struct{} // external termination signal to watch
-	closer            io.Closer       // external closer to call in case the local socket/listener closes
+	closer            Closer          // external closer to call in case the local socket/listener closes
 }
 
 // The closer is called when the socket/listener closes. The terminationSignal is an external (upstream) signal to watch for.
-func newMultiplexer(closer io.Closer, maxPacketSize uint, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}) (m *multiplexer) {
+func newMultiplexer(closer Closer, maxPacketSize uint, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}) (m *multiplexer) {
 	m = &multiplexer{
 		maxPacketSize:     maxPacketSize,
 		closer:            closer,

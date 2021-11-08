@@ -301,7 +301,7 @@ func (s *udtSocketRecv) reassemblePacketPiecesDatagram(p *packet.DataPacket) (pi
 			nextBoundary, _, nextMsg := nextPiece.pkt.GetMessageData()
 			if nextMsg != msgID {
 				// ...oops? previous piece isn't in the same message
-				break
+				return nil, false
 			}
 			pieces = append(pieces, nextPiece.pkt)
 			if nextBoundary == packet.MbLast {

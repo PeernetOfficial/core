@@ -38,6 +38,7 @@ type shutdownMessage struct {
 	sockState    sockState
 	permitLinger bool
 	err          error
+	reason       int
 }
 
 /*
@@ -463,7 +464,7 @@ func (s *udtSocket) goManageConnection() {
 	for {
 		select {
 		case <-s.lingerTimer: // linger timer expired, shut everything down
-			s.shutdown(sockStateClosed, false, nil)
+			s.shutdown(sockStateClosed, false, nil, TerminateReasonLingerTimerExpired)
 			return
 		case <-s.sockClosed:
 			return
@@ -473,9 +474,9 @@ func (s *udtSocket) goManageConnection() {
 			//fmt.Printf("(id=%d) sending %s  (id=%d)\n", s.sockID, packet.PacketTypeName(p.PacketType()), s.farSockID)
 			s.m.sendPacket(s.farSockID, ts, p)
 		case sd := <-s.shutdownEvent: // connection shut down
-			s.shutdown(sd.sockState, sd.permitLinger, sd.err)
+			s.shutdown(sd.sockState, sd.permitLinger, sd.err, sd.reason)
 		case <-s.connTimeout: // connection timed out
-			s.shutdown(sockStateTimeout, true, nil)
+			s.shutdown(sockStateTimeout, true, nil, TerminateReasonConnectTimeout)
 		case <-s.connRetry: // resend connection attempt
 			s.connRetry = nil
 			switch s.sockState {
@@ -596,7 +597,7 @@ func (s *udtSocket) readHandshake(m *multiplexer, p *packet.HandshakePacket) boo
 	return false
 }
 
-func (s *udtSocket) shutdown(sockState sockState, permitLinger bool, err error) {
+func (s *udtSocket) shutdown(sockState sockState, permitLinger bool, err error, reason int) {
 	if !s.isOpen() {
 		return // already closed
 	}
@@ -612,6 +613,7 @@ func (s *udtSocket) shutdown(sockState sockState, permitLinger bool, err error) 
 			linger = DefaultConfig().LingerTime
 		}
 		s.lingerTimer = time.After(linger)
+		s.m.closer.CloseLinger(reason)
 		return
 	}
 
@@ -627,7 +629,7 @@ func (s *udtSocket) shutdown(sockState sockState, permitLinger bool, err error) 
 	close(s.sockClosed)
 	close(s.recvEvent)
 
-	s.m.closer.Close()
+	s.m.closer.Close(reason)
 
 	s.messageIn <- nil
 }
@@ -688,7 +690,7 @@ func (s *udtSocket) readPacket(m *multiplexer, p packet.Packet) {
 	case *packet.HandshakePacket: // sent by both peers
 		s.readHandshake(m, sp)
 	case *packet.ShutdownPacket: // sent by either peer
-		s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: s.isServer} // if client tells us done, it is done.
+		s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: s.isServer, reason: TerminateReasonRemoteSentShutdown} // if client tells us done, it is done.
 	case *packet.AckPacket, *packet.NakPacket: // receiver -> sender
 		s.sendEvent <- recvPktEvent{pkt: p, now: now}
 	case *packet.UserDefControlPacket:
