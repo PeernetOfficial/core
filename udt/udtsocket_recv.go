@@ -90,12 +90,6 @@ ACK is used to trigger an acknowledgement (ACK). Its period is set by
    NAK is used to trigger a negative acknowledgement (NAK). Its period
    is dynamically updated to 4 * RTT_+ RTTVar + SYN, where RTTVar is the
    variance of RTT samples.
-
-   EXP is used to trigger data packets retransmission and maintain
-   connection status. Its period is dynamically updated to N * (4 * RTT
-   + RTTVar + SYN), where N is the number of continuous timeouts. To
-   avoid unnecessary timeout, a minimum threshold (e.g., 0.5 second)
-   should be used in the implementation.
 */
 
 // ingestAck2 is called to process an ACK2 packet

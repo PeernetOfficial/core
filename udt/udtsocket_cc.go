@@ -212,8 +212,3 @@ func (s *udtSocketCc) GetMSS() uint {
 func (s *udtSocketCc) SetACKPeriod(ack time.Duration) {
 	s.socket.recv.ackPeriod.set(ack)
 }
-
-// SetRTOPeriod overrides the default EXP timeout calculations waiting for data from the peer
-func (s *udtSocketCc) SetRTOPeriod(rto time.Duration) {
-	s.socket.send.rtoPeriod.set(rto)
-}

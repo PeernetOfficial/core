@@ -31,7 +31,6 @@ const (
 	TerminateReasonInvalidPacketIDAck    = 1005 // Send: Invalid packet ID received in ACK message.
 	TerminateReasonInvalidPacketIDNak    = 1006 // Send: Invalid packet ID received in NAK message.
 	TerminateReasonCorruptPacketNak      = 1007 // Send: Invalid NAK packet received.
-	TerminateReasonExpireTimer           = 1008 // Send: EXP timer expired.
 )
 
 // DialUDT establishes an outbound UDT connection using the existing provided packet connection. It creates a UDT client.
