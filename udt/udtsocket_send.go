@@ -34,24 +34,20 @@ type udtSocketSend struct {
 	sendPktSeq     packet.PacketID  // the current packet sequence number
 	msgPartialSend *sendMessage     // when a message can only partially fit in a socket, this is the remainder
 	msgSeq         uint32           // the current message sequence number
-	expCount       uint             // number of continuous EXP timeouts.
 	lastRecvTime   time.Time        // the last time we've heard something from the remote system
 	recvAckSeq     packet.PacketID  // largest packetID we've received an ACK from
 	sendLossList   *receiveLossHeap // loss list
 	sndPeriod      atomicDuration   // (set by congestion control) delay between sending packets
-	rtoPeriod      atomicDuration   // (set by congestion control) override of EXP timer calculations
 	congestWindow  atomicUint32     // (set by congestion control) size of the current congestion window (in packets)
 	flowWindowSize uint             // negotiated maximum number of unacknowledged packets (in packets)
 
 	// timers
-	sndEvent      <-chan time.Time // if a packet is recently sent, this timer fires when SND completes
-	expTimerEvent <-chan time.Time // Fires when we haven't heard from the peer in a while
+	sndEvent <-chan time.Time // if a packet is recently sent, this timer fires when SND completes
 }
 
 func newUdtSocketSend(s *udtSocket) *udtSocketSend {
 	ss := &udtSocketSend{
 		socket:         s,
-		expCount:       1,
 		sendPktSeq:     s.initPktSeq,
 		sockClosed:     s.sockClosed,
 		sendEvent:      s.sendEvent,
@@ -63,7 +59,6 @@ func newUdtSocketSend(s *udtSocket) *udtSocketSend {
 		sendPktPend:    createPacketHeap(),
 		sendLossList:   createPacketIDHeap(),
 	}
-	ss.resetEXP(s.created)
 	go ss.goSendEvent()
 	return ss
 }
@@ -125,8 +120,6 @@ func (s *udtSocketSend) goSendEvent() {
 			if !ok {
 				return
 			}
-			s.expCount = 1
-			s.resetEXP(evt.now)
 			switch sp := evt.pkt.(type) {
 			case *packet.AckPacket:
 				s.ingestAck(sp, evt.now)
@@ -138,8 +131,6 @@ func (s *udtSocketSend) goSendEvent() {
 			s.sendState = s.reevalSendState()
 		case _, _ = <-sockClosed:
 			return
-		case now := <-s.expTimerEvent: // EXP event
-			s.expEvent(now)
 		case <-s.sndEvent: // SND event
 			s.sndEvent = nil
 			if s.sendState == sendStateSending {
@@ -430,53 +421,4 @@ func (s *udtSocketSend) ingestCongestion(p *packet.CongestionPacket, now time.Ti
 	// this is very rough (not atomic, doesn't inform congestion) but this is a deprecated message in any case
 	s.sndPeriod.set(s.sndPeriod.get() * 1125 / 1000)
 	//m_iLastDecSeq = s.sendPktSeq
-}
-
-func (s *udtSocketSend) resetEXP(now time.Time) {
-	s.lastRecvTime = now
-
-	var nextExpDurn time.Duration
-	rtoPeriod := s.rtoPeriod.get()
-	if rtoPeriod > 0 {
-		nextExpDurn = rtoPeriod
-	} else {
-		rtt, rttVar := s.socket.getRTT()
-		nextExpDurn = (time.Duration(s.expCount*(rtt+4*rttVar))*time.Microsecond + s.socket.Config.SynTime)
-		minExpTime := time.Duration(s.expCount) * minEXPinterval
-		if nextExpDurn < minExpTime {
-			nextExpDurn = minExpTime
-		}
-	}
-	s.expTimerEvent = time.After(nextExpDurn)
-}
-
-// we've just had the EXP timer expire, see what we can do to recover this
-func (s *udtSocketSend) expEvent(currTime time.Time) {
-
-	// Haven't receive any information from the peer, is it dead?!
-	// timeout: at least 16 expirations and must be greater than 10 seconds
-	if (s.expCount > 16) && (currTime.Sub(s.lastRecvTime) > 5*time.Second) {
-		// Connection is broken.
-		s.shutdownEvent <- shutdownMessage{sockState: sockStateTimeout, permitLinger: true, reason: TerminateReasonExpireTimer}
-		return
-	}
-
-	// sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
-	// recver: Send out a keep-alive packet
-	if s.sendPktPend.Count() > 0 {
-		if s.sendLossList.Count() == 0 {
-			// resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
-			for span := s.recvAckSeq.Add(1); span != s.sendPktSeq.Add(1); span.Incr() {
-				s.sendLossList.Add(recvLossEntry{packetID: packet.PacketID{Seq: span.Seq}})
-			}
-		}
-		s.socket.cong.onTimeout()
-		s.sendState = sendStateProcessDrop // immediately restart transmission
-	} else {
-		s.sendPacket <- &packet.KeepAlivePacket{}
-	}
-
-	s.expCount++
-	// Reset last response time since we just sent a heart-beat.
-	s.resetEXP(currTime)
 }

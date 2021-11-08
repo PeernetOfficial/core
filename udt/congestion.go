@@ -37,9 +37,6 @@ type CongestionControlParms interface {
 
 	// SetACKPerid sets the time between ACKs sent to the peer
 	SetACKPeriod(time.Duration)
-
-	// SetRTOPeriod overrides the default EXP timeout calculations waiting for data from the peer
-	SetRTOPeriod(time.Duration)
 }
 
 // CongestionControl controls how timing is handled and UDT connections tuned
