@@ -120,15 +120,15 @@ func PacketEncrypt(senderPrivateKey *btcec.PrivateKey, receiverPublicKey *btcec.
 }
 
 func packetGarbage(packetLength int) (random []byte) {
-	// Align maximum length at 508 bytes (UDP minimum no fragmentation) and 1472 bytes (MTU).
+	// Align maximum length at 508 bytes (UDP minimum no fragmentation) and at a relatively safe MTU.
 	maxLength := maxRandomGarbage
 	switch {
-	case packetLength == 508, packetLength == 1472:
+	case packetLength == 508, packetLength == internetSafeMTU:
 		return nil
 	case packetLength < 508 && (508-packetLength) < maxRandomGarbage:
 		maxLength = packetLength - 508
-	case packetLength < 1472 && (1472-packetLength) < maxRandomGarbage:
-		maxLength = packetLength - 1472
+	case packetLength < internetSafeMTU && (internetSafeMTU-packetLength) < maxRandomGarbage:
+		maxLength = packetLength - internetSafeMTU
 	}
 
 	b := make([]byte, rand.Intn(maxLength))
