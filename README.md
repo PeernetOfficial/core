@@ -110,6 +110,14 @@ If a bucket is full when a new peer connects `ShouldEvict` is called. It compare
 * The default reply timeout (round-trip time) is 20 seconds set in `ReplyTimeout`. This applies to Response and Pong messages. The RTT timeout implies an average minimum connection speed between peers of about 6.4 KB/s for files of 64 KB size.
 * Separate timeouts for file transfers will be established.
 
+### MTU
+
+The default MTU is set to 1280 bytes (see `internetSafeMTU` constant). This value (and by extension the lower value `TransferMaxEmbedSize` for file transfer) is chosen for safe transfer, not for highest performance. Different environments (IPv4, IPv6, Ethernet, Internet) have different smallest and common supported MTUs. MTU negotiation or detection is currently not implemented.
+
+### File Transfer Performance
+
+The packet encryption/signing overhead appears to require significant CPU overhead during file transfer. This can be improved in the future by defining special file transfer packets that start with a UUID and not the regular protocol header. It would reduce processing time, increase payload data per packet, and therefore the overall transfer speed. A symmetric encryption algorithm (and key negotiation during file transfer initiation) would be required to not lose the security benefit.
+
 ### Network Listen
 
 Unless specified in the config via `Listen`, it will listen on all network adapters. The default port is 112, but that may be randomized in the future.

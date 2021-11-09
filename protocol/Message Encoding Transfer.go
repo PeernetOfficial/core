@@ -75,7 +75,9 @@ func DecodeTransfer(msg *MessageRaw) (result *MessageTransfer, err error) {
 	return result, nil
 }
 
-// TransferMaxEmbedSize is the maximum size of embedded data inside the Transfer message.
+// TransferMaxEmbedSize is a recommended default upper size of embedded data inside the Transfer message, to be used as MaxPacketSize limit in the embedded protocol.
+// This value is chosen as the lowest denominator of different environments (IPv4, IPv6, Ethernet, Internet) for safe transfer, not for highest performance.
+// The caller may send bigger payloads but may risk that data packets are simply dropped and never arrive. A MTU negotiation or detection could pimp that.
 const TransferMaxEmbedSize = internetSafeMTU - PacketLengthMin - transferPayloadHeaderSize
 
 // EncodeTransfer encodes a transfer message. The embedded packet size must be smaller than TransferMaxEmbedSize.
