@@ -167,7 +167,6 @@ func ReadHashes(hashesFile string) (*fileChunks, error) {
 	// defer the closing of our jsonFile so that we can parse it later on
 	defer jsonFile.Close()
 
-	// read our opened xmlFile as a byte array.
 	byteValue, err := ioutil.ReadAll(jsonFile)
 	if err != nil {
 		return nil, err
