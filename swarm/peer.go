@@ -1,6 +1,6 @@
 // source: https://github.com/veggiedefender/torrent-client/blob/master/peers/peers.go
 
-package torrent
+package swarm
 
 import (
 	"encoding/binary"

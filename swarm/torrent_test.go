@@ -1,4 +1,4 @@
-package torrent
+package swarm
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 // TestSplit ensures the split function is happening as required
 func TestSplit(t *testing.T) {
 	// Splitting Test file with each of 100 kb
-	output, err := Split("TestingFiles/test.pdf", 1.0,"TestingFiles/output/")
+	output, err := Split("TestingFiles/lime.epub", 1.0,"TestingFiles/output/")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()
@@ -22,7 +22,7 @@ func TestSplit(t *testing.T) {
 // Run TestSplit test before this no ensure the lime.epub-hashes file is generated
 // TestReadHashes displays the output of the ReadHashes function
 func TestReadHashes(t *testing.T) {
-	hashes, err := ReadHashes("TestingFiles/output/test.pdf-hashes.txt")
+	hashes, err := ReadHashes("TestingFiles/output/lime.epub-hashes.txt")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()
@@ -32,7 +32,7 @@ func TestReadHashes(t *testing.T) {
 
 // TestFileChunks_Join Joining all chunks into a single file
 func TestFileChunks_Join(t *testing.T) {
-	hashes, err := ReadHashes("TestingFiles/output/test.pdf-hashes.txt")
+	hashes, err := ReadHashes("TestingFiles/output/lime.epub-hashes.txt")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()
