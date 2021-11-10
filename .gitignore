@@ -3,3 +3,8 @@ log.txt
 *debug_bin
 self.*
 test.*
+# Ensuring test case for splitting files does not push
+# result as commit
+torrent/TestingFiles/output
+# This for the GoLand editor 
+.idea/
