@@ -27,7 +27,7 @@ const (
 	TerminateReasonLingerTimerExpired    = 1001 // Socket: The linger timer expired. Use CloseLinger to know the actual closing reason.
 	TerminateReasonConnectTimeout        = 1002 // Socket: The connection timed out when sending the initial handshake.
 	TerminateReasonRemoteSentShutdown    = 1003 // Remote peer sent a shutdown message.
-	TerminateReasonCannotProcessOutgoing = 1004 // Send: Cannot process outgoing messages.
+	TerminateReasonCannotProcessOutgoing = 1004 // Send: Cannot process outgoing messages. Likely closed by caller via udtConn.
 	TerminateReasonInvalidPacketIDAck    = 1005 // Send: Invalid packet ID received in ACK message.
 	TerminateReasonInvalidPacketIDNak    = 1006 // Send: Invalid packet ID received in NAK message.
 	TerminateReasonCorruptPacketNak      = 1007 // Send: Invalid NAK packet received.

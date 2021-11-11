@@ -178,7 +178,7 @@ func (s *udtSocketRecv) ingestData(p *packet.DataPacket, now time.Time) {
 	if seqDiff > 0 {
 		// Sequence is out of order. Received a higher sequence number than what is expected next.
 		for n := uint32(0); n < uint32(seqDiff); n++ {
-			s.recvLossList.Add(recvLossEntry{packetID: packet.PacketID{Seq: (s.nextSequenceExpect.Seq + n) & 0x7FFFFFFF}})
+			s.recvLossList.Add(recvLossEntry{packetID: s.nextSequenceExpect.Add(int32(n))})
 		}
 
 		s.sendNAK(s.nextSequenceExpect.Seq, uint32(seqDiff))
@@ -247,8 +247,8 @@ func (s *udtSocketRecv) reassemblePacketPiecesDatagram(p *packet.DataPacket) (pi
 	case packet.MbLast, packet.MbMiddle:
 		pieceSeq := p.Seq.Add(-1)
 		for {
-			prevPiece := s.recvPktPend.Find(pieceSeq.Seq)
-			if prevPiece == nil {
+			prevPiece, found := s.recvPktPend.Find(pieceSeq.Seq)
+			if !found {
 				// we don't have the previous piece, is it missing?
 				if s.recvLossList.Find(pieceSeq.Seq) != nil {
 					// it's missing, stop processing
@@ -278,8 +278,8 @@ func (s *udtSocketRecv) reassemblePacketPiecesDatagram(p *packet.DataPacket) (pi
 	case packet.MbFirst, packet.MbMiddle:
 		pieceSeq := p.Seq.Add(1)
 		for {
-			nextPiece := s.recvPktPend.Find(pieceSeq.Seq)
-			if nextPiece == nil {
+			nextPiece, found := s.recvPktPend.Find(pieceSeq.Seq)
+			if !found {
 				// we don't have the previous piece, is it missing?
 				if pieceSeq == s.nextSequenceExpect {
 					// hasn't been received yet
@@ -318,7 +318,7 @@ func (s *udtSocketRecv) reassemblePacketPiecesStream(p *packet.DataPacket) (piec
 
 	// find any other packets that are already buffered
 	for nextSeq := p.Seq.Add(1); ; nextSeq.Incr() {
-		if nextPacket := s.recvPktPend.Find(nextSeq.Seq); nextPacket != nil {
+		if nextPacket, found := s.recvPktPend.Find(nextSeq.Seq); found {
 			pieces = append(pieces, nextPacket.pkt)
 		} else {
 			break

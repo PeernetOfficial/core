@@ -24,7 +24,7 @@ type udtSocketSend struct {
 	// channels
 	sockClosed    <-chan struct{}        // closed when socket is closed
 	sendEvent     <-chan recvPktEvent    // sender: ingest the specified packet. Sender is readPacket, receiver is goSendEvent
-	messageOut    <-chan sendMessage     // outbound messages. Sender is client caller (Write), Receiver is goSendEvent. Closed when socket is closed
+	messageOut    <-chan sendMessage     // outbound data messages. Sender is client caller (Write), Receiver is goSendEvent. Closed when socket is closed
 	sendPacket    chan<- packet.Packet   // send a packet out on the wire
 	shutdownEvent chan<- shutdownMessage // channel signals the connection to be shutdown
 	socket        *udtSocket
@@ -32,17 +32,15 @@ type udtSocketSend struct {
 	sendState      sendState        // current sender state
 	sendPktPend    *sendPacketHeap  // list of packets that have been sent but not yet acknowledged
 	sendPktSeq     packet.PacketID  // the current packet sequence number
-	msgPartialSend *sendMessage     // when a message can only partially fit in a socket, this is the remainder
+	msgRemainder   *sendMessage     // when a message can only partially fit in a socket, this is the remainder
 	msgSeq         uint32           // the current message sequence number
+	lastSendTime   time.Time        // the last time we've sent a data packet to the remote system
 	lastRecvTime   time.Time        // the last time we've heard something from the remote system
 	recvAckSeq     packet.PacketID  // largest packetID we've received an ACK from
-	sendLossList   *receiveLossHeap // loss list
+	sendLossList   *receiveLossHeap // loss list. New entries added via incoming NAK.
 	sndPeriod      atomicDuration   // (set by congestion control) delay between sending packets
 	congestWindow  atomicUint32     // (set by congestion control) size of the current congestion window (in packets)
 	flowWindowSize uint             // negotiated maximum number of unacknowledged packets (in packets)
-
-	// timers
-	sndEvent <-chan time.Time // if a packet is recently sent, this timer fires when SND completes
 }
 
 func newUdtSocketSend(s *udtSocket) *udtSocketSend {
@@ -84,39 +82,81 @@ func (s *udtSocketSend) SetPacketSendPeriod(snd time.Duration) {
 	s.sndPeriod.set(snd)
 }
 
+// goSendData loops to send data
 func (s *udtSocketSend) goSendEvent() {
-	sendEvent := s.sendEvent
-	messageOut := s.messageOut
-	sockClosed := s.sockClosed
+	// isSendPeriodExpired returns a channel that will be signaled when a new packet can be sent.
+	isSendPeriodExpired := func() (eventTimer <-chan time.Time) {
+		if s.lastSendTime.IsZero() {
+			return nil
+		}
+
+		sendPeriod := s.sndPeriod.get()
+		if sendPeriod == 0 {
+			return nil
+		}
+
+		diff := time.Since(s.lastSendTime)
+		if diff > sendPeriod {
+			return nil
+		}
+
+		// not waited long enough, return a timer
+		return time.After(diff - sendPeriod)
+	}
+
 	for {
-		thisMsgChan := messageOut
+		// immediately send out remainder?
+		if s.sendState == sendStateSending {
+			s.processDataMsg(s.msgRemainder.content, s.msgRemainder.tim, s.msgRemainder.ttl, false)
+			s.reevalSendState()
+		}
+
+		// use some channels only depending on the current sending state
+		var messageOut <-chan sendMessage
+		var eventTimer <-chan time.Time
 
 		switch s.sendState {
-		case sendStateIdle: // not waiting for anything, can send immediately
-			if s.msgPartialSend != nil { // we have a partial message waiting, try to send more of it now
-				s.processDataMsg(false, messageOut)
+		case sendStateIdle:
+			// Wait for new messages from upstream to send out. No congestion reported downstream.
+			if eventTimer = isSendPeriodExpired(); eventTimer == nil {
+				messageOut = s.messageOut
+			}
+
+		case sendStateSending:
+			if eventTimer = isSendPeriodExpired(); eventTimer == nil {
+				// Note: It probably makes sense to check here s.sendEvent if there is immediately a message, to not delay processing of NAKs.
 				continue
 			}
-		case sendStateProcessDrop: // immediately re-process any drop list requests
-			s.sendState = s.reevalSendState() // try to reconstruct what our state should be if it wasn't sendStateProcessDrop
+
+		case sendStateWaiting:
+			// Destination is full (congested). Do not use event timer, do not check for new messages. Only wait for incoming ACKs.
+
+		case sendStateProcessDrop:
+			// Immediately resend any missing packets. The status will only be updated by incoming ACKs.
 			if !s.processSendLoss() || s.sendPktSeq.Seq%16 == 0 {
 				s.processSendExpire()
 			}
-			continue
-		default:
-			thisMsgChan = nil
 		}
 
+		// wait for a channel to fire
 		select {
-		case msg, ok := <-thisMsgChan: // nil if we can't process outgoing messages right now
+		case msg, ok := <-messageOut: // nil if we can't process outgoing messages right now, which means it will not be selected
+			// new message outgoing
 			if !ok {
 				s.sendPacket <- &packet.ShutdownPacket{}
 				s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: !s.socket.isServer, reason: TerminateReasonCannotProcessOutgoing}
 				return
 			}
-			s.msgPartialSend = &msg
-			s.processDataMsg(true, messageOut)
-		case evt, ok := <-sendEvent:
+
+			s.fillDataToMTU(msg.content, messageOut) // a trick to fill up the packet immediately with data (stream only)
+
+			s.processDataMsg(msg.content, msg.tim, msg.ttl, true)
+
+			s.reevalSendState() // check if congested and update as appropriate
+
+		case <-eventTimer:
+
+		case evt, ok := <-s.sendEvent:
 			if !ok {
 				return
 			}
@@ -128,108 +168,117 @@ func (s *udtSocketSend) goSendEvent() {
 			case *packet.CongestionPacket:
 				s.ingestCongestion(sp, evt.now)
 			}
-			s.sendState = s.reevalSendState()
-		case _, _ = <-sockClosed:
+
+		case <-s.sockClosed:
 			return
-		case <-s.sndEvent: // SND event
-			s.sndEvent = nil
-			if s.sendState == sendStateSending {
-				s.sendState = s.reevalSendState()
-				if !s.processSendLoss() || s.sendPktSeq.Seq%16 == 0 {
-					s.processSendExpire()
-				}
-			}
 		}
 	}
 }
 
+// reevalSendState updates the send state to idle/send/wait as appropriate.
 func (s *udtSocketSend) reevalSendState() sendState {
-	if s.sndEvent != nil {
-		return sendStateSending
-	}
-
 	// Do we have too many unacknowledged packets for us to send any more?
 	cwnd := uint(s.congestWindow.get())
 	if cwnd > s.flowWindowSize {
 		cwnd = s.flowWindowSize
 	}
 	if uint(s.sendPktPend.Count()) > cwnd {
-		return sendStateWaiting
+		s.sendState = sendStateWaiting
+		return s.sendState
 	}
 
-	return sendStateIdle
+	// is the current packet data to send empty? Switch to idle in this case.
+	if s.msgRemainder == nil {
+		s.sendState = sendStateIdle
+	} else {
+		s.sendState = sendStateSending
+	}
+
+	return s.sendState
+}
+
+// fillDataToMTU tries to fill up data until MTU is reached if data is immediately available in the channel. Only for streaming socket.
+func (s *udtSocketSend) fillDataToMTU(data []byte, dataChan <-chan sendMessage) {
+	if s.socket.isDatagram {
+		return
+	}
+	mtu := int(s.socket.maxPacketSize) - 16 // 16 = data packet header
+
+	// Continue until the data reaches the max packet length
+	for len(data) < mtu {
+		select {
+		case morePartialSend := <-dataChan:
+			if len(morePartialSend.content) == 0 { // Indicates EOF.
+				return
+			}
+
+			// we have more data, concat and try again
+			data = append(data, morePartialSend.content...)
+			continue
+		default:
+			// nothing immediately available, just send what we have
+			return
+		}
+	}
 }
 
 // try to pack a new data packet and send it
-func (s *udtSocketSend) processDataMsg(isFirst bool, inChan <-chan sendMessage) {
-	for s.msgPartialSend != nil {
-		partialSend := s.msgPartialSend
-		state := packet.MbOnly
-		if s.socket.isDatagram {
-			if isFirst {
-				state = packet.MbFirst
-			} else {
-				state = packet.MbMiddle
-			}
+// The remainder will be stored to s.msgRemainder (otherwise it will be cleared). It is the callers responsibility to continue sending as appropriate (and use isFirst).
+func (s *udtSocketSend) processDataMsg(data []byte, tim time.Time, ttl time.Duration, isFirst bool) {
+	mtu := int(s.socket.maxPacketSize) - 16 // 16 = data packet header
+
+	// determine the MessageBoundary
+	state := packet.MbOnly // for stream
+	if s.socket.isDatagram {
+		switch {
+		case isFirst && len(data) > mtu:
+			state = packet.MbFirst
+		case isFirst && len(data) <= mtu:
+			state = packet.MbOnly
+		case !isFirst && len(data) > mtu:
+			state = packet.MbMiddle
+		case !isFirst && len(data) <= mtu:
+			state = packet.MbLast
 		}
-		if isFirst || !s.socket.isDatagram {
-			s.msgSeq++
-		}
-
-		mtu := int(s.socket.maxPacketSize) - 16
-		msgLen := len(partialSend.content)
-
-		dp := &packet.DataPacket{
-			Seq: s.sendPktSeq,
-		}
-
-		if msgLen >= mtu {
-			// we are full -- send what we can and leave the rest
-			dp.Data = partialSend.content[0:mtu]
-			if msgLen == mtu {
-				s.msgPartialSend = nil
-			} else {
-				s.msgPartialSend = &sendMessage{content: partialSend.content[mtu:], tim: partialSend.tim, ttl: partialSend.ttl}
-			}
-		} else {
-			// we are not full -- send only if this is a datagram or there's nothing obvious left
-			if s.socket.isDatagram {
-				// datagram
-				if isFirst {
-					state = packet.MbOnly
-				} else {
-					state = packet.MbLast
-				}
-			} else {
-				// streaming socket
-				select {
-				case morePartialSend, ok := <-inChan:
-					if ok {
-						// we have more data, concat and try again
-						s.msgPartialSend = &sendMessage{
-							content: append(s.msgPartialSend.content, morePartialSend.content...),
-							tim:     s.msgPartialSend.tim,
-							ttl:     s.msgPartialSend.ttl,
-						}
-						continue
-					}
-				default:
-					// nothing immediately available, just send what we have
-				}
-			}
-
-			partialSend = s.msgPartialSend
-			dp.Data = partialSend.content
-			s.msgPartialSend = nil
-		}
-
-		s.sendPktSeq.Incr()
-		dp.SetMessageData(state, !s.socket.isDatagram, s.msgSeq)
-		s.sendDataPacket(sendPacketEntry{pkt: dp, tim: partialSend.tim, ttl: partialSend.ttl}, false)
-
-		// Return makes sense here so that the sending loop can stop in case the remote peer misses packets and reports a nak.
-		return
 	}
+
+	// partial send?
+	if len(data) > mtu {
+		s.msgRemainder = &sendMessage{content: data[mtu:], tim: tim, ttl: ttl}
+		data = data[:mtu]
+	} else {
+		s.msgRemainder = nil
+	}
+
+	s.sendDataPacket(data, state, tim, ttl)
+}
+
+// sendDataPacket sends a new data packet immediately. Do not use this function for resendig an already sent packet.
+func (s *udtSocketSend) sendDataPacket(data []byte, state packet.MessageBoundary, tim time.Time, ttl time.Duration) {
+	// set the sequence number
+	dp := &packet.DataPacket{
+		Seq:  s.sendPktSeq,
+		Data: data,
+	}
+	s.sendPktSeq.Incr()
+
+	// set the message control bits (top three bits)
+	dp.SetMessageData(state, !s.socket.isDatagram, s.msgSeq)
+
+	// Datagram messages: Increase message counter if first, otherwise for stream each one is a new message.
+	if state == packet.MbFirst || !s.socket.isDatagram {
+		s.msgSeq++
+	}
+
+	// Add packet to the 'to be acknowledged' list.
+	// Once the remote peer ACKs a sent packet, it is removed from the list.
+	s.sendPktPend.Add(sendPacketEntry{pkt: dp, tim: tim, ttl: ttl})
+
+	// send on the wire
+	s.socket.cong.onDataPktSent(dp.Seq)
+	s.sendPacket <- dp
+
+	s.lastSendTime = time.Now()
 }
 
 // If the sender's loss list is not empty, retransmit the first packet in the list and remove it from the list.
@@ -238,10 +287,25 @@ func (s *udtSocketSend) processSendLoss() bool {
 		return false
 	}
 
-	for _, entry := range s.sendLossList.Range(s.recvAckSeq, s.sendPktSeq) {
-		dp := s.sendPktPend.Find(entry.packetID.Seq)
-		if dp == nil {
-			// can't find record of this packet, not much we can do really
+	activeLossList := s.sendLossList.Range(s.recvAckSeq, s.sendPktSeq)
+	if len(activeLossList) == 0 { // edge case which should never happen, but clean it up in case
+		s.sendLossList.list = []recvLossEntry{}
+		return false
+	}
+
+	for _, entry := range activeLossList {
+		// Make sure each missing record is only resent every X time to prevent endless ddos. Waiting time for resend doubles each send.
+		if !entry.lastResend.IsZero() && entry.lastResend.Add(s.socket.Config.SynTime*time.Duration(entry.attemptsResend)).After(time.Now()) {
+			continue
+		}
+		entry.lastResend = time.Now()
+		entry.attemptsResend++
+
+		dp, found := s.sendPktPend.Find(entry.packetID.Seq)
+		if !found {
+			// can't find record of this packet, not much we can do really. Remove it from the list.
+			// in the future perhaps send the info that this message was dropped?
+			s.sendLossList.Remove(entry.packetID.Seq)
 			continue
 		}
 
@@ -250,7 +314,9 @@ func (s *udtSocketSend) processSendLoss() bool {
 			continue
 		}
 
-		s.sendDataPacket(*dp, true)
+		// resend the packet
+		s.socket.cong.onDataPktSent(dp.pkt.Seq)
+		s.sendPacket <- dp.pkt
 	}
 
 	return true
@@ -295,36 +361,6 @@ func (s *udtSocketSend) processSendExpire() bool {
 	return false
 }
 
-// we have a packed packet and a green light to send, so lets send this and mark it
-func (s *udtSocketSend) sendDataPacket(dp sendPacketEntry, isResend bool) {
-	// packets that are being resent are not stored on the 'to be acknowledged' list.
-	// It would not make any sense and introduce race condition with potential endless packet resends/ACKs.
-	// Once the remote peer ACKs a sent packet, it is removed from the list.
-	if !isResend {
-		s.sendPktPend.Add(dp)
-	}
-
-	s.socket.cong.onDataPktSent(dp.pkt.Seq)
-	s.sendPacket <- dp.pkt
-
-	// have we exceeded our recipient's window size?
-	s.sendState = s.reevalSendState()
-	if s.sendState == sendStateWaiting {
-		return
-	}
-
-	if !isResend && dp.pkt.Seq.Seq%16 == 0 {
-		s.processSendExpire()
-		return
-	}
-
-	snd := s.sndPeriod.get()
-	if snd > 0 {
-		s.sndEvent = time.After(snd)
-		s.sendState = sendStateSending
-	}
-}
-
 func (s *udtSocketSend) assertValidSentPktID(pktType string, pktSeq packet.PacketID, reason int) bool {
 	if s.sendPktSeq.BlindDiff(pktSeq) < 0 {
 		s.shutdownEvent <- shutdownMessage{sockState: sockStateCorrupted, permitLinger: false,
@@ -341,7 +377,7 @@ func (s *udtSocketSend) ingestAck(p *packet.AckPacket, now time.Time) {
 	// Send back an ACK2 with the same ACK sequence number in this ACK.
 	s.sendPacket <- &packet.Ack2Packet{AckSeqNo: p.AckSeqNo}
 
-	if !s.assertValidSentPktID("ACK", p.PktSeqHi, TerminateReasonInvalidPacketIDAck) || p.PktSeqHi.BlindDiff(s.recvAckSeq) <= 0 {
+	if !s.assertValidSentPktID("ACK", p.PktSeqHi, TerminateReasonInvalidPacketIDAck) || p.PktSeqHi.IsLessEqual(s.recvAckSeq) {
 		return
 	}
 
@@ -367,6 +403,9 @@ func (s *udtSocketSend) ingestAck(p *packet.AckPacket, now time.Time) {
 
 	// Update sender's loss list (by removing all those that has been acknowledged).
 	s.sendLossList.RemoveRange(oldAckSeq, p.PktSeqHi)
+
+	// Unlock for sending as appropriate
+	s.reevalSendState()
 }
 
 // ingestNak is called to process an NAK packet
@@ -374,13 +413,19 @@ func (s *udtSocketSend) ingestNak(p *packet.NakPacket, now time.Time) {
 	var lossList []packet.PacketID
 
 	for n := 0; n < len(p.CmpLossInfo); n++ {
-		thisEntry := p.CmpLossInfo[n]
+		lossID := p.CmpLossInfo[n]
 
-		if thisEntry&0x80000000 != 0 {
-			thisPktID := packet.PacketID{Seq: thisEntry & 0x7FFFFFFF}
+		// Ignore loss IDs smaller than previous ACK (note that s.recvAckSeq is excluding).
+		// It is a possible race condition that the receiver receives packets out of order, sends a NAK and immediately an ACK (which may arrive in different order).
+		if (packet.PacketID{Seq: lossID}).IsLess(s.recvAckSeq) {
+			continue
+		}
+
+		if lossID&0x80000000 != 0 {
+			thisPktID := packet.PacketID{Seq: lossID & 0x7FFFFFFF}
 			if n+1 == len(p.CmpLossInfo) {
 				s.shutdownEvent <- shutdownMessage{sockState: sockStateCorrupted, permitLinger: false,
-					err: fmt.Errorf("FAULT: While unpacking a NAK, the last entry (%x) was describing a start-of-range", thisEntry), reason: TerminateReasonCorruptPacketNak}
+					err: fmt.Errorf("FAULT: While unpacking a NAK, the last entry (%x) was describing a start-of-range", lossID), reason: TerminateReasonCorruptPacketNak}
 				return
 			}
 			if !s.assertValidSentPktID("NAK", thisPktID, TerminateReasonInvalidPacketIDNak) {
@@ -389,7 +434,7 @@ func (s *udtSocketSend) ingestNak(p *packet.NakPacket, now time.Time) {
 			lastEntry := p.CmpLossInfo[n+1]
 			if lastEntry&0x80000000 != 0 {
 				s.shutdownEvent <- shutdownMessage{sockState: sockStateCorrupted, permitLinger: false,
-					err: fmt.Errorf("FAULT: While unpacking a NAK, a start-of-range (%x) was followed by another start-of-range (%x)", thisEntry, lastEntry), reason: TerminateReasonCorruptPacketNak}
+					err: fmt.Errorf("FAULT: While unpacking a NAK, a start-of-range (%x) was followed by another start-of-range (%x)", lossID, lastEntry), reason: TerminateReasonCorruptPacketNak}
 				return
 			}
 			lastPktID := packet.PacketID{Seq: lastEntry}
@@ -402,7 +447,7 @@ func (s *udtSocketSend) ingestNak(p *packet.NakPacket, now time.Time) {
 				lossList = append(lossList, packet.PacketID{Seq: span.Seq})
 			}
 		} else {
-			thisPktID := packet.PacketID{Seq: thisEntry}
+			thisPktID := packet.PacketID{Seq: lossID}
 			if !s.assertValidSentPktID("NAK", thisPktID, TerminateReasonInvalidPacketIDNak) {
 				return
 			}
@@ -413,7 +458,10 @@ func (s *udtSocketSend) ingestNak(p *packet.NakPacket, now time.Time) {
 
 	s.socket.cong.onNAK(lossList)
 
-	s.sendState = sendStateProcessDrop // immediately restart transmission
+	// Some loss entries may be discarded if out of date (already ACK received), so make sure loss list contains entries before changing the sending state.
+	if s.sendLossList.Count() > 0 {
+		s.sendState = sendStateProcessDrop // immediately restart transmission
+	}
 }
 
 // ingestCongestion is called to process a (retired?) Congestion packet

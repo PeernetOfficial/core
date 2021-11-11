@@ -11,8 +11,9 @@ type recvLossEntry struct {
 	packetID packet.PacketID
 
 	// data specific to loss entries
-	lastFeedback time.Time
-	numNAK       uint
+	lastResend     time.Time // When the lost packet was last resent
+	attemptsResend uint      // How many times this packet was sent out
+	numNAK         uint
 }
 
 // receiveLossList defines a list of recvLossEntry records
@@ -50,7 +51,9 @@ func (heap *receiveLossHeap) Remove(sequence uint32) (found bool) {
 		}
 	}
 
-	heap.list = newList
+	if found {
+		heap.list = newList
+	}
 
 	return found
 }
@@ -90,14 +93,14 @@ func (heap *receiveLossHeap) RemoveRange(sequenceFrom, sequenceTo packet.PacketI
 	heap.list = newList
 }
 
-// Range returns all packets that are within the given range. Check is from >= and to <.
-func (heap *receiveLossHeap) Range(sequenceFrom, sequenceTo packet.PacketID) (result []recvLossEntry) {
+// Range returns all packets that are within the given range as pointers. Check is from >= and to <.
+func (heap *receiveLossHeap) Range(sequenceFrom, sequenceTo packet.PacketID) (result []*recvLossEntry) {
 	heap.RLock()
 	defer heap.RUnlock()
 
 	for n := range heap.list {
 		if heap.list[n].packetID.IsBiggerEqual(sequenceFrom) && heap.list[n].packetID.IsLess(sequenceTo) {
-			result = append(result, heap.list[n])
+			result = append(result, &heap.list[n])
 		}
 	}
 
