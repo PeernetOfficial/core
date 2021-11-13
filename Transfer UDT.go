@@ -27,6 +27,11 @@ import (
 // transferSequenceTimeout is the timeout for a follow-up message to appear, otherwise the transfer will be terminated.
 var transferSequenceTimeout = time.Minute * 10
 
+// maxFlowWinSize is the maximum number of unacknowledged packets to permit. A higher number means using more memory, but reduces potential overhead since it does not stop so quickly for missing packets.
+// Each unacknowledged packet may store protocol.TransferMaxEmbedSize (currently 1121 bytes) payload data in memory. A too high number may impact the speed of real-time streaming in case of lost packets.
+// The actual used number will be negotiated through the UDT handshake and must be a minimum of 32.
+const maxFlowWinSize = 64
+
 // startFileTransferUDT starts a file transfer from the local warehouse to the remote peer.
 // It creates a virtual UDT client to transfer data to a remote peer. Counterintuitively, this will be the "file server" peer.
 func (peer *PeerInfo) startFileTransferUDT(hash []byte, fileSize uint64, offset, limit uint64, sequenceNumber uint32) (err error) {
@@ -46,6 +51,7 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, fileSize uint64, offset,
 
 	udtConfig := udt.DefaultConfig()
 	udtConfig.MaxPacketSize = protocol.TransferMaxEmbedSize
+	udtConfig.MaxFlowWinSize = maxFlowWinSize
 
 	// start UDT sender
 	// Set streaming to true, otherwise udtSocket.Read returns the error "Message truncated" in case the reader has a smaller buffer.
@@ -85,6 +91,7 @@ func (peer *PeerInfo) FileTransferRequestUDT(hash []byte, offset, limit uint64) 
 
 	udtConfig := udt.DefaultConfig()
 	udtConfig.MaxPacketSize = protocol.TransferMaxEmbedSize
+	udtConfig.MaxFlowWinSize = maxFlowWinSize
 
 	// start UDT receiver
 	udtListener := udt.ListenUDT(udtConfig, virtualConn, virtualConn.incomingData, virtualConn.outgoingData, virtualConn.terminationSignal)

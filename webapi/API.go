@@ -31,7 +31,8 @@ var WSUpgrader = websocket.Upgrader{
 	},
 }
 
-// Start starts the API. ListenAddresses is a list of IP:Ports
+// Start starts the API. ListenAddresses is a list of IP:Ports.
+// The certificate file and key are only used if SSL is enabled. The read and write timeout may be 0 for no timeout.
 func Start(ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKey string, TimeoutRead, TimeoutWrite time.Duration) {
 	if len(ListenAddresses) == 0 {
 		return
@@ -77,6 +78,7 @@ func Start(ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKe
 }
 
 // startWebServer starts a web-server with given parameters and logs the status. If may block forever and only returns if there is an error.
+// The certificate file and key are only used if SSL is enabled. The read and write timeout may be 0 for no timeout.
 func startWebServer(WebListen string, UseSSL bool, CertificateFile, CertificateKey string, Handler http.Handler, Info string, ReadTimeout, WriteTimeout time.Duration) {
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12} // for security reasons disable TLS 1.0/1.1
 
