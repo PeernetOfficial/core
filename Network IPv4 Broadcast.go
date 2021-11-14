@@ -15,9 +15,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/reuseport"
-	"github.com/btcsuite/btcd/btcec"
 )
 
 const ipv4BroadcastPort = 12912

@@ -14,9 +14,9 @@ import (
 	"os"
 	"sync"
 
+	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/btcsuite/btcd/btcec"
 )
 
 // peerID is the current peers ID. It is a ECDSA (secp256k1) 257-bit public key.

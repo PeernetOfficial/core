@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/PeernetOfficial/core/btcec"
 )
 
 // MessageResponse is the decoded response message.

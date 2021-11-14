@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/PeernetOfficial/core/btcec"
 )
 
 // networkWire is an incoming packet

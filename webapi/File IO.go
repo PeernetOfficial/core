@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/PeernetOfficial/core"
+	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/btcsuite/btcd/btcec"
 )
 
 /*

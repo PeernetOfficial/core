@@ -26,7 +26,7 @@ import (
 	"errors"
 	"math/rand"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/PeernetOfficial/core/btcec"
 	"golang.org/x/crypto/salsa20"
 )
 
