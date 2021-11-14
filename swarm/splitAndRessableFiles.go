@@ -63,17 +63,33 @@ func Split(filename string, splitsize float64, writelocation string)  (*fileChun
 
 		buffer := make([]byte, bufferSize)
 		j := 1
-		for j <= nTimes {
-			_, inFileErr := file.Read(buffer)
-			if inFileErr == io.EOF {
-				break
-			}
-			_, err2 := pfile.Write(buffer)
-			if err2 != nil {
-				return nil, err2
-			}
-			j++
+		//if i <= pieces - 1 {
+		//	for j <= nTimes - 2 {
+		//		_, inFileErr := file.Read(buffer)
+		//		if inFileErr == io.EOF {
+		//			break
+		//		}
+		//		_, err2 := pfile.Write(buffer)
+		//		if err2 != nil {
+		//			return nil, err2
+		//		}
+		//		j++
+		//	}
+		//} else {
+			for j <= nTimes {
+				_, inFileErr := file.Read(buffer)
+				if inFileErr == io.EOF {
+					break
+				}
+				_, err2 := pfile.Write(buffer)
+				if err2 != nil {
+					return nil, err2
+				}
+				j++
+		//	}
+
 		}
+
 
 		partFileHash :=  protocol.HashDataString([]byte(partFileName))
 

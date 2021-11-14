@@ -1,9 +1,12 @@
 package swarm
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/PeernetOfficial/core/protocol"
+	"io"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -27,10 +30,25 @@ func GetBytesFromFile(path string) ([]byte, error) {
 	return byteValue, nil
 }
 
+// md5 check sum
+func md5sum(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := md5.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
 // TestSplit ensures the split function is happening as required
 func TestSplit(t *testing.T) {
 	// Splitting Test file with each of 100 kb
-	output, err := Split("TestingFiles/lime.epub", 0.2,"TestingFiles/output/")
+	output, err := Split("TestingFiles/test1.pdf", 0.02,"TestingFiles/output/")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()
@@ -42,7 +60,7 @@ func TestSplit(t *testing.T) {
 // Run TestSplit test before this no ensure the lime.epub-hashes file is generated
 // TestReadHashes displays the output of the ReadHashes function
 func TestReadHashes(t *testing.T) {
-	hashes, err := ReadHashes("TestingFiles/output/lime.epub-hashes.txt")
+	hashes, err := ReadHashes("TestingFiles/output/test1.pdf-hashes.txt")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()
@@ -52,7 +70,7 @@ func TestReadHashes(t *testing.T) {
 
 // TestFileChunks_Join Joining all chunks into a single file
 func TestFileChunks_Join(t *testing.T) {
-	hashes, err := ReadHashes("TestingFiles/output/lime.epub-hashes.txt")
+	hashes, err := ReadHashes("TestingFiles/output/test1.pdf-hashes.txt")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()
@@ -70,21 +88,23 @@ func TestFileChunks_Join(t *testing.T) {
 	// directory
 
 	// get the bytes from "TestingFiles/lime.epub"
-	RightBytes, err := GetBytesFromFile("TestingFiles/lime.epub")
+	RightBytes, err := GetBytesFromFile("TestingFiles/test1.pdf")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()
 	}
 
 	// get the byte value for "TestingFiles//output/lime.epub"
-	CheckBytes, err := GetBytesFromFile("TestingFiles/output/lime.epub")
+	CheckBytes, err := GetBytesFromFile("TestingFiles/output/test1.pdf")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()
 	}
 
+
 	CorrectHash := protocol.HashDataString(RightBytes)
 	JoinedFilesHash := protocol.HashDataString(CheckBytes)
+
 	if CorrectHash != JoinedFilesHash {
 		fmt.Println(errors.New("hashes do not match"))
 		fmt.Println("Expected Hash: " + CorrectHash)
