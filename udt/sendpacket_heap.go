@@ -59,17 +59,17 @@ func (heap *sendPacketHeap) Count() (count int) {
 }
 
 // Find searches for the packet
-func (heap *sendPacketHeap) Find(sequence uint32) (result *sendPacketEntry) {
+func (heap *sendPacketHeap) Find(sequence uint32) (result sendPacketEntry, found bool) {
 	heap.RLock()
 	defer heap.RUnlock()
 
 	for n := range heap.list {
 		if heap.list[n].pkt.Seq.Seq == sequence {
-			return &heap.list[n]
+			return heap.list[n], true
 		}
 	}
 
-	return nil // not found
+	return result, false // not found
 }
 
 // RemoveRange removes all packets that are within the given range. Check is from >= and to <.
