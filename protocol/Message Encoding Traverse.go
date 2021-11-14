@@ -12,7 +12,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/PeernetOfficial/core/btcec"
 )
 
 // MessageTraverse is the decoded traverse message.

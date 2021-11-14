@@ -9,7 +9,7 @@ Intermediary between low-level packets and high-level interpretation.
 package protocol
 
 import (
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/PeernetOfficial/core/btcec"
 )
 
 // ProtocolVersion is the current protocol version

@@ -7,7 +7,7 @@ Author:     Peter Kleissner
 package protocol
 
 import (
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/PeernetOfficial/core/btcec"
 	"lukechampine.com/blake3"
 )
 

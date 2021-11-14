@@ -43,12 +43,7 @@ func main() {
 
 ## Dependencies
 
-Go 1.16 or higher is required. These are the major dependencies:
-
-```
-github.com/btcsuite/btcd/btcec
-lukechampine.com/blake3
-```
+Go 1.16 or higher is required. All dependencies are automatically downloaded via Go modules.
 
 ## Configuration
 

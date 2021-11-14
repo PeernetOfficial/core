@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/btcsuite/btcd/btcec"
 )
 
 // rootPeer is a single root peer info

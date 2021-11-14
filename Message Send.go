@@ -9,8 +9,8 @@ package core
 import (
 	"time"
 
+	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/btcsuite/btcd/btcec"
 )
 
 // pingConnection sends a ping to the target peer via the specified connection
