@@ -21,7 +21,7 @@ import (
 func init() {
     if status, err := core.LoadConfig("Config.yaml"); err != nil {
         fmt.Printf("Error loading config file: %s", err.Error())
-        os.Exit(1)
+        os.Exit(core.ExitErrorConfigAccess)
     }
 
     core.InitLog()

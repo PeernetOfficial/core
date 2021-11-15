@@ -42,7 +42,7 @@ func initPeerID() {
 		}
 
 		Filters.LogError("initPeerID", "private key in config is corrupted! Error: %s\n", err.Error())
-		os.Exit(1)
+		os.Exit(ExitPrivateKeyCorrupt)
 	}
 
 	// if the peer ID is empty, create a new user public-private key pair
@@ -50,7 +50,7 @@ func initPeerID() {
 	peerPrivateKey, peerPublicKey, err = Secp256k1NewPrivateKey()
 	if err != nil {
 		Filters.LogError("initPeerID", "generating public-private key pairs: %s\n", err.Error())
-		os.Exit(1)
+		os.Exit(ExitPrivateKeyCreate)
 	}
 	nodeID = protocol.PublicKey2NodeID(peerPublicKey)
 
