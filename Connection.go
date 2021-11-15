@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/btcsuite/btcd/btcec"
 )
 
 // Connection is an established connection between a remote IP address and a local network adapter.

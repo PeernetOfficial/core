@@ -22,8 +22,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/btcsuite/btcd/btcec"
 )
 
 // Block is a single block containing a set of records (metadata).

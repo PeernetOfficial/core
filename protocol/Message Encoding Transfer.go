@@ -18,7 +18,7 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/PeernetOfficial/core/btcec"
 )
 
 // MessageTransfer is the decoded transfer message.

@@ -21,7 +21,7 @@ import (
 func init() {
     if status, err := core.LoadConfig("Config.yaml"); err != nil {
         fmt.Printf("Error loading config file: %s", err.Error())
-        os.Exit(1)
+        os.Exit(core.ExitErrorConfigAccess)
     }
 
     core.InitLog()
@@ -43,12 +43,7 @@ func main() {
 
 ## Dependencies
 
-Go 1.16 or higher is required. These are the major dependencies:
-
-```
-github.com/btcsuite/btcd/btcec
-lukechampine.com/blake3
-```
+Go 1.16 or higher is required. All dependencies are automatically downloaded via Go modules.
 
 ## Configuration
 

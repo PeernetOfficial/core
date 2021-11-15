@@ -22,9 +22,9 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/store"
-	"github.com/btcsuite/btcd/btcec"
 )
 
 // Blockchain stores the blockchain's header in memory. Any changes must be synced to disk!

@@ -11,9 +11,9 @@ package core
 import (
 	"log"
 
+	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/btcsuite/btcd/btcec"
 )
 
 // Filters contains all functions to install the hook. Use nil for unused.
