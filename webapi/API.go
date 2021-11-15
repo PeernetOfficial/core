@@ -10,10 +10,10 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"time"
 
+	"github.com/PeernetOfficial/core"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
@@ -73,13 +73,15 @@ func Start(ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKe
 	Router.HandleFunc("/file/view", apiFileView).Methods("GET")
 
 	for _, listen := range ListenAddresses {
-		go startWebServer(listen, UseSSL, CertificateFile, CertificateKey, Router, "API", TimeoutRead, TimeoutWrite)
+		go startWebAPI(listen, UseSSL, CertificateFile, CertificateKey, Router, "API", TimeoutRead, TimeoutWrite)
 	}
 }
 
-// startWebServer starts a web-server with given parameters and logs the status. If may block forever and only returns if there is an error.
+// startWebAPI starts a web-server with given parameters and logs the status. If may block forever and only returns if there is an error.
 // The certificate file and key are only used if SSL is enabled. The read and write timeout may be 0 for no timeout.
-func startWebServer(WebListen string, UseSSL bool, CertificateFile, CertificateKey string, Handler http.Handler, Info string, ReadTimeout, WriteTimeout time.Duration) {
+func startWebAPI(WebListen string, UseSSL bool, CertificateFile, CertificateKey string, Handler http.Handler, Info string, ReadTimeout, WriteTimeout time.Duration) {
+	core.Filters.LogError("startWebAPI", "Start API at '%s'\n", WebListen)
+
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12} // for security reasons disable TLS 1.0/1.1
 
 	server := &http.Server{
@@ -94,12 +96,12 @@ func startWebServer(WebListen string, UseSSL bool, CertificateFile, CertificateK
 	if UseSSL {
 		// HTTPS
 		if err := server.ListenAndServeTLS(CertificateFile, CertificateKey); err != nil {
-			log.Printf("Error listening on '%s': %v\n", WebListen, err)
+			core.Filters.LogError("startWebAPI", "Error listening on '%s': %v\n", WebListen, err)
 		}
 	} else {
 		// HTTP
 		if err := server.ListenAndServe(); err != nil {
-			log.Printf("Error listening on '%s': %v\n", WebListen, err)
+			core.Filters.LogError("startWebAPI", "Error listening on '%s': %v\n", WebListen, err)
 		}
 	}
 }
@@ -110,7 +112,7 @@ func EncodeJSON(w http.ResponseWriter, r *http.Request, data interface{}) (err e
 
 	err = json.NewEncoder(w).Encode(data)
 	if err != nil {
-		log.Printf("Error writing data for route '%s': %v\n", r.URL.Path, err)
+		core.Filters.LogError("EncodeJSON", "Error writing data for route '%s': %v\n", r.URL.Path, err)
 	}
 
 	return err

@@ -26,6 +26,6 @@ func initUserBlockchain() {
 
 	if err != nil {
 		Filters.LogError("initUserBlockchain", "error: %s\n", err.Error())
-		os.Exit(1)
+		os.Exit(ExitBlockchainCorrupt)
 	}
 }
