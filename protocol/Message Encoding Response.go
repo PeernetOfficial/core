@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	btcec2 "github.com/btcsuite/btcd/btcec"
 	"net"
 	"time"
 	"unicode/utf8"
@@ -215,7 +216,7 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 				return nil, 0, false
 			}
 
-			peer.NodeID = PublicKey2NodeID(peer.PublicKey)
+			peer.NodeID = PublicKey2NodeID((*btcec2.PublicKey)(peer.PublicKey))
 
 			if reason == 0 { // Peer was returned because it is close to the requested hash
 				hash2Peer.Closest = append(hash2Peer.Closest, peer)
