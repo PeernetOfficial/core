@@ -19,5 +19,6 @@ const (
 	ExitPrivateKeyCreate   = 7          // Cannot create a new private key.
 	ExitBlockchainCorrupt  = 8          // Blockchain is corrupt.
 	ExitGraceful           = 9          // Graceful shutdown.
+	ExitParamApiKeyInvalid = 10         // API key parameter is invalid.
 	STATUS_CONTROL_C_EXIT  = 0xC000013A // The application terminated as a result of a CTRL+C. This is a Windows NTSTATUS value.
 )
