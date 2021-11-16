@@ -56,21 +56,21 @@ func (network *Network) MulticastIPv6Join() (err error) {
 	// listen on a special socket
 	network.multicastSocket, err = reuseport.ListenPacket("udp6", net.JoinHostPort(network.address.IP.String(), strconv.Itoa(ipv6MulticastPort)))
 	if err != nil {
+		Filters.LogError("MulticastIPv6Join", "multicast socket listen on IP '%s' port '%d': %v\n", network.address.IP.String(), ipv6MulticastPort, err)
 		return err
 	}
 
 	joinMulticastGroup := func(iface *net.Interface) (err error) {
 		pc := ipv6.NewPacketConn(network.multicastSocket)
 		if err := pc.JoinGroup(iface, &net.UDPAddr{IP: network.multicastIP}); err != nil {
+			Filters.LogError("MulticastIPv6Join", "join multicast group iface '%s' multicast IP '%s' listen on IP '%s' port '%d': %v\n", iface.Name, network.multicastIP.String(), network.address.IP.String(), ipv6MulticastPort, err)
 			return err
 		}
 
 		// receive messages from self or other processes running on the same computer
-		if loop, err := pc.MulticastLoopback(); err == nil {
-			if !loop {
-				if err := pc.SetMulticastLoopback(true); err != nil {
-					Filters.LogError("MulticastIPv6Join", "setting multicast loopback status: %v\n", err)
-				}
+		if loop, err := pc.MulticastLoopback(); err == nil && !loop {
+			if err := pc.SetMulticastLoopback(true); err != nil {
+				Filters.LogError("MulticastIPv6Join", "setting multicast loopback status: %v\n", err)
 			}
 		}
 
