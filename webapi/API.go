@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/PeernetOfficial/core"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
@@ -33,12 +34,17 @@ var WSUpgrader = websocket.Upgrader{
 
 // Start starts the API. ListenAddresses is a list of IP:Ports.
 // The certificate file and key are only used if SSL is enabled. The read and write timeout may be 0 for no timeout.
-func Start(ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKey string, TimeoutRead, TimeoutWrite time.Duration) {
+// The API key may be uuid.Nil to disable it although this is not recommended for security reasons.
+func Start(ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKey string, TimeoutRead, TimeoutWrite time.Duration, APIKey uuid.UUID) {
 	if len(ListenAddresses) == 0 {
 		return
 	}
 
 	Router = mux.NewRouter()
+
+	if APIKey != uuid.Nil {
+		Router.Use(authenticateMiddleware(APIKey))
+	}
 
 	Router.HandleFunc("/test", apiTest).Methods("GET")
 	Router.HandleFunc("/status", apiStatus).Methods("GET")
@@ -133,4 +139,24 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, data interface{}) (err e
 	}
 
 	return nil
+}
+
+// authenticateMiddleware returns a middleware function to be used with mux.Router.Use(). It handles all authentication functionality.
+func authenticateMiddleware(APIKey uuid.UUID) func(http.Handler) http.Handler {
+	return (func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			keyID, err := uuid.Parse(r.Header.Get("x-api-key"))
+			if err != nil { // Invalid key format
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
+			if keyID != APIKey {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	})
 }

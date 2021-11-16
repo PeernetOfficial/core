@@ -6,20 +6,29 @@ It can be used by local client software to connect to the Peernet network and us
 
 ## Use Considerations (when not to use it)
 
-Do not expose this API to the internet or local network. The API is unauthenticated and provides direct access to the users blockchain. It also provide sensitive actions such as deleting the account (including the private key). An attacker could abuse the API to add any local file to the user's blockchain and then read it.
-
-The API shall only run on a loopback IP such as `127.0.0.1` or `::1`. Special HTTP headers (including the Access-Control headers) are intentionally not set.
+* Do not expose this API to the internet or local network. The API provides direct access to the users blockchain. It provides sensitive actions such as deleting the account (including the private key). If the use of an API key is disabled, an unauthenticated attacker could abuse the API to add any local file to the user's blockchain and then read it.
+* The API shall only run on a loopback IP such as `127.0.0.1` or `::1`.
+* The API is not supposed to be used by regular web browsers. CORS HTTP headers are intentionally not set.
+* You should use the API key functionality, which enforces the API key in every call using the HTTP header `x-api-key`.
 
 ## Deployment
 
-The API must be initialized and started before use.
+The API must be initialized and started before use. The last parameter is the API key (in this example no API key is used). For security reasons it is recommended to use a random local port and provide a randomly generated API key.
 
 ```go
-webapi.Start([]string{"127.0.0.1:112"}, false, "", "", 10*time.Second, 10*time.Second)
+webapi.Start([]string{"127.0.0.1:112"}, false, "", "", 10*time.Second, 10*time.Second, uuid.Nil)
 
 // To register an additional API endpoint:
 webapi.Router.HandleFunc("/newfunction", newFunction).Methods("GET")
 ```
+
+## API Key
+
+Each API instance should use a random UUID as API key. Subsequently, that UUID must be provided by the client in every API call in the `x-api-key` HTTP header. Failure to provide the API key in calls results in HTTP status 401 Unauthorized.
+
+This effectively secures the API against unauthenticated attackers, including other software running on the same machine, malicious websites using a DNS rebinding attack, and accidental link opening by the user.
+
+To disable the use of API keys a null UUID (= `00000000-0000-0000-0000-000000000000`) can be provided when starting the API. This may be useful for development purposes, but should never be used in production.
 
 # Available Functions
 
@@ -880,7 +889,7 @@ These helper functions are usually not needed, but can be useful in special case
 
 ### Detect file type and file format
 
-This function detects the file type and file format of the specified file. It will primarily use the file extension for detection. If unavailable, it uses the first 512 bytes of the file data to detect the type.
+This function detects the file type and file format of the specified file. It will primarily use the file extension for detection. If unavailable, it uses the first 512 bytes of the file data to detect the type. The path is the full file path (including directory) on disk.
 
 ```
 Request:    GET /file/format?path=[file path on disk]
