@@ -43,6 +43,7 @@ func (network *Network) BroadcastIPv4() (err error) {
 	// listen on a special socket
 	network.broadcastSocket, err = reuseport.ListenPacket("udp4", net.JoinHostPort(network.address.IP.String(), strconv.Itoa(ipv4BroadcastPort)))
 	if err != nil {
+		Filters.LogError("BroadcastIPv4", "broadcast socket listen on IP '%s' port '%d': %v\n", network.address.IP.String(), ipv4BroadcastPort, err)
 		return err
 	}
 
