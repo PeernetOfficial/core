@@ -63,7 +63,7 @@ func (network *Network) MulticastIPv6Join() (err error) {
 	joinMulticastGroup := func(iface *net.Interface) (err error) {
 		pc := ipv6.NewPacketConn(network.multicastSocket)
 		if err := pc.JoinGroup(iface, &net.UDPAddr{IP: network.multicastIP}); err != nil {
-			Filters.LogError("MulticastIPv6Join", "join multicast group iface '%s' multicast IP '%s' listen on IP '%s' port '%d': %v\n", iface.Name, network.multicastIP.String(), network.address.IP.String(), ipv6MulticastPort, err)
+			//Filters.LogError("MulticastIPv6Join", "join multicast group iface '%s' multicast IP '%s' listen on IP '%s' port '%d': %v\n", iface.Name, network.multicastIP.String(), network.address.IP.String(), ipv6MulticastPort, err)
 			return err
 		}
 

@@ -1,4 +1,8 @@
-LogFile: Log.txt
+# Locations of important files and folders
+LogFile:          "data/log.txt"                # Log file. It contains informational and error messages.
+BlockchainMain:   "data/blockchain main/"       # Blockchain main stores the end-users blockchain data. It contains meta data of shared files, profile data, and social interactions.
+BlockchainGlobal: "data/blockchain global/"     # Blockchain global stores blockchain data from global users.
+WarehouseMain:    "data/warehouse main/"        # Warehouse main stores the actual data of files shared by the end-user.
 
 # Listen defines all IP:Port combinations to listen on. If empty, it will listen on all IPs automatically on available ports.
 # IPv6 must be in the form "[IPv6]:Port". This setting is only recommended to be set on servers.
