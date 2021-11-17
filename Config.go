@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path"
 
 	"gopkg.in/yaml.v3"
 )
@@ -19,8 +20,13 @@ import (
 const Version = "Alpha 4/15.11.2021"
 
 var config struct {
-	LogFile string `yaml:"LogFile"` // Log file
+	// Locations of important files and folders
+	LogFile          string `yaml:"LogFile"`          // Log file. It contains informational and error messages.
+	BlockchainMain   string `yaml:"BlockchainMain"`   // Blockchain main stores the end-users blockchain data. It contains meta data of shared files, profile data, and social interactions.
+	BlockchainGlobal string `yaml:"BlockchainGlobal"` // Blockchain global stores blockchain data from global users.
+	WarehouseMain    string `yaml:"WarehouseMain"`    // Warehouse main stores the actual data of files shared by the end-user.
 
+	// Listen settings
 	Listen        []string `yaml:"Listen"`        // IP:Port combinations
 	ListenWorkers int      `yaml:"ListenWorkers"` // Count of workers to process incoming raw packets. Default 2.
 
@@ -118,6 +124,11 @@ func saveConfig() {
 
 // InitLog redirects subsequent log messages into the default log file specified in the configuration
 func InitLog() (err error) {
+	// create the directory to the log file if specified
+	if directory, _ := path.Split(config.LogFile); directory != "" {
+		os.MkdirAll(directory, os.ModePerm)
+	}
+
 	logFile, err := os.OpenFile(config.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		return err

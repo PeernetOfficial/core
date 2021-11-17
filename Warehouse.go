@@ -13,12 +13,9 @@ import (
 // UserWarehouse is the user's warehouse for storing files that are shared
 var UserWarehouse *warehouse.Warehouse
 
-// folderUserWarehouse is the folder of the user's warehouse
-const folderUserWarehouse = "warehouse"
-
 func initUserWarehouse() {
 	var err error
-	UserWarehouse, err = warehouse.Init(folderUserWarehouse)
+	UserWarehouse, err = warehouse.Init(config.WarehouseMain)
 
 	if err != nil {
 		Filters.LogError("initUserWarehouse", "error: %s\n", err.Error())
