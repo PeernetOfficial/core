@@ -105,7 +105,7 @@ func (peer *rootPeer) contact() {
 
 	for _, address := range peer.addresses {
 		// Port internal is always set to 0 for root peers. It disables NAT detection and will not send out a Traverse message.
-		contactArbitraryPeer(peer.publicKey, address, 0)
+		contactArbitraryPeer(peer.publicKey, address, 0, false)
 	}
 }
 
@@ -205,7 +205,7 @@ func (nets *Networks) autoMulticastBroadcast() {
 }
 
 // contactArbitraryPeer contacts a new arbitrary peer for the first time.
-func contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, receiverPortInternal uint16) (contacted bool) {
+func contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, receiverPortInternal uint16, receiverFirewall bool) (contacted bool) {
 	findSelf := ShouldSendFindSelf()
 	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
 	packets := protocol.EncodeAnnouncement(true, findSelf, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion, userAgent)
@@ -216,7 +216,7 @@ func contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, rece
 
 	Filters.MessageOutAnnouncement(publicKey, nil, raw, findSelf, nil, nil, nil)
 
-	networks.sendAllNetworks(publicKey, raw, address, receiverPortInternal, nil, &bootstrapFindSelf{})
+	networks.sendAllNetworks(publicKey, raw, address, receiverPortInternal, receiverFirewall, nil, &bootstrapFindSelf{})
 
 	return true
 }
@@ -258,7 +258,7 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 			}
 
 			// Initiate contact. Once a response comes back, the peer will be actually added to the peer list.
-			contactArbitraryPeer(closePeer.PublicKey, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal)
+			contactArbitraryPeer(closePeer.PublicKey, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, closePeer.Features&(1<<protocol.FeatureFirewall) > 0)
 		}
 	}
 }

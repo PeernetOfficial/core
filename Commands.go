@@ -118,6 +118,7 @@ func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result
 	result = &protocol.PeerRecord{
 		PublicKey: peer.PublicKey,
 		NodeID:    peer.NodeID,
+		Features:  peer.Features,
 	}
 
 	if connectionIPv4 != nil {
