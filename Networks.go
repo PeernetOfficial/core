@@ -32,6 +32,9 @@ type Networks struct {
 
 	// ipListen keeps a simple list of IPs listened to. This allows quickly identifying if an IP matches with a listened one.
 	ipListen *ipList
+
+	// localFirewall indicates if a local firewall may drop unsolicited incoming packets
+	localFirewall bool
 }
 
 //  ReplyTimeout is the round-trip timeout for message sequences.
@@ -47,4 +50,10 @@ func initMessageSequence() {
 	networks.Sequences = protocol.NewSequenceManager(ReplyTimeout)
 
 	networks.ipListen = NewIPList()
+
+	// There is currently no suitable live firewall detection code. Instead, there is the config flag.
+	// Windows: If the user runs as non-admin, it can be assumed that the Windows Firewall creates a rule to drop unsolicited incoming packets.
+	// Changing the Windows Firewall (via netsh or otherwise) requires elevated admin rights.
+	// This flag will be passed on to other peers to indicate that uncontacted peers shall use the Traverse message for establishing connections.
+	networks.localFirewall = config.LocalFirewall
 }

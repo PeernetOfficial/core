@@ -29,7 +29,8 @@ type Connection struct {
 	Expires       time.Time     // Inactive connections only: Expiry date. If it does not become active by that date, it will be considered expired and removed.
 	Status        int           // 0 = Active established connection, 1 = Inactive, 2 = Removed, 3 = Redundant
 	RoundTripTime time.Duration // Full round-trip time of last reply.
-	traversePeer  *PeerInfo     // Temporary peer that may act as proxy for a Traverse message used for the first packet. This is used to establish this Connection to a peer that is behind a NAT.
+	Firewall      bool          // Whether the remote peer indicates a potential firewall. This means a Traverse message shall be sent to establish a connection.
+	traversePeer  *PeerInfo     // Temporary peer that may act as proxy for a Traverse message used for the first packet. This is used to establish this Connection to a peer that is behind a NAT or firewall.
 }
 
 // Connection status
@@ -325,9 +326,15 @@ func (peer *PeerInfo) IsPortForward() (result bool) {
 	return false
 }
 
+// IsFirewallReported checks if the peer reported to be behind a firewall
+func (peer *PeerInfo) IsFirewallReported() (result bool) {
+	return peer.Features&(1<<protocol.FeatureFirewall) > 0
+}
+
 // ---- sending code ----
 
 // send sends the packet to the peer on the connection
+// isFirstPacket indicates whether this is the first packet to an uncontacted peer.
 func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey *btcec.PublicKey, isFirstPacket bool) (err error) {
 	if c == nil {
 		return errors.New("invalid connection")
@@ -347,8 +354,8 @@ func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey *btcec.P
 
 	err = c.Network.send(c.Address.IP, c.Address.Port, raw)
 
-	// Send Traverse message if the peer is behind a NAT and this is the first message. Only for Announcement.
-	if err == nil && isFirstPacket && c.IsBehindNAT() && c.traversePeer != nil && packet.Command == protocol.CommandAnnouncement {
+	// Send Traverse message if the peer is behind a NAT or firewall and this is the first message. Only for Announcement.
+	if err == nil && isFirstPacket && (c.IsBehindNAT() || c.Firewall) && c.traversePeer != nil && packet.Command == protocol.CommandAnnouncement {
 		c.traversePeer.sendTraverse(packet, receiverPublicKey)
 	}
 
@@ -359,7 +366,7 @@ func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey *btcec.P
 func (peer *PeerInfo) send(packet *protocol.PacketRaw) (err error) {
 	if peer.isVirtual { // special case for peers that were not contacted before
 		for _, address := range peer.targetAddresses {
-			networks.sendAllNetworks(peer.PublicKey, packet, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, peer.traversePeer, nil)
+			networks.sendAllNetworks(peer.PublicKey, packet, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, peer.Features&(1<<protocol.FeatureFirewall) > 0, peer.traversePeer, nil)
 		}
 		return
 	}
@@ -414,8 +421,8 @@ func (peer *PeerInfo) sendConnection(packet *protocol.PacketRaw, connection *Con
 }
 
 // sendAllNetworks sends a raw packet via all networks. It assigns a new sequence for each sent packet.
-// receiverPortInternal is important for NAT detection and sending the traverse message.
-func (nets *Networks) sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *protocol.PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, traversePeer *PeerInfo, sequenceData interface{}) (err error) {
+// receiverPortInternal is important for NAT detection and sending the traverse message. Firewall indicates whether the remote peer was reported to be behind a firewall.
+func (nets *Networks) sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *protocol.PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, receiverFirewall bool, traversePeer *PeerInfo, sequenceData interface{}) (err error) {
 	nets.RLock()
 	defer nets.RUnlock()
 
@@ -436,7 +443,7 @@ func (nets *Networks) sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet
 		if sequenceData != nil {
 			packet.Sequence = nets.Sequences.ArbitrarySequence(receiverPublicKey, sequenceData).SequenceNumber
 		}
-		err = (&Connection{Network: network, Address: remote, PortInternal: receiverPortInternal, traversePeer: traversePeer}).send(packet, receiverPublicKey, isFirstPacket)
+		err = (&Connection{Network: network, Address: remote, PortInternal: receiverPortInternal, traversePeer: traversePeer, Firewall: receiverFirewall}).send(packet, receiverPublicKey, isFirstPacket)
 		isFirstPacket = false
 
 		if err == nil {

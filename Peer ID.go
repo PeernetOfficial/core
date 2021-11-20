@@ -96,7 +96,7 @@ type PeerInfo struct {
 	messageSequence    uint32           // Sequence number. Increased with every message.
 	IsRootPeer         bool             // Whether the peer is a trusted root peer.
 	UserAgent          string           // User Agent reported by remote peer. Empty if no Announcement/Response message was yet received.
-	Features           uint8            // Feature bit array. 0 = IPv4_LISTEN, 1 = IPv6_LISTEN
+	Features           uint8            // Feature bit array. 0 = IPv4_LISTEN, 1 = IPv6_LISTEN, 1 = FIREWALL
 	isVirtual          bool             // Whether it is a virtual peer for establishing a connection.
 	targetAddresses    []*peerAddress   // Virtual peer: Addresses to send any replies.
 	traversePeer       *PeerInfo        // Virtual peer: Same field as in connection.
@@ -222,7 +222,7 @@ func records2Nodes(records []protocol.PeerRecord, peerSource *PeerInfo) (nodes [
 				continue
 			}
 
-			peer = &PeerInfo{PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, NodeID: protocol.PublicKey2NodeID(record.PublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource}
+			peer = &PeerInfo{PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, NodeID: protocol.PublicKey2NodeID(record.PublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource, Features: record.Features}
 		}
 
 		nodes = append(nodes, &dht.Node{ID: peer.NodeID, LastSeen: record.LastContactT, Info: peer})
@@ -239,6 +239,7 @@ func selfPeerRecord() (result protocol.PeerRecord) {
 		//IP:          network.address.IP,
 		//Port:        uint16(network.address.Port),
 		LastContact: 0,
+		Features:    FeatureSupport(),
 	}
 }
 

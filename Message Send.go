@@ -26,6 +26,12 @@ func (peer *PeerInfo) pingConnection(connection *Connection) {
 	}
 }
 
+// Ping sends a ping. This function exists only for debugging purposes, it should not be used normally.
+// This ping is not used for uptime detection and the LastPingOut time in connections is not set.
+func (peer *PeerInfo) Ping() {
+	peer.send(&protocol.PacketRaw{Command: protocol.CommandPing, Sequence: networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, nil).SequenceNumber})
+}
+
 // Chat sends a text message
 func (peer *PeerInfo) Chat(text string) {
 	peer.send(&protocol.PacketRaw{Command: protocol.CommandChat, Payload: []byte(text)})

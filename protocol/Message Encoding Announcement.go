@@ -16,7 +16,7 @@ import (
 type MessageAnnouncement struct {
 	*MessageRaw                   // Underlying raw message
 	Protocol          uint8       // Protocol version supported (low 4 bits).
-	Features          uint8       // Feature support (high 4 bits). Future use.
+	Features          uint8       // Feature support
 	Actions           uint8       // Action bit array. See ActionX
 	BlockchainHeight  uint32      // Blockchain height
 	BlockchainVersion uint64      // Blockchain version
@@ -44,6 +44,7 @@ type InfoStore struct {
 const (
 	FeatureIPv4Listen = 0 // Sender listens on IPv4
 	FeatureIPv6Listen = 1 // Sender listens on IPv6
+	FeatureFirewall   = 2 // Sender indicates a potential firewall. This informs uncontacted peers that a Traverse message might be required to establish a connection.
 )
 
 // Actions between peers, sent via Announcement message. They correspond to the bit array index.

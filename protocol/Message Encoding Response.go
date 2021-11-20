@@ -47,6 +47,7 @@ type PeerRecord struct {
 	IPv6PortReportedExternal uint16           // External port as reported by that peer. This is used in case of port forwarding (manual or automated).
 	LastContact              uint32           // Last contact in seconds
 	LastContactT             time.Time        // Last contact time translated from seconds
+	Features                 uint8            // Feature support. Same as in Announcement/Response message.
 }
 
 // Hash2Peer links a hash to peers who are known to store the data and to peers who are considered close to the hash
@@ -208,7 +209,8 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 
 			peer.LastContact = binary.LittleEndian.Uint32(data[index+65 : index+65+4])
 			peer.LastContactT = time.Now().Add(-time.Second * time.Duration(peer.LastContact))
-			reason := data[index+69]
+			peer.Features = data[index+69] & 0x7F
+			reason := data[index+69] >> 7
 
 			var err error
 			if peer.PublicKey, err = btcec.ParsePubKey(peerIDcompressed, btcec.S256()); err != nil {
@@ -421,7 +423,7 @@ createPacketLoop:
 func encodePeerRecord(raw []byte, peer *PeerRecord, reason uint8) {
 	copy(raw[0:0+33], peer.PublicKey.SerializeCompressed())
 	binary.LittleEndian.PutUint32(raw[65:65+4], peer.LastContact)
-	raw[69] = reason
+	raw[69] = peer.Features | reason<<7
 
 	// IPv4
 	copy(raw[33:33+4], peer.IPv4.To4())

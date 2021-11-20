@@ -17,7 +17,7 @@ import (
 )
 
 // Version is the current core library version
-const Version = "Alpha 4/15.11.2021"
+const Version = "Alpha 4/20.11.2021"
 
 var config struct {
 	// Locations of important files and folders
@@ -39,7 +39,8 @@ var config struct {
 	SeedListVersion    int        `yaml:"SeedListVersion"`
 
 	// Connection settings
-	EnableUPnP bool `yaml:"EnableUPnP"` // Enables support for UPnP.
+	EnableUPnP    bool `yaml:"EnableUPnP"`    // Enables support for UPnP.
+	LocalFirewall bool `yaml:"LocalFirewall"` // Indicates that a local firewall may drop unsolicited incoming packets.
 
 	// PortForward specifies an external port that was manually forwarded by the user. All listening IPs must have that same port number forwarded!
 	// If this setting is invalid, it will prohibit other peers from connecting. If set, it automatically disables UPnP.

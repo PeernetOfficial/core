@@ -29,8 +29,9 @@ SeedList:
     Address: ["194.233.66.99:112","[2407:3640:2057:5241::1]:112"]
 
 # Connection settings
-EnableUPnP: true # Enables support for UPnP.
+EnableUPnP:     true    # Enables support for UPnP.
+LocalFirewall:  false   # Indicates that a local firewall may drop unsolicited incoming packets.
 
 # PortForward specifies an external port that was manually forwarded by the user. All listening IPs must have that same port number forwarded!
 # If this setting is invalid, it will prohibit other peers from connecting. If set, it automatically disables UPnP.
-PortForward: 0   # Default not set.
+PortForward: 0          # Default not set.
