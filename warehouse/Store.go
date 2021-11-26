@@ -29,6 +29,8 @@ const (
 	StatusErrorDeleteFile     = 10 // Error deleting file.
 	StatusErrorReadFile       = 11 // Error reading file.
 	StatusErrorSeekFile       = 12 // Error seeking to position in file.
+	StatusErrorTargetExists   = 13 // Target file already exists.
+	StatusErrorCreateTarget   = 14 // Error creating target file.
 )
 
 // CreateFile creates a new file in the warehouse
@@ -115,6 +117,7 @@ func (wh *Warehouse) CreateFileFromPath(file string) (hash []byte, status int, e
 
 // ReadFile reads a file from the warehouse and outputs it to the writer
 // Offset is the position in the file to start reading. Limit (0 = not used) defines how many bytes to read starting at the offset.
+// Return status codes: StatusInvalidHash, StatusFileNotFound, StatusErrorOpenFile, StatusErrorSeekFile, StatusErrorReadFile, StatusOK
 func (wh *Warehouse) ReadFile(hash []byte, offset, limit int64, writer io.Writer) (status int, bytesRead int64, err error) {
 	path, _, status, err := wh.FileExists(hash)
 	if status != StatusOK { // file does not exist or invalid hash
@@ -178,7 +181,7 @@ func (wh *Warehouse) DeleteFile(hash []byte) (status int, err error) {
 	return StatusOK, nil
 }
 
-// FileExists checks if the file exists
+// FileExists checks if the file exists. It returns StatusInvalidHash, StatusFileNotFound, or StatusOK.
 func (wh *Warehouse) FileExists(hash []byte) (path string, fileInfo os.FileInfo, status int, err error) {
 	hashA, err := ValidateHash(hash)
 	if err != nil {
@@ -203,4 +206,23 @@ func (wh *Warehouse) DeleteWarehouse() (err error) {
 
 		return true
 	})
+}
+
+// ReadFileToDisk reads a file from the warehouse and outputs it to the target file. The function fails with StatusErrorTargetExists if the target file already exists.
+// Offset is the position in the file to start reading. Limit (0 = not used) defines how many bytes to read starting at the offset.
+// Return status codes: StatusInvalidHash, StatusFileNotFound, StatusErrorTargetExists, StatusErrorCreateTarget, StatusErrorOpenFile, StatusErrorSeekFile, StatusErrorReadFile, StatusOK
+func (wh *Warehouse) ReadFileToDisk(hash []byte, offset, limit int64, fileTarget string) (status int, bytesRead int64, err error) {
+	// check if the target file already exist
+	if _, err := os.Stat(fileTarget); err == nil {
+		return StatusErrorTargetExists, 0, nil
+	}
+
+	// create the target file
+	fileT, err := os.OpenFile(fileTarget, os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return StatusErrorCreateTarget, 0, err
+	}
+	defer fileT.Close()
+
+	return wh.ReadFile(hash, offset, limit, fileT)
 }

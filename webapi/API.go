@@ -74,6 +74,7 @@ func Start(ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKe
 	Router.HandleFunc("/warehouse/create", apiWarehouseCreateFile).Methods("POST")
 	Router.HandleFunc("/warehouse/create/path", apiWarehouseCreateFilePath).Methods("GET")
 	Router.HandleFunc("/warehouse/read", apiWarehouseReadFile).Methods("GET")
+	Router.HandleFunc("/warehouse/read/path", apiWarehouseReadFilePath).Methods("GET")
 	Router.HandleFunc("/warehouse/delete", apiWarehouseDeleteFile).Methods("GET")
 	Router.HandleFunc("/file/read", apiFileRead).Methods("GET")
 	Router.HandleFunc("/file/view", apiFileView).Methods("GET")
