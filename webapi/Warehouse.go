@@ -30,7 +30,7 @@ func apiWarehouseCreateFile(w http.ResponseWriter, r *http.Request) {
 	hash, status, err := core.UserWarehouse.CreateFile(r.Body)
 
 	if err != nil {
-		core.Filters.LogError("warehouese.CreateFile", "status %d error: %v", status, err)
+		core.Filters.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
 	}
 
 	EncodeJSON(w, r, WarehouseResult{Status: status, Hash: hash})
@@ -55,7 +55,7 @@ func apiWarehouseCreateFilePath(w http.ResponseWriter, r *http.Request) {
 	hash, status, err := core.UserWarehouse.CreateFileFromPath(filePath)
 
 	if err != nil {
-		core.Filters.LogError("warehouese.CreateFile", "status %d error: %v", status, err)
+		core.Filters.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
 	}
 
 	EncodeJSON(w, r, WarehouseResult{Status: status, Hash: hash})
@@ -90,12 +90,12 @@ func apiWarehouseReadFile(w http.ResponseWriter, r *http.Request) {
 	case warehouse.StatusInvalidHash, warehouse.StatusErrorOpenFile, warehouse.StatusErrorSeekFile:
 		w.WriteHeader(http.StatusInternalServerError)
 		return
-		// Cannot catch WarehouseStatusErrorReadFile since data may have been already returned.
+		// Cannot catch warehouse.StatusErrorReadFile since data may have been already returned.
 		// In the future a special header indicating the expected file length could be sent (would require a callback in ReadFile), although the caller should already know the file size based on metadata.
 	}
 
 	if err != nil {
-		core.Filters.LogError("warehouese.ReadFile", "status %d read %d error: %v", status, bytesRead, err)
+		core.Filters.LogError("warehouse.ReadFile", "status %d read %d error: %v", status, bytesRead, err)
 	}
 }
 
@@ -116,7 +116,36 @@ func apiWarehouseDeleteFile(w http.ResponseWriter, r *http.Request) {
 	status, err := core.UserWarehouse.DeleteFile(hash)
 
 	if err != nil {
-		core.Filters.LogError("warehouese.DeleteFile", "status %d error: %v", status, err)
+		core.Filters.LogError("warehouse.DeleteFile", "status %d error: %v", status, err)
+	}
+
+	EncodeJSON(w, r, WarehouseResult{Status: status, Hash: hash})
+}
+
+/*
+apiWarehouseReadFilePath reads a file from the warehouse and stores it to the target file. It fails with StatusErrorTargetExists if the target file already exists.
+The path must include the full directory and file name.
+
+Request:    GET /warehouse/read/path?hash=[hash]&path=[target path on disk]
+            Optional parameters &offset=[file offset]&limit=[read limit in bytes]
+Response:   200 with JSON structure WarehouseResult
+*/
+func apiWarehouseReadFilePath(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	hash, valid1 := DecodeBlake3Hash(r.Form.Get("hash"))
+	if !valid1 {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+
+	targetFile := r.Form.Get("path")
+	offset, _ := strconv.Atoi(r.Form.Get("offset"))
+	limit, _ := strconv.Atoi(r.Form.Get("limit"))
+
+	status, bytesRead, err := core.UserWarehouse.ReadFileToDisk(hash, int64(offset), int64(limit), targetFile)
+
+	if err != nil {
+		core.Filters.LogError("warehouse.ReadFileToDisk", "status %d read %d error: %v", status, bytesRead, err)
 	}
 
 	EncodeJSON(w, r, WarehouseResult{Status: status, Hash: hash})

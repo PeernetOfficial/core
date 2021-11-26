@@ -70,6 +70,7 @@ These are the functions provided by the API:
 /warehouse/create               Create a file in the warehouse
 /warehouse/create/path          Create a file in the warehouse via copy
 /warehouse/read                 Read a file in the warehouse
+/warehouse/read/path            Read a file in the warehouse to disk
 /warehouse/delete               Delete a file in the warehouse
 ```
 
@@ -135,14 +136,14 @@ Result:     204 if the user choses not to delete the account
 
 Common status codes returned by various endpoints in the `blockchain` package:
 
-| Status | Constant       |  Info                          |
-|------|----------------|-------------------------------|
-| 0    | StatusOK    | Successful operation.  |
-| 1    | StatusBlockNotFound    | Missing block in the blockchain.  |
-| 2    | StatusCorruptBlock    | Error block encoding.  |
-| 3    | StatusCorruptBlockRecord    | Error block record encoding.  |
-| 4    | StatusDataNotFound    | Requested data not available in the blockchain.  |
-| 5    | StatusNotInWarehouse    | File to be added to blockchain does not exist in the Warehouse.  |
+| Status | Constant                 | Info                                                            |
+| ------ | ------------------------ | --------------------------------------------------------------- |
+| 0      | StatusOK                 | Successful operation.                                           |
+| 1      | StatusBlockNotFound      | Missing block in the blockchain.                                |
+| 2      | StatusCorruptBlock       | Error block encoding.                                           |
+| 3      | StatusCorruptBlockRecord | Error block record encoding.                                    |
+| 4      | StatusDataNotFound       | Requested data not available in the blockchain.                 |
+| 5      | StatusNotInWarehouse     | File to be added to blockchain does not exist in the Warehouse. |
 
 ### Blockchain Header
 
@@ -245,15 +246,15 @@ type apiFileMetadata struct {
 
 Below is the list of defined metadata types. Undefined types may be used by clients, but are always mapped into the `blob` field. Virtual tags are generated at runtime and are read-only. They cannot be stored on the blockchain.
 
-| Type | Constant       | Encoding | Virtual | Info                                                                                                                   |
-|------|----------------|----------|---------|------------------------------------------------------------------------------------------------------------------------|
-| 0    | TagName        | Text     |         | Mapped into Name field. Name of file.                                                                                  |
-| 1    | TagFolder      | Text     |         | Mapped into Folder field. Folder name.                                                                                 |
-| 2    | TagDescription | Text     |         | Mapped into Description field. Arbitrary description of the file. May contain hashtags.                                |
-| 3    | TagDateShared  | Date     | x       | Mapped into Date field. When the file was published on the blockchain.                                                 |
-| 4    | TagDateCreated | Date     |         | Date when the file was originally created.                                                                             |
-| 5    | TagSharedByCount    | Number   | x       | Count of peers that share the file.                                                                             |
-| 6    | TagSharedByGeoIP    | Text/CSV  | x       | GeoIP data of peers that are sharing the file. CSV encoded with header "latitude,longitude".                    |
+| Type | Constant         | Encoding | Virtual | Info                                                                                         |
+| ---- | ---------------- | -------- | ------- | -------------------------------------------------------------------------------------------- |
+| 0    | TagName          | Text     |         | Mapped into Name field. Name of file.                                                        |
+| 1    | TagFolder        | Text     |         | Mapped into Folder field. Folder name.                                                       |
+| 2    | TagDescription   | Text     |         | Mapped into Description field. Arbitrary description of the file. May contain hashtags.      |
+| 3    | TagDateShared    | Date     | x       | Mapped into Date field. When the file was published on the blockchain.                       |
+| 4    | TagDateCreated   | Date     |         | Date when the file was originally created.                                                   |
+| 5    | TagSharedByCount | Number   | x       | Count of peers that share the file.                                                          |
+| 6    | TagSharedByGeoIP | Text/CSV | x       | GeoIP data of peers that are sharing the file. CSV encoded with header "latitude,longitude". |
 
 ### Add File
 
@@ -422,7 +423,7 @@ Note that all profile data is arbitrary and shall be considered untrusted and un
 Below is the list of well known profile information. Clients may define additional fields. The purpose of this defined list is to provide a common mapping across different client software. Undefined types are always mapped into the `blob` field.
 
 | Type | Constant       | Encoding | Info                          |
-|------|----------------|----------|-------------------------------|
+| ---- | -------------- | -------- | ----------------------------- |
 | 0    | ProfileName    | Text     | Arbitrary username            |
 | 1    | ProfileEmail   | Text     | Email address                 |
 | 2    | ProfileWebsite | Text     | Website address               |
@@ -556,19 +557,19 @@ Filters and sort order may be applied when starting the search at `/search`, or 
 
 These are the available sort options:
 
-| Sort | Constant       |  Info                          |
-|------|----------------|-------------------------------|
-| 0    | SortNone    | No sorting. Results are returned as they come in.  |
-| 1    | SortRelevanceAsc    | Least relevant results first.  |
-| 2    | SortRelevanceDec    | Most relevant results first.  |
-| 3    | SortDateAsc    | Oldest first.  |
-| 4    | SortDateDesc    | Newest first.  |
-| 5    | SortNameAsc    | File name ascending. The folder name is not used for sorting.  |
-| 6    | SortNameDesc    | File name descending. The folder name is not used for sorting.  |
-| 7    | SortSizeAsc    | File size ascending. Smallest files first. |
-| 8    | SortSizeDesc    | File size descending. Largest files first. |
-| 9    | SortSharedByCountAsc    | Shared by count ascending. Files that are shared by the least count of peers first. |
-| 10   | SortSharedByCountDesc    | Shared by count descending. Files that are shared by the most count of peers first. |
+| Sort | Constant              | Info                                                                                |
+| ---- | --------------------- | ----------------------------------------------------------------------------------- |
+| 0    | SortNone              | No sorting. Results are returned as they come in.                                   |
+| 1    | SortRelevanceAsc      | Least relevant results first.                                                       |
+| 2    | SortRelevanceDec      | Most relevant results first.                                                        |
+| 3    | SortDateAsc           | Oldest first.                                                                       |
+| 4    | SortDateDesc          | Newest first.                                                                       |
+| 5    | SortNameAsc           | File name ascending. The folder name is not used for sorting.                       |
+| 6    | SortNameDesc          | File name descending. The folder name is not used for sorting.                      |
+| 7    | SortSizeAsc           | File size ascending. Smallest files first.                                          |
+| 8    | SortSizeDesc          | File size descending. Largest files first.                                          |
+| 9    | SortSharedByCountAsc  | Shared by count ascending. Files that are shared by the least count of peers first. |
+| 10   | SortSharedByCountDesc | Shared by count descending. Files that are shared by the most count of peers first. |
 
 The following filters are supported:
 
@@ -759,24 +760,24 @@ Response:   204 Empty
 
 Downloads can have these status types:
 
-| Status | Constant       |  Info                          |
-|------|----------------|-------------------------------|
-| 0    | DownloadWaitMetadata    | Wait for file metadata.  |
-| 1    | DownloadWaitSwarm    | Wait to join swarm.  |
-| 2    | DownloadActive    | Active downloading. It could still be stuck at any percentage (including 0%) if no seeders are available.  |
-| 3    | DownloadPause    | Paused by the user.  |
-| 4    | DownloadCanceled    | Canceled by the user before the download finished. Once canceled, a new download has to be started if the file shall be downloaded.  |
-| 5    | DownloadFinished    | Download finished 100%.  |
+| Status | Constant             | Info                                                                                                                                |
+| ------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 0      | DownloadWaitMetadata | Wait for file metadata.                                                                                                             |
+| 1      | DownloadWaitSwarm    | Wait to join swarm.                                                                                                                 |
+| 2      | DownloadActive       | Active downloading. It could still be stuck at any percentage (including 0%) if no seeders are available.                           |
+| 3      | DownloadPause        | Paused by the user.                                                                                                                 |
+| 4      | DownloadCanceled     | Canceled by the user before the download finished. Once canceled, a new download has to be started if the file shall be downloaded. |
+| 5      | DownloadFinished     | Download finished 100%.                                                                                                             |
 
 The API response codes for download functions are:
 
-| Status | Constant       |  Info                          |
-|------|----------------|-------------------------------|
-| 0    | DownloadResponseSuccess    | Success  |
-| 1    | DownloadResponseIDNotFound    | Error: Download ID not found.  |
-| 2    | DownloadResponseFileInvalid   | Error: Target file cannot be used. For example, permissions denied to create it.  |
-| 3    | DownloadResponseActionInvalid  | Error: Invalid action. Pausing a non-active download, resuming a non-paused download, or canceling already canceled or finished download.  |
-| 4    | DownloadResponseFileWrite    | Error writing file.  |
+| Status | Constant                      | Info                                                                                                                                      |
+| ------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 0      | DownloadResponseSuccess       | Success                                                                                                                                   |
+| 1      | DownloadResponseIDNotFound    | Error: Download ID not found.                                                                                                             |
+| 2      | DownloadResponseFileInvalid   | Error: Target file cannot be used. For example, permissions denied to create it.                                                          |
+| 3      | DownloadResponseActionInvalid | Error: Invalid action. Pausing a non-active download, resuming a non-paused download, or canceling already canceled or finished download. |
+| 4      | DownloadResponseFileWrite     | Error writing file.                                                                                                                       |
 
 ### Start Download
 
@@ -929,20 +930,21 @@ Note: The Warehouse does NOT store files downloaded from other users. It strictl
 
 Status codes:
 
-| Status | Constant       |  Info                          |
-|------|----------------|-------------------------------|
-| 0    | StatusOK    | Success  |
-| 1    | StatusErrorCreateTempFile    | Error creating a temporary file.  |
-| 2    | StatusErrorWriteTempFile    | Error writing temporary file.  |
-| 3    | StatusErrorCloseTempFile    | Error closing temporary file.  |
-| 4    | StatusErrorRenameTempFile    | Error renaming temporary file.  |
-| 5    | StatusErrorCreatePath    | Error creating path for target file in warehouse.  |
-| 7    | StatusErrorOpenFile    | Error opening file.  |
-| 8    | StatusInvalidHash    | Invalid hash.  |
-| 9    | StatusFileNotFound    | File not found.  |
-| 10    | StatusErrorDeleteFile    | Error deleting file.  |
-| 11    | StatusErrorReadFile    | Error reading file.  |
-| 12    | StatusErrorSeekFile    | Error seeking to position in file.  |
+| Status | Constant                  | Info                                              |
+| ------ | ------------------------- | ------------------------------------------------- |
+| 0      | StatusOK                  | Success                                           |
+| 1      | StatusErrorCreateTempFile | Error creating a temporary file.                  |
+| 2      | StatusErrorWriteTempFile  | Error writing temporary file.                     |
+| 3      | StatusErrorCloseTempFile  | Error closing temporary file.                     |
+| 4      | StatusErrorRenameTempFile | Error renaming temporary file.                    |
+| 5      | StatusErrorCreatePath     | Error creating path for target file in warehouse. |
+| 7      | StatusErrorOpenFile       | Error opening file.                               |
+| 8      | StatusInvalidHash         | Invalid hash.                                     |
+| 9      | StatusFileNotFound        | File not found.                                   |
+| 10     | StatusErrorDeleteFile     | Error deleting file.                              |
+| 11     | StatusErrorReadFile       | Error reading file.                               |
+| 12     | StatusErrorSeekFile       | Error seeking to position in file.                |
+| 13     | StatusErrorTargetExists   | Target file already exists.                       |
 
 ### Create File
 
@@ -1011,6 +1013,19 @@ Response:   200 with the raw file data
 ```
 
 Example request: `http://127.0.0.1:112/warehouse/read?hash=dbf344f23e7820261329883ae26f64929a7c9977549001d28dc40c9202d7651e`
+
+### Read File To Disk
+
+This reads a file from the warehouse and stores it to the target file. It fails with StatusErrorTargetExists if the target file already exists.
+The path must include the full directory and file name.
+
+```
+Request:    GET /warehouse/read/path?hash=[hash]&path=[target path on disk]
+            Optional parameters &offset=[file offset]&limit=[read limit in bytes]
+Response:   200 with JSON structure WarehouseResult
+```
+
+Example request: `http://127.0.0.1:112/warehouse/read/path?hash=dbf344f23e7820261329883ae26f64929a7c9977549001d28dc40c9202d7651e&path=C%3A%5CTest%20File%202.bin`
 
 ### Delete File
 
