@@ -68,3 +68,72 @@ func printMerkleTree(tree *MerkleTree) {
 		}
 	}
 }
+
+func TestMerkleFileExport(t *testing.T) {
+	dataSize := uint64(11*1024*1024 + 100)
+	data := make([]byte, dataSize)
+
+	if _, err := io.ReadFull(rand.Reader, data); err != nil {
+		return
+	}
+
+	fragmentSize := CalculateFragmentSize(dataSize)
+
+	tree, err := NewMerkleTree(dataSize, fragmentSize, bytes.NewBuffer(data))
+
+	if err != nil {
+		fmt.Printf("Error creating merkle tree: %v\n", err)
+		return
+	}
+
+	printMerkleTree(tree)
+
+	treeData := tree.Export()
+
+	tree2 := ImportMerkleTree(treeData)
+	if tree2 == nil {
+		fmt.Printf("Error importing tree\n")
+		return
+	}
+
+	printMerkleTree(tree2)
+
+	// verify both trees
+	if tree.fileSize != tree2.fileSize || tree.fragmentSize != tree2.fragmentSize || tree.fragmentCount != tree2.fragmentCount {
+		fmt.Printf("Error: Header of trees mismatch\n")
+		return
+	} else if !bytes.Equal(tree.rootHash, tree2.rootHash) {
+		fmt.Printf("Error: Merkle root hash mismatch\n")
+		return
+	} else if len(tree.fragmentHashes) != len(tree2.fragmentHashes) {
+		fmt.Printf("Error: Fragment hashes mismatch count\n")
+		return
+	} else if len(tree.middleHashes) != len(tree2.middleHashes) {
+		fmt.Printf("Error: Middle hashes level mismatch\n")
+		return
+	}
+
+	// fragment hashes and middle hashes
+	for n, hash := range tree.fragmentHashes {
+		if !bytes.Equal(hash, tree2.fragmentHashes[n]) {
+			fmt.Printf("Error: Fragment hash %d mismatch\n", n)
+			return
+		}
+	}
+
+	for n := range tree.middleHashes {
+		if len(tree.middleHashes[n]) != len(tree2.middleHashes[n]) {
+			fmt.Printf("Error: Middle hashes level %d mismatch\n", n)
+			return
+		}
+
+		for m, hash := range tree.middleHashes[n] {
+			if !bytes.Equal(hash, tree2.middleHashes[n][m]) {
+				fmt.Printf("Error: Middle hash %d %d mismatch\n", n, m)
+				return
+			}
+		}
+	}
+
+	fmt.Printf("Success. Import/export match.\n")
+}
