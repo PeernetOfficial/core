@@ -10,6 +10,7 @@ In case of uneven number of fragments, the last fragment will be hashed against 
 package fragment
 
 import (
+	"bytes"
 	"errors"
 	"io"
 
@@ -132,6 +133,56 @@ func calculateMiddleHash(hash1 []byte, hash2 []byte) (newHash []byte) {
 	hash := blake3.Sum256(data)
 
 	return hash[:]
+}
+
+// CreateVerification returns the verification hashes for the given fragment number. The root hash itself is not included.
+// The result might be empty if there is no or a single fragment.
+// Each verification hash has a preceding left (= 0)/right (= 1) indicator that indicates where the verification is positioned.
+// This makes the algorithm future proof, in case uneven leafs will be handled differently.
+func (tree *MerkleTree) CreateVerification(fragment uint64) (verificationHashes [][]byte) {
+	// 0 fragments: Empty data.
+	// 1 fragment: The hash of the fragment is the root hash.
+	if tree.fragmentCount <= 1 {
+		return nil
+	} else if fragment >= tree.fragmentCount {
+		// invalid fragment index
+		return nil
+	}
+
+	// first hash it he neighbor fragment hash, if available
+	if fragment == tree.fragmentCount-1 && fragment%2 == 0 {
+	} else if fragment%2 == 0 {
+		verificationHashes = append(verificationHashes, append([]byte{1}, tree.fragmentHashes[fragment+1]...))
+	} else {
+		verificationHashes = append(verificationHashes, append([]byte{0}, tree.fragmentHashes[fragment-1]...))
+	}
+
+	// go through all middle hash levels
+	for n := 0; n < len(tree.middleHashes); n++ {
+		fragment = fragment / 2
+
+		if fragment == uint64(len(tree.middleHashes[n])-1) && fragment%2 == 0 {
+		} else if fragment%2 == 0 {
+			verificationHashes = append(verificationHashes, append([]byte{1}, tree.middleHashes[n][fragment+1]...))
+		} else {
+			verificationHashes = append(verificationHashes, append([]byte{0}, tree.middleHashes[n][fragment-1]...))
+		}
+	}
+
+	return
+}
+
+// MerkleVerify validates the hashed data against the verification hashes and the known root hash.
+func MerkleVerify(rootHash []byte, dataHash []byte, verificationHashes [][]byte) (valid bool) {
+	for _, verifyHash := range verificationHashes {
+		if verifyHash[0] == 0 {
+			dataHash = calculateMiddleHash(verifyHash[1:], dataHash)
+		} else {
+			dataHash = calculateMiddleHash(dataHash, verifyHash[1:])
+		}
+	}
+
+	return bytes.Equal(rootHash, dataHash)
 }
 
 // Export/Import of the merkle tree structure:

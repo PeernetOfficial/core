@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"testing"
+
+	"lukechampine.com/blake3"
 )
 
 func TestFragment0(t *testing.T) {
@@ -28,6 +30,26 @@ func TestFragment0(t *testing.T) {
 	}
 
 	printMerkleTree(tree)
+
+	// Validate all hashes.
+	for n := uint64(0); n < tree.fragmentCount; n++ {
+		verificationHashes := tree.CreateVerification(n)
+
+		dataSize := tree.fragmentSize
+		if n == tree.fragmentCount-1 {
+			dataSize = tree.fileSize - n*tree.fragmentSize
+		}
+		dataHash := blake3.Sum256(data[n*tree.fragmentSize : n*tree.fragmentSize+dataSize])
+
+		valid := MerkleVerify(tree.rootHash, dataHash[:], verificationHashes)
+
+		fmt.Printf("Validate fragment %d: %t\n", n, valid)
+		if !valid {
+			for m := 0; m < len(verificationHashes); m++ {
+				fmt.Printf("-> Middle hash [level %d]: %s\n", m-1, hex.EncodeToString(verificationHashes[m]))
+			}
+		}
+	}
 }
 
 func printMerkleTree(tree *MerkleTree) {
