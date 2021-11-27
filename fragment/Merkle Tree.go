@@ -4,13 +4,14 @@ Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
 Generates the merkle tree based on input data.
-In case of uneven number of fragments, the last fragment will be hashed against the top hash of all the left tree to create the merkle root hash.
+In case of uneven number of fragments, the last uneven fragment is moved up a level.
 */
 
 package fragment
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"io"
 
@@ -26,8 +27,8 @@ type MerkleTree struct {
 
 	// list of hashes
 	fragmentHashes [][]byte   // List of hashes for each fragment
-	rootHash       []byte     // Root hash.
 	middleHashes   [][][]byte // All hashes in the middle, bottom up.
+	rootHash       []byte     // Root hash.
 }
 
 // NewMerkleTree creates a new merkle tree from the input
@@ -185,15 +186,121 @@ func MerkleVerify(rootHash []byte, dataHash []byte, verificationHashes [][]byte)
 	return bytes.Equal(rootHash, dataHash)
 }
 
-// Export/Import of the merkle tree structure:
-// TODO
+/*
+Export/Import of the merkle tree structure:
+
+Offset  Size        Info
+0       8           File Size
+8       8           Fragment Size
+16      32          Merkle Root Hash
+48      32 * n      Fragment Hashes
+?       32 * n      Middle Hashes
+
+*/
+
+const merkleTreeFileHeaderSize = 8 + 8 + 32
+
+// calculateTotalHashCount returns the total number of fragment and middle hashes needed for the given count of fragments
+func calculateTotalHashCount(fragmentCount uint64) (count uint64) {
+	// Special case no or 1 fragment: None needed, since the fragment hash is directly stored as root hash.
+	if fragmentCount <= 1 {
+		return 0
+	}
+
+	// Equal count of fragment hashes needed
+	count = fragmentCount
+
+	// Calculate middle hashes number
+	for countHashesLast := fragmentCount; ; {
+		countMiddleNew := (countHashesLast + 1) / 2 // round up
+		if countMiddleNew <= 1 {
+			break
+		}
+
+		count += countMiddleNew
+		countHashesLast = countMiddleNew
+	}
+
+	return count
+}
 
 // Export stores the tree as blob
 func (tree *MerkleTree) Export() (data []byte) {
-	return nil
+	data = make([]byte, merkleTreeFileHeaderSize+calculateTotalHashCount(tree.fragmentCount)*32)
+
+	// header
+	binary.LittleEndian.PutUint64(data[0:8], tree.fileSize)
+	binary.LittleEndian.PutUint64(data[8:16], tree.fragmentSize)
+	copy(data[16:16+32], tree.rootHash)
+
+	// fragment hashes
+	offset := 48
+	for _, hash := range tree.fragmentHashes {
+		copy(data[offset:offset+32], hash)
+		offset += 32
+	}
+
+	// middle hashes
+	for n := 0; n < len(tree.middleHashes); n++ {
+		for _, hash := range tree.middleHashes[n] {
+			copy(data[offset:offset+32], hash)
+			offset += 32
+		}
+	}
+
+	return data[:offset]
 }
 
 // Import reads the tree from the input data
-func (tree *MerkleTree) Import(data []byte) {
+func ImportMerkleTree(data []byte) (tree *MerkleTree) {
+	// Read the header. Enforce the minimum size.
+	if len(data) < 8+8+32 {
+		return nil
+	}
 
+	tree = &MerkleTree{
+		fileSize:     binary.LittleEndian.Uint64(data[0:8]),
+		fragmentSize: binary.LittleEndian.Uint64(data[8:16]),
+	}
+	tree.fragmentCount = fileSizeToFragmentCount(tree.fileSize, tree.fragmentSize)
+	tree.rootHash = data[16 : 16+32]
+
+	if tree.fragmentCount <= 1 {
+		return tree
+	}
+
+	// verify size
+	if uint64(len(data)) < merkleTreeFileHeaderSize+calculateTotalHashCount(tree.fragmentCount)*32 {
+		return nil
+	}
+
+	// fragment hashes
+	offset := 48
+	for n := 0; n < int(tree.fragmentCount); n++ {
+		hash := data[offset : offset+32]
+		tree.fragmentHashes = append(tree.fragmentHashes, hash)
+		offset += 32
+	}
+
+	// middle hashes
+	n := tree.fragmentCount / 2
+	if tree.fragmentCount > 2 && tree.fragmentCount%2 != 0 {
+		n++
+	}
+
+	for ; n > 1; n = n / 2 {
+		var hashList [][]byte
+		for m := uint64(0); m < n; m++ {
+			hash := data[offset : offset+32]
+			hashList = append(hashList, hash)
+			offset += 32
+		}
+
+		tree.middleHashes = append(tree.middleHashes, hashList)
+		if len(hashList)%2 != 0 {
+			n++
+		}
+	}
+
+	return
 }
