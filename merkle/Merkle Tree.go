@@ -7,7 +7,7 @@ Generates the merkle tree based on input data.
 In case of uneven number of fragments, the last uneven fragment is moved up a level.
 */
 
-package fragment
+package merkle
 
 import (
 	"bytes"
@@ -21,14 +21,14 @@ import (
 // MerkleTree represents an entire merkle tree
 type MerkleTree struct {
 	// information about the original file
-	fileSize      uint64
-	fragmentSize  uint64
-	fragmentCount uint64
+	FileSize      uint64
+	FragmentSize  uint64
+	FragmentCount uint64
 
 	// list of hashes
-	fragmentHashes [][]byte   // List of hashes for each fragment
-	middleHashes   [][][]byte // All hashes in the middle, bottom up.
-	rootHash       []byte     // Root hash.
+	FragmentHashes [][]byte   // List of hashes for each fragment
+	MiddleHashes   [][][]byte // All hashes in the middle, bottom up.
+	RootHash       []byte     // Root hash.
 }
 
 // NewMerkleTree creates a new merkle tree from the input
@@ -38,18 +38,18 @@ func NewMerkleTree(fileSize, fragmentSize uint64, reader io.Reader) (tree *Merkl
 	}
 
 	tree = &MerkleTree{
-		fileSize:      fileSize,
-		fragmentSize:  fragmentSize,
-		fragmentCount: fileSizeToFragmentCount(fileSize, fragmentSize),
+		FileSize:      fileSize,
+		FragmentSize:  fragmentSize,
+		FragmentCount: fileSizeToFragmentCount(fileSize, fragmentSize),
 	}
 
 	// Special case: No fragments, in case of empty data.
-	if tree.fragmentCount == 0 {
+	if tree.FragmentCount == 0 {
 		hash := blake3.Sum256(nil)
-		tree.rootHash = hash[:]
+		tree.RootHash = hash[:]
 
 		return tree, nil
-	} else if tree.fragmentCount == 1 {
+	} else if tree.FragmentCount == 1 {
 		// Special case: Single fragment.
 		data := make([]byte, fileSize)
 		if _, err := io.ReadAtLeast(reader, data, int(fileSize)); err != nil {
@@ -57,7 +57,7 @@ func NewMerkleTree(fileSize, fragmentSize uint64, reader io.Reader) (tree *Merkl
 		}
 
 		hash := blake3.Sum256(data)
-		tree.rootHash = hash[:]
+		tree.RootHash = hash[:]
 
 		return tree, nil
 	}
@@ -66,7 +66,7 @@ func NewMerkleTree(fileSize, fragmentSize uint64, reader io.Reader) (tree *Merkl
 	data := make([]byte, fragmentSize)
 	remaining := fileSize
 
-	for n := uint64(0); n < tree.fragmentCount; n++ {
+	for n := uint64(0); n < tree.FragmentCount; n++ {
 		if fragmentSize > remaining {
 			fragmentSize = remaining
 		}
@@ -78,7 +78,7 @@ func NewMerkleTree(fileSize, fragmentSize uint64, reader io.Reader) (tree *Merkl
 		// hash the fragment
 		hash := blake3.Sum256(data[:fragmentSize])
 
-		tree.fragmentHashes = append(tree.fragmentHashes, hash[:])
+		tree.FragmentHashes = append(tree.FragmentHashes, hash[:])
 
 		remaining -= fragmentSize
 	}
@@ -94,16 +94,16 @@ func fileSizeToFragmentCount(fileSize, fragmentSize uint64) (count uint64) {
 }
 
 func (tree *MerkleTree) calculateMiddleHashes(level uint64) {
-	if len(tree.fragmentHashes) == 0 {
+	if len(tree.FragmentHashes) == 0 {
 		return
 	}
 
 	var newHashes, inputHashes [][]byte
 
 	if level == 0 {
-		inputHashes = tree.fragmentHashes
+		inputHashes = tree.FragmentHashes
 	} else {
-		inputHashes = tree.middleHashes[level-1]
+		inputHashes = tree.MiddleHashes[level-1]
 	}
 
 	for n := 0; n+1 <= len(inputHashes)-1; n += 2 {
@@ -118,9 +118,9 @@ func (tree *MerkleTree) calculateMiddleHashes(level uint64) {
 
 	if len(newHashes) == 1 {
 		// Only one hash generated.
-		tree.rootHash = newHashes[0]
+		tree.RootHash = newHashes[0]
 	} else if len(newHashes) > 1 {
-		tree.middleHashes = append(tree.middleHashes, newHashes)
+		tree.MiddleHashes = append(tree.MiddleHashes, newHashes)
 
 		tree.calculateMiddleHashes(level + 1)
 	}
@@ -143,30 +143,30 @@ func calculateMiddleHash(hash1 []byte, hash2 []byte) (newHash []byte) {
 func (tree *MerkleTree) CreateVerification(fragment uint64) (verificationHashes [][]byte) {
 	// 0 fragments: Empty data.
 	// 1 fragment: The hash of the fragment is the root hash.
-	if tree.fragmentCount <= 1 {
+	if tree.FragmentCount <= 1 {
 		return nil
-	} else if fragment >= tree.fragmentCount {
+	} else if fragment >= tree.FragmentCount {
 		// invalid fragment index
 		return nil
 	}
 
 	// first hash it he neighbor fragment hash, if available
-	if fragment == tree.fragmentCount-1 && fragment%2 == 0 {
+	if fragment == tree.FragmentCount-1 && fragment%2 == 0 {
 	} else if fragment%2 == 0 {
-		verificationHashes = append(verificationHashes, append([]byte{1}, tree.fragmentHashes[fragment+1]...))
+		verificationHashes = append(verificationHashes, append([]byte{1}, tree.FragmentHashes[fragment+1]...))
 	} else {
-		verificationHashes = append(verificationHashes, append([]byte{0}, tree.fragmentHashes[fragment-1]...))
+		verificationHashes = append(verificationHashes, append([]byte{0}, tree.FragmentHashes[fragment-1]...))
 	}
 
 	// go through all middle hash levels
-	for n := 0; n < len(tree.middleHashes); n++ {
+	for n := 0; n < len(tree.MiddleHashes); n++ {
 		fragment = fragment / 2
 
-		if fragment == uint64(len(tree.middleHashes[n])-1) && fragment%2 == 0 {
+		if fragment == uint64(len(tree.MiddleHashes[n])-1) && fragment%2 == 0 {
 		} else if fragment%2 == 0 {
-			verificationHashes = append(verificationHashes, append([]byte{1}, tree.middleHashes[n][fragment+1]...))
+			verificationHashes = append(verificationHashes, append([]byte{1}, tree.MiddleHashes[n][fragment+1]...))
 		} else {
-			verificationHashes = append(verificationHashes, append([]byte{0}, tree.middleHashes[n][fragment-1]...))
+			verificationHashes = append(verificationHashes, append([]byte{0}, tree.MiddleHashes[n][fragment-1]...))
 		}
 	}
 
@@ -226,23 +226,23 @@ func calculateTotalHashCount(fragmentCount uint64) (count uint64) {
 
 // Export stores the tree as blob
 func (tree *MerkleTree) Export() (data []byte) {
-	data = make([]byte, merkleTreeFileHeaderSize+calculateTotalHashCount(tree.fragmentCount)*32)
+	data = make([]byte, merkleTreeFileHeaderSize+calculateTotalHashCount(tree.FragmentCount)*32)
 
 	// header
-	binary.LittleEndian.PutUint64(data[0:8], tree.fileSize)
-	binary.LittleEndian.PutUint64(data[8:16], tree.fragmentSize)
-	copy(data[16:16+32], tree.rootHash)
+	binary.LittleEndian.PutUint64(data[0:8], tree.FileSize)
+	binary.LittleEndian.PutUint64(data[8:16], tree.FragmentSize)
+	copy(data[16:16+32], tree.RootHash)
 
 	// fragment hashes
 	offset := 48
-	for _, hash := range tree.fragmentHashes {
+	for _, hash := range tree.FragmentHashes {
 		copy(data[offset:offset+32], hash)
 		offset += 32
 	}
 
 	// middle hashes
-	for n := 0; n < len(tree.middleHashes); n++ {
-		for _, hash := range tree.middleHashes[n] {
+	for n := 0; n < len(tree.MiddleHashes); n++ {
+		for _, hash := range tree.MiddleHashes[n] {
 			copy(data[offset:offset+32], hash)
 			offset += 32
 		}
@@ -259,32 +259,32 @@ func ImportMerkleTree(data []byte) (tree *MerkleTree) {
 	}
 
 	tree = &MerkleTree{
-		fileSize:     binary.LittleEndian.Uint64(data[0:8]),
-		fragmentSize: binary.LittleEndian.Uint64(data[8:16]),
+		FileSize:     binary.LittleEndian.Uint64(data[0:8]),
+		FragmentSize: binary.LittleEndian.Uint64(data[8:16]),
 	}
-	tree.fragmentCount = fileSizeToFragmentCount(tree.fileSize, tree.fragmentSize)
-	tree.rootHash = data[16 : 16+32]
+	tree.FragmentCount = fileSizeToFragmentCount(tree.FileSize, tree.FragmentSize)
+	tree.RootHash = data[16 : 16+32]
 
-	if tree.fragmentCount <= 1 {
+	if tree.FragmentCount <= 1 {
 		return tree
 	}
 
 	// verify size
-	if uint64(len(data)) < merkleTreeFileHeaderSize+calculateTotalHashCount(tree.fragmentCount)*32 {
+	if uint64(len(data)) < merkleTreeFileHeaderSize+calculateTotalHashCount(tree.FragmentCount)*32 {
 		return nil
 	}
 
 	// fragment hashes
 	offset := 48
-	for n := 0; n < int(tree.fragmentCount); n++ {
+	for n := 0; n < int(tree.FragmentCount); n++ {
 		hash := data[offset : offset+32]
-		tree.fragmentHashes = append(tree.fragmentHashes, hash)
+		tree.FragmentHashes = append(tree.FragmentHashes, hash)
 		offset += 32
 	}
 
 	// middle hashes
-	n := tree.fragmentCount / 2
-	if tree.fragmentCount > 2 && tree.fragmentCount%2 != 0 {
+	n := tree.FragmentCount / 2
+	if tree.FragmentCount > 2 && tree.FragmentCount%2 != 0 {
 		n++
 	}
 
@@ -296,7 +296,7 @@ func ImportMerkleTree(data []byte) (tree *MerkleTree) {
 			offset += 32
 		}
 
-		tree.middleHashes = append(tree.middleHashes, hashList)
+		tree.MiddleHashes = append(tree.MiddleHashes, hashList)
 		if len(hashList)%2 != 0 {
 			n++
 		}
