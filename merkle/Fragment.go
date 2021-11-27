@@ -4,7 +4,7 @@ Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */
 
-package fragment
+package merkle
 
 const KB = 1024
 const MB = 1024 * KB
