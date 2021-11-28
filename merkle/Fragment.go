@@ -6,6 +6,9 @@ Author:     Peter Kleissner
 
 package merkle
 
+// MinimumFragmentSize is the minimum size a fragment must be. Merkle trees are not used equal or below that size.
+const MinimumFragmentSize = 256 * KB
+
 const KB = 1024
 const MB = 1024 * KB
 const GB = 1024 * MB

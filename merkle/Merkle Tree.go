@@ -253,19 +253,7 @@ func (tree *MerkleTree) Export() (data []byte) {
 
 // Import reads the tree from the input data
 func ImportMerkleTree(data []byte) (tree *MerkleTree) {
-	// Read the header. Enforce the minimum size.
-	if len(data) < 8+8+32 {
-		return nil
-	}
-
-	tree = &MerkleTree{
-		FileSize:     binary.LittleEndian.Uint64(data[0:8]),
-		FragmentSize: binary.LittleEndian.Uint64(data[8:16]),
-	}
-	tree.FragmentCount = fileSizeToFragmentCount(tree.FileSize, tree.FragmentSize)
-	tree.RootHash = data[16 : 16+32]
-
-	if tree.FragmentCount <= 1 {
+	if tree = ReadMerkleTreeHeader(data); tree == nil || tree.FragmentCount <= 1 {
 		return tree
 	}
 
@@ -303,4 +291,21 @@ func ImportMerkleTree(data []byte) (tree *MerkleTree) {
 	}
 
 	return
+}
+
+// ReadMerkleTreeHeader reads the merkle tree header. Fragment and middle hashes are not loaded.
+func ReadMerkleTreeHeader(data []byte) (tree *MerkleTree) {
+	// Read the header. Enforce the minimum size.
+	if len(data) < 8+8+32 {
+		return nil
+	}
+
+	tree = &MerkleTree{
+		FileSize:     binary.LittleEndian.Uint64(data[0:8]),
+		FragmentSize: binary.LittleEndian.Uint64(data[8:16]),
+	}
+	tree.FragmentCount = fileSizeToFragmentCount(tree.FileSize, tree.FragmentSize)
+	tree.RootHash = data[16 : 16+32]
+
+	return tree
 }
