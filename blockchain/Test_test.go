@@ -1,11 +1,13 @@
 package blockchain
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"testing"
 
 	"github.com/PeernetOfficial/core/btcec"
+	"github.com/PeernetOfficial/core/merkle"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/google/uuid"
 )
@@ -19,15 +21,14 @@ func TestBlockEncoding(t *testing.T) {
 
 	encoded1, _ := encodeBlockRecordProfile([]BlockRecordProfile{ProfileFieldFromText(ProfileName, "Test User 1")})
 
-	file1 := BlockRecordFile{Hash: protocol.HashData([]byte("Test data")), Type: testTypeText, Format: testFormatText, Size: 9, ID: uuid.New()}
-	file1.Tags = append(file1.Tags, TagFromText(TagName, "Filename 1.txt"))
-	file1.Tags = append(file1.Tags, TagFromText(TagFolder, "documents\\sub folder"))
+	file1, _ := createBlockRecordFile([]byte("Test data"), "Filename 1.txt", "documents\\sub folder")
+	file2, _ := createBlockRecordFile([]byte("Test data 2!"), "Filename 2.txt", "documents\\sub folder")
 
-	file2 := BlockRecordFile{Hash: protocol.HashData([]byte("Test data 2!")), Type: testTypeText, Format: testFormatText, Size: 10, ID: uuid.New()}
-	file2.Tags = append(file2.Tags, TagFromText(TagName, "Filename 2.txt"))
-	file2.Tags = append(file2.Tags, TagFromText(TagFolder, "documents\\sub folder"))
-
-	encodedFiles, _ := encodeBlockRecordFiles([]BlockRecordFile{file1, file2})
+	encodedFiles, err := encodeBlockRecordFiles([]BlockRecordFile{file1, file2})
+	if err != nil {
+		fmt.Printf("Error encoding files: %s\n", err.Error())
+		return
+	}
 
 	blockE := &Block{BlockchainVersion: 42, Number: 0}
 	blockE.RecordsRaw = append(blockE.RecordsRaw, encoded1...)
@@ -67,6 +68,21 @@ func TestBlockEncoding(t *testing.T) {
 	}
 }
 
+func createBlockRecordFile(data []byte, name, folder string) (file BlockRecordFile, err error) {
+	file = BlockRecordFile{Hash: protocol.HashData(data), Type: testTypeText, Format: testFormatText, Size: uint64(len(data)), ID: uuid.New()}
+	file.Tags = append(file.Tags, TagFromText(TagName, name))
+	file.Tags = append(file.Tags, TagFromText(TagFolder, folder))
+
+	file.FragmentSize = merkle.CalculateFragmentSize(file.Size)
+	tree, err := merkle.NewMerkleTree(file.Size, file.FragmentSize, bytes.NewBuffer(data))
+	if err != nil {
+		return file, err
+	}
+	file.MerkleRootHash = tree.RootHash
+
+	return file, nil
+}
+
 func initTestPrivateKey() (blockchain *Blockchain, err error) {
 	// use static test key, otherwise tests will be inconsistent (would otherwise fail to open blockchain database)
 	privateKeyTestA := "d65da474861d826edd29c1307f1250d79e9dbf84e3a2449022658445c8d8ed63"
@@ -84,9 +100,7 @@ func TestBlockchainAdd(t *testing.T) {
 		return
 	}
 
-	file1 := BlockRecordFile{Hash: protocol.HashData([]byte("Test data")), Type: testTypeText, Format: testFormatText, Size: 9, ID: uuid.New()}
-	file1.Tags = append(file1.Tags, TagFromText(TagName, "Filename 1.txt"))
-	file1.Tags = append(file1.Tags, TagFromText(TagFolder, "documents\\sub folder"))
+	file1, _ := createBlockRecordFile([]byte("Test data"), "Filename 1.txt", "documents\\sub folder")
 
 	newHeight, newVersion, status := blockchain.AddFiles([]BlockRecordFile{file1})
 
@@ -142,20 +156,22 @@ func TestBlockchainRead(t *testing.T) {
 }
 
 func printFile(file BlockRecordFile) {
-	fmt.Printf("* File          %s\n", file.ID.String())
-	fmt.Printf("  Size          %d\n", file.Size)
-	fmt.Printf("  Type          %d\n", file.Type)
-	fmt.Printf("  Format        %d\n", file.Format)
-	fmt.Printf("  Hash          %s\n", hex.EncodeToString(file.Hash))
+	fmt.Printf("* File                %s\n", file.ID.String())
+	fmt.Printf("  Size                %d\n", file.Size)
+	fmt.Printf("  Type                %d\n", file.Type)
+	fmt.Printf("  Format              %d\n", file.Format)
+	fmt.Printf("  Hash                %s\n", hex.EncodeToString(file.Hash))
+	fmt.Printf("  Merkle Root Hash    %s\n", hex.EncodeToString(file.MerkleRootHash))
+	fmt.Printf("  Fragment Size       %d\n", file.FragmentSize)
 
 	for _, tag := range file.Tags {
 		switch tag.Type {
 		case TagName:
-			fmt.Printf("  Name          %s\n", tag.Text())
+			fmt.Printf("  Name                %s\n", tag.Text())
 		case TagFolder:
-			fmt.Printf("  Folder        %s\n", tag.Text())
+			fmt.Printf("  Folder              %s\n", tag.Text())
 		case TagDescription:
-			fmt.Printf("  Description   %s\n", tag.Text())
+			fmt.Printf("  Description         %s\n", tag.Text())
 		}
 	}
 }
@@ -167,9 +183,7 @@ func TestBlockchainDelete(t *testing.T) {
 	}
 
 	// test add file
-	file1 := BlockRecordFile{Hash: protocol.HashData([]byte("Test data")), Type: testTypeText, Format: testFormatText, Size: 9, ID: uuid.New()}
-	file1.Tags = append(file1.Tags, TagFromText(TagName, "Test file to be deleted.txt"))
-	file1.Tags = append(file1.Tags, TagFromText(TagFolder, "documents\\sub folder"))
+	file1, _ := createBlockRecordFile([]byte("Test data"), "Test file to be deleted.txt", "documents\\sub folder")
 
 	newHeight, newVersion, status := blockchain.AddFiles([]BlockRecordFile{file1})
 	fmt.Printf("Added file: Status %d height %d version %d\n", status, newHeight, newVersion)
