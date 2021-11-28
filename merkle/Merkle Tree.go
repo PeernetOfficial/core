@@ -198,7 +198,7 @@ Offset  Size        Info
 
 */
 
-const merkleTreeFileHeaderSize = 8 + 8 + 32
+const MerkleTreeFileHeaderSize = 8 + 8 + 32
 
 // calculateTotalHashCount returns the total number of fragment and middle hashes needed for the given count of fragments
 func calculateTotalHashCount(fragmentCount uint64) (count uint64) {
@@ -226,7 +226,7 @@ func calculateTotalHashCount(fragmentCount uint64) (count uint64) {
 
 // Export stores the tree as blob
 func (tree *MerkleTree) Export() (data []byte) {
-	data = make([]byte, merkleTreeFileHeaderSize+calculateTotalHashCount(tree.FragmentCount)*32)
+	data = make([]byte, MerkleTreeFileHeaderSize+calculateTotalHashCount(tree.FragmentCount)*32)
 
 	// header
 	binary.LittleEndian.PutUint64(data[0:8], tree.FileSize)
@@ -258,7 +258,7 @@ func ImportMerkleTree(data []byte) (tree *MerkleTree) {
 	}
 
 	// verify size
-	if uint64(len(data)) < merkleTreeFileHeaderSize+calculateTotalHashCount(tree.FragmentCount)*32 {
+	if uint64(len(data)) < MerkleTreeFileHeaderSize+calculateTotalHashCount(tree.FragmentCount)*32 {
 		return nil
 	}
 
@@ -296,7 +296,7 @@ func ImportMerkleTree(data []byte) (tree *MerkleTree) {
 // ReadMerkleTreeHeader reads the merkle tree header. Fragment and middle hashes are not loaded.
 func ReadMerkleTreeHeader(data []byte) (tree *MerkleTree) {
 	// Read the header. Enforce the minimum size.
-	if len(data) < 8+8+32 {
+	if len(data) < MerkleTreeFileHeaderSize {
 		return nil
 	}
 
