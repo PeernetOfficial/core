@@ -116,7 +116,7 @@ func saveConfig() {
 		return
 	}
 
-	err = ioutil.WriteFile(configFile, data, 0644)
+	err = ioutil.WriteFile(configFile, data, 0666)
 	if err != nil {
 		Filters.LogError("saveConfig", "writing config '%s': %v\n", configFile, err.Error())
 		return
@@ -130,7 +130,7 @@ func InitLog() (err error) {
 		os.MkdirAll(directory, os.ModePerm)
 	}
 
-	logFile, err := os.OpenFile(config.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	logFile, err := os.OpenFile(config.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666) // 666 : All uses can read/write
 	if err != nil {
 		return err
 	}

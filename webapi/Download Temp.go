@@ -100,7 +100,7 @@ func (info *downloadInfo) Finish() (status int) {
 // initDiskFile creates the target file
 func (info *downloadInfo) initDiskFile(path string) (err error) {
 	info.DiskFile.Name = path
-	info.DiskFile.Handle, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
+	info.DiskFile.Handle, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666) // 666 : All uses can read/write
 
 	return err
 }
