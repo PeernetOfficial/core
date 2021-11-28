@@ -229,7 +229,7 @@ type apiFile struct {
     Name        string            `json:"name"`        // Name of the file
     Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
     Date        time.Time         `json:"date"`        // Date shared
-    NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file
+    NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file. Read only.
     Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
 }
 
@@ -262,7 +262,8 @@ This adds a file with the provided information to the blockchain. The date field
 
 Any file added is publicly accessible. The user should be informed about this fact in advance. The user is responsible and liable for any files shared.
 
-Each file must be already stored in the Warehouse (virtual folders are exempt). If any file is not stored in the Warehouse, the function aborts with the status code StatusNotInWarehouse. Files can be added to the Warehouse via `/warehouse/create` and `/warehouse/create/path`.
+Each file must be already stored in the Warehouse (virtual folders are exempt). Files in the Warehouse are identified using the hash.
+If any file is not stored in the Warehouse, the function aborts with the status code StatusNotInWarehouse. Files can be added to the Warehouse via `/warehouse/create` and `/warehouse/create/path`.
 
 If the block record encoding fails for any file, this function aborts with the status code StatusCorruptBlockRecord. In case the function aborts, the blockchain remains unchanged.
 
@@ -945,6 +946,9 @@ Status codes:
 | 11     | StatusErrorReadFile       | Error reading file.                               |
 | 12     | StatusErrorSeekFile       | Error seeking to position in file.                |
 | 13     | StatusErrorTargetExists   | Target file already exists.                       |
+| 14     | StatusErrorCreateTarget   | Error creating target file.                       |
+| 15     | StatusErrorCreateMerkle   | Error creating merkle tree.                       |
+| 16     | StatusErrorMerkleTreeFile | Invalid merkle tree companion file.               |
 
 ### Create File
 
