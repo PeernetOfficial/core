@@ -27,7 +27,7 @@ Request:    POST /warehouse/create with raw data to create as new file
 Response:   200 with JSON structure WarehouseResult
 */
 func apiWarehouseCreateFile(w http.ResponseWriter, r *http.Request) {
-	hash, status, err := core.UserWarehouse.CreateFile(r.Body)
+	hash, status, err := core.UserWarehouse.CreateFile(r.Body, 0)
 
 	if err != nil {
 		core.Filters.LogError("warehouse.CreateFile", "status %d error: %v", status, err)

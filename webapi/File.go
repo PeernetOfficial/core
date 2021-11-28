@@ -12,6 +12,8 @@ import (
 
 	"github.com/PeernetOfficial/core"
 	"github.com/PeernetOfficial/core/blockchain"
+	"github.com/PeernetOfficial/core/merkle"
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/warehouse"
 	"github.com/google/uuid"
 )
@@ -38,7 +40,7 @@ type apiFile struct {
 	Name        string            `json:"name"`        // Name of the file
 	Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
 	Date        time.Time         `json:"date"`        // Date shared
-	NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file
+	NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file. Read only.
 	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
 }
 
@@ -139,6 +141,10 @@ func apiBlockchainFileAdd(w http.ResponseWriter, r *http.Request) {
 	var filesAdd []blockchain.BlockRecordFile
 
 	for _, file := range input.Files {
+		if len(file.Hash) != protocol.HashSize {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
 		if file.ID == uuid.Nil { // if the ID is not provided by the caller, set it
 			file.ID = uuid.New()
 		}
@@ -154,9 +160,20 @@ func apiBlockchainFileAdd(w http.ResponseWriter, r *http.Request) {
 			} else {
 				file.Size = uint64(fileInfo.Size())
 			}
+		} else {
+			file.Hash = protocol.HashData(nil)
+			file.Size = 0
 		}
 
-		filesAdd = append(filesAdd, blockRecordFileFromAPI(file))
+		blockRecord := blockRecordFileFromAPI(file)
+
+		// Set the merkle tree info as appropriate.
+		if !setFileMerkleInfo(&blockRecord) {
+			EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
+			return
+		}
+
+		filesAdd = append(filesAdd, blockRecord)
 	}
 
 	newHeight, newVersion, status := core.UserBlockchain.AddFiles(filesAdd)
@@ -233,7 +250,10 @@ func apiBlockchainFileUpdate(w http.ResponseWriter, r *http.Request) {
 	var filesAdd []blockchain.BlockRecordFile
 
 	for _, file := range input.Files {
-		if file.ID == uuid.Nil { // if the ID is not provided by the caller, abort
+		if len(file.Hash) != protocol.HashSize {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		} else if file.ID == uuid.Nil { // if the ID is not provided by the caller, abort
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
@@ -249,9 +269,20 @@ func apiBlockchainFileUpdate(w http.ResponseWriter, r *http.Request) {
 			} else {
 				file.Size = uint64(fileInfo.Size())
 			}
+		} else {
+			file.Hash = protocol.HashData(nil)
+			file.Size = 0
 		}
 
-		filesAdd = append(filesAdd, blockRecordFileFromAPI(file))
+		blockRecord := blockRecordFileFromAPI(file)
+
+		// Set the merkle tree info as appropriate.
+		if !setFileMerkleInfo(&blockRecord) {
+			EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
+			return
+		}
+
+		filesAdd = append(filesAdd, blockRecord)
 	}
 
 	newHeight, newVersion, status := core.UserBlockchain.ReplaceFiles(filesAdd)
@@ -284,4 +315,24 @@ func (info *apiFileMetadata) GetNumber() uint64 {
 // IsVirtualFolder returns true if the file is a virtual folder
 func (file *apiFile) IsVirtualFolder() bool {
 	return file.Type == core.TypeFolder && file.Format == core.FormatFolder
+}
+
+// setFileMerkleInfo sets the merkle fields in the BlockRecordFile
+func setFileMerkleInfo(file *blockchain.BlockRecordFile) (valid bool) {
+	if file.Size <= merkle.MinimumFragmentSize {
+		// If smaller or equal than the minimum fragment size, the merkle tree is not used.
+		file.MerkleRootHash = file.Hash
+		file.FragmentSize = merkle.MinimumFragmentSize
+	} else {
+		// Get the information from the Warehouse .merkle companion file.
+		tree, status, _ := core.UserWarehouse.ReadMerkleTree(file.Hash, true)
+		if status != warehouse.StatusOK {
+			return false
+		}
+
+		file.MerkleRootHash = tree.RootHash
+		file.FragmentSize = tree.FragmentSize
+	}
+
+	return true
 }
