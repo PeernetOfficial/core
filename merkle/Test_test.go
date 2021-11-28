@@ -32,16 +32,16 @@ func TestFragment0(t *testing.T) {
 	printMerkleTree(tree)
 
 	// Validate all hashes.
-	for n := uint64(0); n < tree.fragmentCount; n++ {
+	for n := uint64(0); n < tree.FragmentCount; n++ {
 		verificationHashes := tree.CreateVerification(n)
 
-		dataSize := tree.fragmentSize
-		if n == tree.fragmentCount-1 {
-			dataSize = tree.fileSize - n*tree.fragmentSize
+		dataSize := tree.FragmentSize
+		if n == tree.FragmentCount-1 {
+			dataSize = tree.FileSize - n*tree.FragmentSize
 		}
-		dataHash := blake3.Sum256(data[n*tree.fragmentSize : n*tree.fragmentSize+dataSize])
+		dataHash := blake3.Sum256(data[n*tree.FragmentSize : n*tree.FragmentSize+dataSize])
 
-		valid := MerkleVerify(tree.rootHash, dataHash[:], verificationHashes)
+		valid := MerkleVerify(tree.RootHash, dataHash[:], verificationHashes)
 
 		fmt.Printf("Validate fragment %d: %t\n", n, valid)
 		if !valid {
@@ -53,18 +53,18 @@ func TestFragment0(t *testing.T) {
 }
 
 func printMerkleTree(tree *MerkleTree) {
-	fmt.Printf("File size: %d\n", tree.fileSize)
-	fmt.Printf("Fragment size: %d\n", tree.fragmentSize)
-	fmt.Printf("Fragment count: %d\n", tree.fragmentCount)
+	fmt.Printf("File size: %d\n", tree.FileSize)
+	fmt.Printf("Fragment size: %d\n", tree.FragmentSize)
+	fmt.Printf("Fragment count: %d\n", tree.FragmentCount)
 
-	fmt.Printf("Merkle root hash: %s\n", hex.EncodeToString(tree.rootHash))
+	fmt.Printf("Merkle root hash: %s\n", hex.EncodeToString(tree.RootHash))
 
-	for n := 0; n < len(tree.fragmentHashes); n++ {
-		fmt.Printf("Fragment %d: %s\n", n, hex.EncodeToString(tree.fragmentHashes[n]))
+	for n := 0; n < len(tree.FragmentHashes); n++ {
+		fmt.Printf("Fragment %d: %s\n", n, hex.EncodeToString(tree.FragmentHashes[n]))
 	}
-	for n := 0; n < len(tree.middleHashes); n++ {
-		for m := 0; m < len(tree.middleHashes[n]); m++ {
-			fmt.Printf("Middle hash [level %d] %d: %s\n", n, m, hex.EncodeToString(tree.middleHashes[n][m]))
+	for n := 0; n < len(tree.MiddleHashes); n++ {
+		for m := 0; m < len(tree.MiddleHashes[n]); m++ {
+			fmt.Printf("Middle hash [level %d] %d: %s\n", n, m, hex.EncodeToString(tree.MiddleHashes[n][m]))
 		}
 	}
 }
@@ -99,36 +99,36 @@ func TestMerkleFileExport(t *testing.T) {
 	printMerkleTree(tree2)
 
 	// verify both trees
-	if tree.fileSize != tree2.fileSize || tree.fragmentSize != tree2.fragmentSize || tree.fragmentCount != tree2.fragmentCount {
+	if tree.FileSize != tree2.FileSize || tree.FragmentSize != tree2.FragmentSize || tree.FragmentCount != tree2.FragmentCount {
 		fmt.Printf("Error: Header of trees mismatch\n")
 		return
-	} else if !bytes.Equal(tree.rootHash, tree2.rootHash) {
+	} else if !bytes.Equal(tree.RootHash, tree2.RootHash) {
 		fmt.Printf("Error: Merkle root hash mismatch\n")
 		return
-	} else if len(tree.fragmentHashes) != len(tree2.fragmentHashes) {
+	} else if len(tree.FragmentHashes) != len(tree2.FragmentHashes) {
 		fmt.Printf("Error: Fragment hashes mismatch count\n")
 		return
-	} else if len(tree.middleHashes) != len(tree2.middleHashes) {
+	} else if len(tree.MiddleHashes) != len(tree2.MiddleHashes) {
 		fmt.Printf("Error: Middle hashes level mismatch\n")
 		return
 	}
 
 	// fragment hashes and middle hashes
-	for n, hash := range tree.fragmentHashes {
-		if !bytes.Equal(hash, tree2.fragmentHashes[n]) {
+	for n, hash := range tree.FragmentHashes {
+		if !bytes.Equal(hash, tree2.FragmentHashes[n]) {
 			fmt.Printf("Error: Fragment hash %d mismatch\n", n)
 			return
 		}
 	}
 
-	for n := range tree.middleHashes {
-		if len(tree.middleHashes[n]) != len(tree2.middleHashes[n]) {
+	for n := range tree.MiddleHashes {
+		if len(tree.MiddleHashes[n]) != len(tree2.MiddleHashes[n]) {
 			fmt.Printf("Error: Middle hashes level %d mismatch\n", n)
 			return
 		}
 
-		for m, hash := range tree.middleHashes[n] {
-			if !bytes.Equal(hash, tree2.middleHashes[n][m]) {
+		for m, hash := range tree.MiddleHashes[n] {
+			if !bytes.Equal(hash, tree2.MiddleHashes[n][m]) {
 				fmt.Printf("Error: Middle hash %d %d mismatch\n", n, m)
 				return
 			}
