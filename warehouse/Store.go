@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PeernetOfficial/core/merkle"
 	"lukechampine.com/blake3"
 )
 
@@ -31,10 +32,13 @@ const (
 	StatusErrorSeekFile       = 12 // Error seeking to position in file.
 	StatusErrorTargetExists   = 13 // Target file already exists.
 	StatusErrorCreateTarget   = 14 // Error creating target file.
+	StatusErrorCreateMerkle   = 15 // Error creating merkle tree.
+	StatusErrorMerkleTreeFile = 16 // Invalid merkle tree companion file.
 )
 
 // CreateFile creates a new file in the warehouse
-func (wh *Warehouse) CreateFile(data io.Reader) (hash []byte, status int, err error) {
+// If fileSize is provided, creating the merkle tree is significantly faster as it will be created on the fly. If the file size is unknown, set the size to 0.
+func (wh *Warehouse) CreateFile(data io.Reader, fileSize uint64) (hash []byte, status int, err error) {
 	// create a temporary file to hold the body content
 	tmpFile, err := wh.tempFile()
 	if err != nil {
@@ -42,6 +46,11 @@ func (wh *Warehouse) CreateFile(data io.Reader) (hash []byte, status int, err er
 	}
 
 	tmpFileName := tmpFile.Name()
+
+	// create merkle tree in parallel if the file size is known (which means the fragment size can be calculated)
+	if fileSize > 0 {
+		// TODO
+	}
 
 	// create the hash-writer
 	hashWriter := blake3.New(hashSize, nil)
@@ -93,6 +102,13 @@ func (wh *Warehouse) CreateFile(data io.Reader) (hash []byte, status int, err er
 				return nil, StatusErrorRenameTempFile, err
 			}
 		}
+
+		// create the merkle tree companion file
+		if fileSize == 0 || fileSize > merkle.MinimumFragmentSize {
+			if status, err = wh.createMerkleCompanionFile(pathFull); status != StatusOK {
+				return hash, status, err
+			}
+		}
 	}
 
 	return hash, StatusOK, nil
@@ -108,11 +124,15 @@ func (wh *Warehouse) CreateFileFromPath(file string) (hash []byte, status int, e
 		// cannot open file
 		return nil, StatusErrorOpenFile, err
 	}
-
 	defer fileHandle.Close()
 
+	var fileSize uint64
+	if stat, err := fileHandle.Stat(); err == nil {
+		fileSize = uint64(stat.Size())
+	}
+
 	// create the file using the opened file
-	return wh.CreateFile(fileHandle)
+	return wh.CreateFile(fileHandle, fileSize)
 }
 
 // ReadFile reads a file from the warehouse and outputs it to the writer
@@ -218,7 +238,7 @@ func (wh *Warehouse) ReadFileToDisk(hash []byte, offset, limit int64, fileTarget
 	}
 
 	// create the target file
-	fileT, err := os.OpenFile(fileTarget, os.O_WRONLY|os.O_CREATE, 0644)
+	fileT, err := os.OpenFile(fileTarget, os.O_WRONLY|os.O_CREATE, 0666) // 666 = All uses can read/write
 	if err != nil {
 		return StatusErrorCreateTarget, 0, err
 	}
