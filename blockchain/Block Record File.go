@@ -7,11 +7,13 @@ File records:
 Offset  Size    Info
 0       32      Hash blake3 of the file content
 32      16      File ID
-48      1       File Type
-49      2       File Format
-51      8       File Size
-59      2       Count of Tags
-61      ?       Tags
+48      32      Merkle Root Hash
+80      8       Fragment Size
+88      1       File Type
+89      2       File Format
+91      8       File Size
+99      2       Count of Tags
+101     ?       Tags
 
 Each file tag provides additional optional information:
 Offset  Size    Info
@@ -37,13 +39,15 @@ import (
 
 // BlockRecordFile is the metadata of a file published on the blockchain
 type BlockRecordFile struct {
-	Hash   []byte               // Hash of the file data
-	ID     uuid.UUID            // ID of the file
-	Type   uint8                // File Type
-	Format uint16               // File Format
-	Size   uint64               // Size of the file data
-	NodeID []byte               // Node ID, owner of the file
-	Tags   []BlockRecordFileTag // Tags provide additional metadata
+	Hash           []byte               // Hash of the file data
+	ID             uuid.UUID            // ID of the file
+	MerkleRootHash []byte               // Merkle Root Hash
+	FragmentSize   uint64               // Fragment Size
+	Type           uint8                // File Type
+	Format         uint16               // File Format
+	Size           uint64               // Size of the file data
+	NodeID         []byte               // Node ID, owner of the file
+	Tags           []BlockRecordFileTag // Tags provide additional metadata
 }
 
 // BlockRecordFileTag provides metadata about the file.
@@ -60,7 +64,7 @@ func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw, nodeID []byte) (files [
 	for i, record := range recordsRaw {
 		switch record.Type {
 		case RecordTypeFile:
-			if len(record.Data) < 61 {
+			if len(record.Data) < 101 {
 				return nil, errors.New("file record invalid size")
 			}
 
@@ -68,13 +72,18 @@ func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw, nodeID []byte) (files [
 			file.Hash = make([]byte, protocol.HashSize)
 			copy(file.Hash, record.Data[0:0+protocol.HashSize])
 			copy(file.ID[:], record.Data[32:32+16])
-			file.Type = record.Data[48]
-			file.Format = binary.LittleEndian.Uint16(record.Data[49 : 49+2])
-			file.Size = binary.LittleEndian.Uint64(record.Data[51 : 51+8])
 
-			countTags := binary.LittleEndian.Uint16(record.Data[59 : 59+2])
+			file.MerkleRootHash = make([]byte, protocol.HashSize)
+			copy(file.MerkleRootHash, record.Data[48:48+protocol.HashSize])
+			file.FragmentSize = binary.LittleEndian.Uint64(record.Data[80 : 80+8])
 
-			index := 61
+			file.Type = record.Data[88]
+			file.Format = binary.LittleEndian.Uint16(record.Data[89 : 89+2])
+			file.Size = binary.LittleEndian.Uint64(record.Data[91 : 91+8])
+
+			countTags := binary.LittleEndian.Uint16(record.Data[99 : 99+2])
+
+			index := 101
 
 			for n := uint16(0); n < countTags; n++ {
 				if index+6 > len(record.Data) {
@@ -151,19 +160,23 @@ func encodeBlockRecordFiles(files []BlockRecordFile) (recordsRaw []BlockRecordRa
 
 	// then encode all files as records
 	for n := range files {
-		data := make([]byte, 61)
+		data := make([]byte, 101)
 
 		if len(files[n].Hash) != protocol.HashSize {
 			return nil, errors.New("encodeBlockRecords invalid file hash")
+		} else if len(files[n].MerkleRootHash) != protocol.HashSize {
+			return nil, errors.New("encodeBlockRecords invalid merkle root hash")
 		}
 
 		copy(data[0:32], files[n].Hash[0:32])
 		copy(data[32:32+16], files[n].ID[:])
+		copy(data[48:48+32], files[n].MerkleRootHash[0:32])
+		binary.LittleEndian.PutUint64(data[80:80+8], files[n].FragmentSize)
 
-		data[48] = files[n].Type
-		binary.LittleEndian.PutUint16(data[49:49+2], files[n].Format)
-		binary.LittleEndian.PutUint64(data[51:51+8], files[n].Size)
-		binary.LittleEndian.PutUint16(data[59:59+2], uint16(len(files[n].Tags)))
+		data[88] = files[n].Type
+		binary.LittleEndian.PutUint16(data[89:89+2], files[n].Format)
+		binary.LittleEndian.PutUint64(data[91:91+8], files[n].Size)
+		binary.LittleEndian.PutUint16(data[99:99+2], uint16(len(files[n].Tags)))
 
 		for _, tag := range files[n].Tags {
 			// Some tags are virtual and never stored on the blockchain. If attempted to write, ignore.
