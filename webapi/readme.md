@@ -256,6 +256,48 @@ Below is the list of defined metadata types. Undefined types may be used by clie
 | 5    | TagSharedByCount | Number   | x       | Count of peers that share the file.                                                          |
 | 6    | TagSharedByGeoIP | Text/CSV | x       | GeoIP data of peers that are sharing the file. CSV encoded with header "latitude,longitude". |
 
+The file type is an indication what type of content the file's data is:
+
+| Type | Constant       | Info                                                                           |
+| ---- | -------------- | ------------------------------------------------------------------------------ |
+| 0    | TypeBinary     | Binary/unspecified                                                             |
+| 1    | TypeText       | Plain text                                                                     |
+| 2    | TypePicture    | Picture of any format                                                          |
+| 3    | TypeVideo      | Video                                                                          |
+| 4    | TypeAudio      | Audio                                                                          |
+| 5    | TypeDocument   | Any document file, including office documents, PDFs, power point, spreadsheets |
+| 6    | TypeExecutable | Any executable file, OS independent                                            |
+| 7    | TypeContainer  | Container files like ZIP, RAR, TAR, ISO                                        |
+| 8    | TypeCompressed | Compressed files like GZ, BZ                                                   |
+| 9    | TypeFolder     | Virtual folder                                                                 |
+| 10   | TypeEbook      | Ebook                                                                          |
+
+The file format is a more granular indicator about the content of a file:
+
+| Type | Constant         | Info                                                |
+| ---- | ---------------- | --------------------------------------------------- |
+| 0    | FormatBinary     | Binary/unspecified                                  |
+| 1    | FormatPDF        | PDF document                                        |
+| 2    | FormatWord       | Word document                                       |
+| 3    | FormatExcel      | Excel                                               |
+| 4    | FormatPowerpoint | Powerpoint                                          |
+| 5    | FormatPicture    | Pictures (including GIF, excluding icons)           |
+| 6    | FormatAudio      | Audio files                                         |
+| 7    | FormatVideo      | Video files                                         |
+| 8    | FormatContainer  | Compressed files including ZIP, RAR, TAR and others |
+| 9    | FormatHTML       | HTML file                                           |
+| 10   | FormatText       | Text file                                           |
+| 11   | FormatEbook      | Ebook file                                          |
+| 12   | FormatCompressed | Compressed file                                     |
+| 13   | FormatDatabase   | Database file                                       |
+| 14   | FormatEmail      | Single email                                        |
+| 15   | FormatCSV        | CSV file                                            |
+| 16   | FormatFolder     | Virtual folder                                      |
+| 17   | FormatExecutable | Executable file                                     |
+| 18   | FormatInstaller  | Installer                                           |
+| 19   | FormatAPK        | APK                                                 |
+| 20   | FormatISO        | ISO                                                 |
+
 ### Add File
 
 This adds a file with the provided information to the blockchain. The date field cannot be set by the caller and is ignored. If the ID field is left empty, a random UUID is automatically assigned. The size field is ignored; it will be automatically set to the file size identified by the hash (via the Warehouse). The format and type fields need to be set by the caller; `/file/format` can be used to detect them.
