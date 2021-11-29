@@ -171,7 +171,7 @@ func (blockchain *Blockchain) Iterate(callback func(block *Block) int) (status i
 // IterateDeleteRecord iterates over the blockchain to find records to delete. Status is StatusX.
 // deleteAction is 0 = no action on record, 1 = delete record, 2 = replace record, 3 = error blockchain corrupt
 // If the callback returns true, the record will be deleted. The blockchain will be automatically refactored and height and version updated.
-func (blockchain *Blockchain) IterateDeleteRecord(callback func(record *BlockRecordRaw) (deleteAction int)) (newHeight, newVersion uint64, status int) {
+func (blockchain *Blockchain) IterateDeleteRecord(callbackFile func(file *BlockRecordFile) (deleteAction int), callbackOther func(record *BlockRecordRaw) (deleteAction int)) (newHeight, newVersion uint64, status int) {
 	blockchain.Lock()
 	defer blockchain.Unlock()
 
@@ -194,32 +194,83 @@ func (blockchain *Blockchain) IterateDeleteRecord(callback func(record *BlockRec
 			return 0, 0, StatusCorruptBlock
 		}
 
-		// loop through all records in this block
 		refactorBlock := false
+
+		// Decode all file records at once. This is needed due to potential referenced tags.
+		// If a file is deleted or referenced tag data changed, it would corrupt the blockchain if the other records were not updated.
+		filesD, err := decodeBlockRecordFiles(block.RecordsRaw, block.NodeID)
+		if err != nil {
+			return 0, 0, StatusCorruptBlock
+		}
+
+		// loop through all file records in this block
+		var newFileRecords []BlockRecordFile
+
+		if callbackFile == nil {
+			newFileRecords = filesD
+		} else {
+			for n := range filesD {
+				switch callbackFile(&filesD[n]) {
+				case 0: // no action on record
+					newFileRecords = append(newFileRecords, filesD[n])
+
+				case 1: // delete record
+					refactorBlock = true
+					refactorBlockchain = true
+
+				case 2: // replace record
+					newFileRecords = append(newFileRecords, filesD[n])
+					refactorBlock = true
+					refactorBlockchain = true
+
+				case 3: // error blockchain corrupt
+					return 0, 0, StatusCorruptBlockRecord
+				}
+			}
+		}
+
+		// loop through all other (non-file) records in this block
 		var newRecordsRaw []BlockRecordRaw
 
 		for n := range block.RecordsRaw {
-			switch callback(&block.RecordsRaw[n]) {
-			case 0: // no action on record
+			// File and Tag records were already handled in above loop.
+			if block.RecordsRaw[n].Type == RecordTypeFile || block.RecordsRaw[n].Type == RecordTypeTagData {
+				continue
+			}
+
+			if callbackOther == nil {
 				newRecordsRaw = append(newRecordsRaw, block.RecordsRaw[n])
+			} else {
+				switch callbackOther(&block.RecordsRaw[n]) {
+				case 0: // no action on record
+					newRecordsRaw = append(newRecordsRaw, block.RecordsRaw[n])
 
-			case 1: // delete record
-				refactorBlock = true
-				refactorBlockchain = true
+				case 1: // delete record
+					refactorBlock = true
+					refactorBlockchain = true
 
-			case 2: // replace record
-				newRecordsRaw = append(newRecordsRaw, block.RecordsRaw[n])
-				refactorBlock = true
-				refactorBlockchain = true
+				case 2: // replace record
+					newRecordsRaw = append(newRecordsRaw, block.RecordsRaw[n])
+					refactorBlock = true
+					refactorBlockchain = true
 
-			case 3: // error blockchain corrupt
-				return 0, 0, StatusCorruptBlockRecord
+				case 3: // error blockchain corrupt
+					return 0, 0, StatusCorruptBlockRecord
+				}
 			}
 		}
 
 		// If refactor, re-calculate the block. All later blocks need to be re-encoded due to change of previous block hash. The version number needs to change.
 		// Note: Deleting records may leave referenced records orphaned, such as RecordTypeTagData for deleted file records.
 		if refactorBlock {
+			// re-encode the block
+			filesRecords, err := encodeBlockRecordFiles(newFileRecords)
+			if err != nil {
+				return 0, 0, StatusCorruptBlock
+			}
+
+			newRecordsRaw = append(newRecordsRaw, filesRecords...)
+
 			if len(newRecordsRaw) > 0 {
 				blockchainNew = append(blockchainNew, Block{OwnerPublicKey: blockchain.publicKey, RecordsRaw: newRecordsRaw, BlockchainVersion: refactorVersion, Number: uint64(len(blockchainNew))})
 			}

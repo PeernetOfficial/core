@@ -74,7 +74,7 @@ func (blockchain *Blockchain) ProfileWrite(fields []BlockRecordProfile) (newHeig
 
 // ProfileDelete deletes fields and blobs from the blockchain. Status is StatusX.
 func (blockchain *Blockchain) ProfileDelete(fields []uint16) (newHeight, newVersion uint64, status int) {
-	return blockchain.IterateDeleteRecord(func(record *BlockRecordRaw) (deleteAction int) {
+	return blockchain.IterateDeleteRecord(nil, func(record *BlockRecordRaw) (deleteAction int) {
 		if record.Type != RecordTypeProfile {
 			return 0 // no action
 		}
