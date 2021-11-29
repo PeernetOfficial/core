@@ -62,26 +62,17 @@ func (blockchain *Blockchain) FileExists(hash []byte) (files []BlockRecordFile, 
 }
 
 // DeleteFiles deletes files from the blockchain. Status is StatusX.
-func (blockchain *Blockchain) DeleteFiles(IDs []uuid.UUID) (newHeight, newVersion uint64, deletedFiles []BlockRecordFile, status int) {
-	newHeight, newVersion, status = blockchain.IterateDeleteRecord(func(record *BlockRecordRaw) (deleteAction int) {
-		if record.Type != RecordTypeFile {
-			return 0 // no action on record
-		}
-
-		filesDecoded, err := decodeBlockRecordFiles([]BlockRecordRaw{*record}, nil)
-		if err != nil || len(filesDecoded) != 1 {
-			return 3 // error blockchain corrupt
-		}
-
+func (blockchain *Blockchain) DeleteFiles(IDs []uuid.UUID) (newHeight, newVersion uint64, deletedFiles []*BlockRecordFile, status int) {
+	newHeight, newVersion, status = blockchain.IterateDeleteRecord(func(file *BlockRecordFile) (deleteAction int) {
 		for _, id := range IDs {
-			if id == filesDecoded[0].ID { // found a file ID to delete?
-				deletedFiles = append(deletedFiles, filesDecoded[0])
+			if file.ID == id { // found a file ID to delete?
+				deletedFiles = append(deletedFiles, file)
 				return 1 // delete record
 			}
 		}
 
 		return 0 // no action on record
-	})
+	}, nil)
 
 	return
 }
