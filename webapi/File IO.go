@@ -16,6 +16,7 @@ import (
 	"github.com/PeernetOfficial/core"
 	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
+	"github.com/PeernetOfficial/core/warehouse"
 )
 
 /*
@@ -67,6 +68,11 @@ func apiFileRead(w http.ResponseWriter, r *http.Request) {
 		offset = ranges[0].start
 	}
 
+	// Is the file available in the local warehouse? In that case requesting it from the remote is unnecessary.
+	if serveFileFromWarehouse(w, fileHash, uint64(offset), uint64(limit), ranges) {
+		return
+	}
+
 	// try connecting via node ID or peer ID?
 	var peer *core.PeerInfo
 
@@ -95,6 +101,35 @@ func apiFileRead(w http.ResponseWriter, r *http.Request) {
 
 	// Start sending the data!
 	io.Copy(w, io.LimitReader(reader, int64(transferSize)))
+}
+
+// serveFileFromWarehouse serves the file from the warehouse. If it is not available, it returns false and does not use the writer.
+// Limit is optional, 0 means the entire file.
+func serveFileFromWarehouse(w http.ResponseWriter, fileHash []byte, offset, limit uint64, ranges []HTTPRange) (valid bool) {
+	// Check if the file is available in the local warehouse.
+	_, fileInfo, status, _ := core.UserWarehouse.FileExists(fileHash)
+	if status != warehouse.StatusOK {
+		return false
+	}
+	fileSize := uint64(fileInfo.Size())
+
+	// validate offset and limit
+	if limit > 0 && offset+limit > fileSize {
+		http.Error(w, "invalid limit", http.StatusBadRequest)
+		return true
+	} else if offset > fileSize {
+		http.Error(w, "invalid offset", http.StatusBadRequest)
+		return true
+	} else if limit == 0 {
+		limit = fileSize - offset
+	}
+
+	setContentLengthRangeHeader(w, offset, limit, uint64(fileInfo.Size()), ranges)
+
+	status, _, _ = core.UserWarehouse.ReadFile(fileHash, int64(offset), int64(limit), w)
+
+	// StatusErrorReadFile must be considered success, since parts of the file may have been transferred already and recovery is not possible.
+	return status == warehouse.StatusErrorReadFile || status == warehouse.StatusOK
 }
 
 /*
@@ -148,6 +183,19 @@ func apiFileView(w http.ResponseWriter, r *http.Request) {
 		offset = ranges[0].start
 	}
 
+	w.Header().Set("Accept-Ranges", "bytes") // always indicate accepting of Range header
+
+	switch format {
+	case 14:
+		// Video: Indicate MP4 always. There are tons of other MIME types that could be used.
+		w.Header().Set("Content-Type", "video/mp4")
+	}
+
+	// Is the file available in the local warehouse? In that case requesting it from the remote is unnecessary.
+	if serveFileFromWarehouse(w, fileHash, uint64(offset), uint64(limit), ranges) {
+		return
+	}
+
 	// try connecting via node ID or peer ID?
 	var peer *core.PeerInfo
 
@@ -169,14 +217,6 @@ func apiFileView(w http.ResponseWriter, r *http.Request) {
 	if err != nil || reader == nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
-	}
-
-	w.Header().Set("Accept-Ranges", "bytes") // always indicate accepting of Range header
-
-	switch format {
-	case 14:
-		// Video: Indicate MP4 always. There are tons of other MIME types that could be used.
-		w.Header().Set("Content-Type", "video/mp4")
 	}
 
 	// set the right headers
@@ -223,7 +263,7 @@ func PeerConnectNode(nodeID []byte, timeout time.Duration) (peer *core.PeerInfo,
 }
 
 // FileStartReader providers a reader to a remote file. The reader must be closed by the caller.
-// File Size is the full file size reported by the remote peer, regardless of the requested offset and limit.
+// File Size is the full file size reported by the remote peer, regardless of the requested offset and limit. Limit is optional (0 means the entire file).
 // Transfer Size is the size in bytes that is actually going to be transferred. The reader should be closed after reading that amount.
 // The optional cancelChan can be used to stop the file transfer at any point.
 func FileStartReader(peer *core.PeerInfo, hash []byte, offset, limit uint64, cancelChan <-chan struct{}) (reader io.ReadCloser, fileSize, transferSize uint64, err error) {
