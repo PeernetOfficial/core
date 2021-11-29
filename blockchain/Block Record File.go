@@ -176,13 +176,15 @@ func encodeBlockRecordFiles(files []BlockRecordFile) (recordsRaw []BlockRecordRa
 		data[88] = files[n].Type
 		binary.LittleEndian.PutUint16(data[89:89+2], files[n].Format)
 		binary.LittleEndian.PutUint64(data[91:91+8], files[n].Size)
-		binary.LittleEndian.PutUint16(data[99:99+2], uint16(len(files[n].Tags)))
+
+		var tagCount uint16
 
 		for _, tag := range files[n].Tags {
 			// Some tags are virtual and never stored on the blockchain. If attempted to write, ignore.
 			if tag.IsVirtual() {
 				continue
 			}
+			tagCount++
 
 			if len(tag.Data) > 4 {
 				if refNumber, ok := duplicateTagDataMap[string(tag.Data)]; ok {
@@ -200,6 +202,8 @@ func encodeBlockRecordFiles(files []BlockRecordFile) (recordsRaw []BlockRecordRa
 			data = append(data, tempTag[:]...)
 			data = append(data, tag.Data...)
 		}
+
+		binary.LittleEndian.PutUint16(data[99:99+2], tagCount)
 
 		recordsRaw = append(recordsRaw, BlockRecordRaw{Type: RecordTypeFile, Data: data})
 	}
