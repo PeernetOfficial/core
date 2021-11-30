@@ -285,7 +285,7 @@ func FileStartReader(peer *core.PeerInfo, hash []byte, offset, limit uint64, can
 		}()
 	}
 
-	fileSize, transferSize, err = core.FileTransferReadHeaderUDT(udtConn)
+	fileSize, transferSize, err = protocol.FileTransferReadHeader(udtConn)
 	if err != nil {
 		udtConn.Close()
 		return nil, 0, 0, err
