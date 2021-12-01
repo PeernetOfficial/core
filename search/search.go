@@ -2,9 +2,11 @@ package search
 
 import (
 	"errors"
+	"github.com/PeernetOfficial/core"
 	"github.com/PeernetOfficial/core/protocol"
 	"strings"
 )
+
 
 // GenerateIndexes This function generates various hashes based
 // on the filename provided.
@@ -27,13 +29,34 @@ func GenerateIndexes(text string) ([][]byte, error) {
 		hashes = append(hashes, WordsHashes[i])
 	}
 
-
+	err := core.InsertIndexRows(hashes, text)
+	if err != nil {
+		return nil, err
+	}
 
 	return hashes, nil
 }
 
-func Search(text string) ([]byte, error) {
-	return nil, nil
+// Search This function returns results for
+// the text provided
+func Search(text string) ([]string, error) {
+	// Local search
+	texts, err := core.SearchTextBasedOnHash(protocol.HashData([]byte(text)))
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: query the DHT
+
+	return texts, nil
+}
+
+func RemoveIndexes(text string) error {
+	err := core.DeleteIndexesBasedOnText(text)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // LowerCaseHash coverts string to lower case and returns the hash

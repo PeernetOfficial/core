@@ -11,12 +11,17 @@ Something useful we could consider implementing could be:
 - Top-k Approximate String Matching algorithm
 
 ## Index database
-The plan for the index search is the following:
+For the Index database we are using a Sqlite database:
+Database Structure: 
 ```
-key                       |          value
-<Ex: Filename String>     |         <Filename hash>
-                          |
-<Generate Index hash #1>  |         <Filename hash>
-<Generate Index hash #2>  |         <Filename hash>
-<Generate Index hash #n>  |         <Filename hash>
+CREATE TABLE `search_indices` (`id` text,`hash` text,`key_hash` text,PRIMARY KEY (`id`));
 ```
+
+## Features Implemented: 
+- Create set of hashes based on simple characteristics such as:
+  1. Upper Case 
+  2. Lower Case 
+  3. Individual words 
+
+- Search through local indexes based on a text 
+- Delete key string generated hashes in the indexes Sqlite database 

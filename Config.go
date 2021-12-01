@@ -25,6 +25,7 @@ var config struct {
 	BlockchainMain   string `yaml:"BlockchainMain"`   // Blockchain main stores the end-users blockchain data. It contains meta data of shared files, profile data, and social interactions.
 	BlockchainGlobal string `yaml:"BlockchainGlobal"` // Blockchain global stores blockchain data from global users.
 	WarehouseMain    string `yaml:"WarehouseMain"`    // Warehouse main stores the actual data of files shared by the end-user.
+	SearchIndexDB    string  `yaml:"SearchIndexDB"`   // Consists of the Sqlite DB binary file
 
 	// Listen settings
 	Listen        []string `yaml:"Listen"`        // IP:Port combinations

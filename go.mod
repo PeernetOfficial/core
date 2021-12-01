@@ -4,7 +4,6 @@ go 1.16
 
 require (
 	github.com/akrylysov/pogreb v0.10.1
-	github.com/expectedsh/go-sonic v0.0.0-20210827144320-d31eb03ae288
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/websocket v1.4.2
@@ -12,5 +11,7 @@ require (
 	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2
 	golang.org/x/sys v0.0.0-20211113001501-0c823b97ae02
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+	gorm.io/driver/sqlite v1.2.6
+	gorm.io/gorm v1.22.3 // indirect
 	lukechampine.com/blake3 v1.1.7
 )

@@ -26,6 +26,7 @@ func Init(UserAgent string) {
 	initBroadcastIPv4()
 	initStore()
 	initNetwork()
+	SqliteSearchIndexMigration()
 }
 
 // Connect starts bootstrapping and local peer discovery.
