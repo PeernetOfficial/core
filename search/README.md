@@ -20,4 +20,3 @@ key                       |          value
 <Generate Index hash #2>  |         <Filename hash>
 <Generate Index hash #n>  |         <Filename hash>
 ```
-
