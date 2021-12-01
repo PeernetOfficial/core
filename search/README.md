@@ -1,4 +1,5 @@
 # Core Search
+
 This package focuses on implementing the search feature. The current plan is
 implement simple search features such as:
 - Lowercase input
