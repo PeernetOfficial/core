@@ -4,6 +4,7 @@ go 1.16
 
 require (
 	github.com/akrylysov/pogreb v0.10.1
+	github.com/expectedsh/go-sonic v0.0.0-20210827144320-d31eb03ae288
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/websocket v1.4.2

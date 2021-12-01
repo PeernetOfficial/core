@@ -1,5 +1,7 @@
 github.com/akrylysov/pogreb v0.10.1 h1:FqlR8VR7uCbJdfUob916tPM+idpKgeESDXOA1K0DK4w=
 github.com/akrylysov/pogreb v0.10.1/go.mod h1:pNs6QmpQ1UlTJKDezuRWmaqkgUE2TuU0YTWyqJZ7+lI=
+github.com/expectedsh/go-sonic v0.0.0-20210827144320-d31eb03ae288 h1:yD1joVl3dFY2qpPFZX5BtG5gy5QUuSpcE7hRjt97UeE=
+github.com/expectedsh/go-sonic v0.0.0-20210827144320-d31eb03ae288/go.mod h1:NF5rwAn3LR1hvAKbgUXWlc7j5lvovqpupAmC7ZIoiRE=
 github.com/google/uuid v1.3.0 h1:t6JiXgmwXMjEs8VusXIJk2BXHsn+wx8BZdTaoZ5fu7I=
 github.com/google/uuid v1.3.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/gorilla/mux v1.8.0 h1:i40aqfkR1h2SlN9hojwV5ZA91wcXFOvkdNIeFDP5koI=
