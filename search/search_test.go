@@ -30,7 +30,7 @@ func TestGenerateIndexes(t *testing.T) {
 
 // Test written to run remove Index workflow
 func TestRemoveIndexes(t *testing.T) {
-	err := RemoveIndexes("My Name is Akilan")
+	err := RemoveIndexesHash([]byte("My Name is Akilan"))
 	if err != nil {
 		t.Error(err)
 	}

@@ -77,9 +77,9 @@ func SearchDHT(text string, dht *dht.DHT) ([]string, error) {
 	return nil, nil
 }
 
-// RemoveIndexes Deletes text reference hashes
-func RemoveIndexes(text string) error {
-	err := core.DeleteIndexesBasedOnText(text)
+// RemoveIndexesHash Deletes generated hashes
+func RemoveIndexesHash(hash []byte) error {
+	err := core.DeleteIndexesBasedOnHash(hash)
 	if err != nil {
 		return err
 	}

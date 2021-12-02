@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package warehouse
 
 import (
+	"github.com/PeernetOfficial/core/search"
 	"io"
 	"os"
 	"path/filepath"
@@ -46,6 +47,11 @@ func (wh *Warehouse) CreateFile(data io.Reader, fileSize uint64) (hash []byte, s
 	}
 
 	tmpFileName := tmpFile.Name()
+	// generate search index for the file
+	_, err = search.GenerateIndexes(tmpFileName)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	// create merkle tree in parallel if the file size is known (which means the fragment size can be calculated)
 	if fileSize > 0 {
@@ -196,6 +202,12 @@ func (wh *Warehouse) DeleteFile(hash []byte) (status int, err error) {
 
 	if err := os.Remove(path); err != nil {
 		return StatusErrorDeleteFile, err
+	}
+
+	// Remove file generated indexes
+	err = search.RemoveIndexesHash(hash)
+	if err != nil {
+		return 0, err
 	}
 
 	return StatusOK, nil

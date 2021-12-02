@@ -10,7 +10,6 @@ package blockchain
 
 import (
 	"bytes"
-
 	"github.com/google/uuid"
 )
 

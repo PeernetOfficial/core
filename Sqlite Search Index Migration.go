@@ -18,7 +18,6 @@ func InitializeSqliteDB(DBname string) (*gorm.DB, error) {
 	return db, nil
 }
 
-
 // SearchIndex Structure of the SQLite table for search index
 type SearchIndex struct {
 	ID      uuid.UUID
@@ -31,7 +30,7 @@ func SqliteSearchIndexMigration() {
 	if err != nil {
 		log.Print(err)
 	}
-    // Migration of the search index struct
+	// Migration of the search index struct
 	db.AutoMigrate(SearchIndex{})
 }
 
@@ -51,13 +50,13 @@ func InsertIndexRows(hashes [][]byte, text string) error {
 			return err
 		}
 
-			// covert hash to string to append
-			// pre text to mention it's part
-			// of a string and not a hash
-			// prefix: text:<string>
-			hash.ID = newUUID
-			hash.KeyHash = "text:" + text
-			hash.Hash = hex.EncodeToString(hashes[i])
+		// covert hash to string to append
+		// pre text to mention it's part
+		// of a string and not a hash
+		// prefix: text:<string>
+		hash.ID = newUUID
+		hash.KeyHash = "text:" + text
+		hash.Hash = hex.EncodeToString(hashes[i])
 
 		db.Create(hash)
 	}
@@ -75,7 +74,7 @@ func SearchTextBasedOnHash(hash []byte) ([]string, error) {
 
 	Result, err := db.Model(&SearchIndex{}).Where("hash = ?", hex.EncodeToString(hash)).Rows()
 	if err != nil {
-		return nil ,err
+		return nil, err
 	}
 
 	defer Result.Close()
@@ -91,14 +90,33 @@ func SearchTextBasedOnHash(hash []byte) ([]string, error) {
 	return response, err
 }
 
-func DeleteIndexesBasedOnText(text string) error {
+func deleteIndexesBasedOnText(db *gorm.DB, text string) error {
+	db.Where("key_hash = ?", text).Delete(SearchIndex{})
+	return nil
+}
+
+// DeleteIndexesBasedOnHash deletes hash references based on hash provided
+func DeleteIndexesBasedOnHash(hash []byte) error {
 	db, err := InitializeSqliteDB(configFile + "SearchIndex.db")
 	if err != nil {
 		return err
 	}
+	// encode hash to string
+	hashStr := hex.EncodeToString(hash)
+	// get text based on hash provided
+	Result, err := db.Model(&SearchIndex{}).Where("hash = ?", hashStr).Rows()
+	if err != nil {
+		return err
+	}
 
-	db.Where("key_hash = ?", text).Delete(SearchIndex{})
+	defer Result.Close()
+
+	var searchIndex SearchIndex
+
+	for Result.Next() {
+		db.ScanRows(Result, &searchIndex)
+		deleteIndexesBasedOnText(db, searchIndex.KeyHash)
+	}
 
 	return nil
-
 }
