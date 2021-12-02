@@ -19,9 +19,28 @@ CREATE TABLE `search_indices` (`id` text,`hash` text,`key_hash` text,PRIMARY KEY
 
 ## Features Implemented: 
 - Create set of hashes based on simple characteristics such as:
-  1. Upper Case 
-  2. Lower Case 
-  3. Individual words 
+  1. Basic normalization and sanitation 
+  2. Upper Case 
+  3. Lower Case 
+  4. Individual words 
 
 - Search through local indexes based on a text 
 - Delete key string generated hashes in the indexes Sqlite database 
+
+### Basic normalization and sanitation
+This implementation does the basics such as:
+  1. Ensures the string has no double space 
+  2. replaces _ and - with a space 
+  3. removes diacritics
+
+Ex:
+```go
+NormalizeWords("français")
+NormalizeWords("testé-lol_What to do-idk")
+
+// result
+francais
+teste lol What to do idk
+```
+
+
