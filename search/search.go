@@ -3,6 +3,7 @@ package search
 import (
 	"errors"
 	"github.com/PeernetOfficial/core"
+	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
@@ -39,9 +40,16 @@ func GenerateIndexes(text string) ([][]byte, error) {
 	// Appending upper case hash
 	hashes = append(hashes, UpperCaseHash(normalizedStr))
 	// Appending split string by word
-	WordsHashes := HashByWordsSplit(normalizedStr)
+	WordsHashes := WordsSplitString(normalizedStr)
 	for i := range WordsHashes {
-		hashes = append(hashes, WordsHashes[i])
+		if len(WordsHashes[i]) <= 3 {
+			continue
+		}
+		hashes = append(hashes, protocol.HashData([]byte(WordsHashes[i])))
+		// Appending lower case for the specific word
+		hashes = append(hashes, LowerCaseHash(WordsHashes[i]))
+		// Appending upper case for the specific word
+		hashes = append(hashes, UpperCaseHash(WordsHashes[i]))
 	}
 
 	err = core.InsertIndexRows(hashes, text)
@@ -62,6 +70,11 @@ func Search(text string) ([]string, error) {
 	}
 
 	return texts, nil
+}
+
+// SearchDHT Queries the DHT to search for a certain text
+func SearchDHT(text string, dht *dht.DHT) ([]string, error) {
+	return nil, nil
 }
 
 // RemoveIndexes Deletes text reference hashes
@@ -115,26 +128,12 @@ func NormalizeWords(text string) (string, error) {
 	return result, nil
 }
 
-// HashByWordsSplit splits the words in the string
+// WordsSplitString splits the words in the string
 // by intensifying white spaces and returns
 // a multi-dimensional array of bytes and
 // if the word is less than or equivalent
 // to 3 characters we don't do generate
 // a hash for them.
-func HashByWordsSplit(name string) [][]byte {
-	var hashes [][]byte
-	words := strings.Fields(name)
-
-	for i := range words {
-		if len(words[i]) <= 3 {
-			continue
-		} else {
-			hashes = append(hashes, protocol.HashData([]byte(words[i])))
-		}
-	}
-	return hashes
-}
-
 func WordsSplitString(name string) []string {
 	words := strings.Fields(name)
 	return words
