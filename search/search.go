@@ -61,11 +61,10 @@ func Search(text string) ([]string, error) {
 		return nil, err
 	}
 
-	// TODO: query the DHT
-
 	return texts, nil
 }
 
+// RemoveIndexes Deletes text reference hashes
 func RemoveIndexes(text string) error {
 	err := core.DeleteIndexesBasedOnText(text)
 	if err != nil {
