@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package warehouse
 
 import (
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/search"
 	"io"
 	"os"
@@ -35,6 +36,8 @@ const (
 	StatusErrorCreateTarget   = 14 // Error creating target file.
 	StatusErrorCreateMerkle   = 15 // Error creating merkle tree.
 	StatusErrorMerkleTreeFile = 16 // Invalid merkle tree companion file.
+	StatusSearchEmpty         = 17 // Search empty response
+	StatusSearchError         = 18 // Search Error
 )
 
 // CreateFile creates a new file in the warehouse
@@ -211,6 +214,32 @@ func (wh *Warehouse) DeleteFile(hash []byte) (status int, err error) {
 	}
 
 	return StatusOK, nil
+}
+
+// SearchFile Searches for file from the warehouse
+func (wh *Warehouse) SearchFile(hash []byte) (searchResults []SearchResult, status int, err error) {
+	// searches for file in index
+	response, err := search.Search(hash)
+	if err != nil {
+		return nil, StatusSearchError, err
+	}
+
+	// Return empty response if the response length size is 0
+	if len(response) == 0 {
+		return nil, StatusSearchEmpty, nil
+	}
+
+	for i := range response {
+		path, fileInfo, status, err := wh.FileExists(protocol.HashData([]byte(response[i])))
+		if err != nil {
+			return nil, status, err
+		}
+		if status == StatusOK {
+			searchResults = append(searchResults, SearchResult{Path: path, FileInfo: fileInfo})
+		}
+	}
+
+	return searchResults, StatusOK, nil
 }
 
 // FileExists checks if the file exists. It returns StatusInvalidHash, StatusFileNotFound, or StatusOK.

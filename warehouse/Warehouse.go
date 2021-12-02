@@ -24,6 +24,12 @@ type Warehouse struct {
 	Temp      string // Temporary folder
 }
 
+// Search Response
+type SearchResult struct {
+	Path     string
+	FileInfo os.FileInfo
+}
+
 // Init initializes the warehouse
 func Init(Directory string) (wh *Warehouse, err error) {
 	// The temp folder will always be a sub-folder named "_Temp"

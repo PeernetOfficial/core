@@ -62,9 +62,9 @@ func GenerateIndexes(text string) ([][]byte, error) {
 
 // Search This function returns results for
 // the text provided
-func Search(text string) ([]string, error) {
+func Search(hash []byte) ([]string, error) {
 	// Local search
-	texts, err := core.SearchTextBasedOnHash(protocol.HashData([]byte(text)))
+	texts, err := core.SearchTextBasedOnHash(hash)
 	if err != nil {
 		return nil, err
 	}
