@@ -24,7 +24,7 @@ type Warehouse struct {
 	Temp      string // Temporary folder
 }
 
-// Search Response
+// SearchResult Search Response
 type SearchResult struct {
 	Path     string
 	FileInfo os.FileInfo
