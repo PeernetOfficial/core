@@ -274,7 +274,52 @@ func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Con
 
 	case protocol.TransferControlTerminate:
 		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
-			// Since an incoming terminate notice means the remote peer already terminated the connection, set sendNotice to false.
+			v.Terminate(2)
+			return
+		}
+
+	}
+}
+
+// cmdGetBlock handles an incoming block message
+func (peer *PeerInfo) cmdGetBlock(msg *protocol.MessageGetBlock, connection *Connection) {
+	switch msg.Control {
+	case protocol.GetBlockControlRequestStart:
+		// Currently only support the local blockchain.
+		if !msg.BlockchainPublicKey.IsEqual(peerPublicKey) {
+			peer.sendGetBlock(nil, protocol.GetBlockControlNotAvailable, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence)
+			return
+		} else if _, height, _ := UserBlockchain.Header(); height == 0 {
+			peer.sendGetBlock(nil, protocol.GetBlockControlEmpty, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence)
+			return
+		} else if msg.LimitBlockCount == 0 {
+			peer.sendGetBlock(nil, protocol.GetBlockControlTerminate, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence)
+			return
+		}
+
+		// Create a local UDT client to connect to the remote UDT server and serve the blocks!
+		go peer.startBlockTransfer(msg.BlockchainPublicKey, msg.LimitBlockCount, msg.MaxBlockSize, msg.TargetBlocks, msg.Sequence)
+
+	case protocol.GetBlockControlActive:
+		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+			go v.receiveData(msg.Data)
+			return
+		}
+
+	case protocol.GetBlockControlNotAvailable:
+		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+			v.Terminate(404)
+			return
+		}
+
+	case protocol.GetBlockControlEmpty:
+		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+			v.Terminate(410)
+			return
+		}
+
+	case protocol.GetBlockControlTerminate:
+		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
 			v.Terminate(2)
 			return
 		}

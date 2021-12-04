@@ -276,6 +276,22 @@ func (nets *Networks) packetWorker() {
 				peer.cmdTransfer(msg, connection)
 			}
 
+		case protocol.CommandGetBlock:
+			if msg, _ := protocol.DecodeGetBlock(raw); msg != nil {
+				// Validate sequence number which prevents unsolicited responses.
+				isLast := msg.IsLast()
+				sequenceInfo, valid, rtt := nets.Sequences.ValidateSequenceBi(raw.SenderPublicKey, raw.Sequence, isLast)
+				if msg.Control != protocol.GetBlockControlRequestStart && !valid {
+					//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
+					continue
+				} else if rtt > 0 {
+					connection.RoundTripTime = rtt
+				}
+				raw.SequenceInfo = sequenceInfo
+
+				peer.cmdGetBlock(msg, connection)
+			}
+
 		default: // Unknown command
 			Filters.MessageIn(peer, raw, nil)
 

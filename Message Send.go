@@ -99,3 +99,17 @@ func (peer *PeerInfo) sendTransfer(data []byte, control, transferProtocol uint8,
 
 	return peer.send(raw)
 }
+
+// sendGetBlock sends a get block message
+func (peer *PeerInfo) sendGetBlock(data []byte, control uint8, blockchainPublicKey *btcec.PublicKey, limitBlockCount, maxBlockSize uint64, targetBlocks []protocol.BlockRange, sequenceNumber uint32) (err error) {
+	packetRaw, err := protocol.EncodeGetBlock(peerPrivateKey, data, control, blockchainPublicKey, limitBlockCount, maxBlockSize, targetBlocks)
+	if err != nil {
+		return err
+	}
+
+	raw := &protocol.PacketRaw{Command: protocol.CommandGetBlock, Payload: packetRaw, Sequence: sequenceNumber}
+
+	//Filters.MessageOutGetBlock(peer, raw, control, )
+
+	return peer.send(raw)
+}
