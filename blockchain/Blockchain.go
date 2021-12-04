@@ -394,3 +394,32 @@ func (blockchain *Blockchain) DeleteBlockchain() (status int, err error) {
 
 	return StatusOK, nil
 }
+
+// GetBlockRaw returns the encoded block from the blockchain. Status is StatusX.
+func (blockchain *Blockchain) GetBlockRaw(number uint64) (data []byte, status int, err error) {
+	if number >= blockchain.height {
+		return nil, StatusBlockNotFound, errors.New("block number exceeds blockchain height")
+	}
+
+	blockRaw, found := blockchain.database.Get(blockNumberToKey(number))
+	if !found || len(blockRaw) == 0 {
+		return nil, StatusBlockNotFound, errors.New("block not found")
+	}
+
+	return blockRaw, StatusOK, nil
+}
+
+// DecodeBlockRaw decodes the raw block. Status is StatusX.
+func DecodeBlockRaw(blockRaw []byte) (decoded *BlockDecoded, status int, err error) {
+	block, err := decodeBlock(blockRaw)
+	if err != nil {
+		return nil, StatusCorruptBlock, err
+	}
+
+	decoded, err = decodeBlockRecords(block)
+	if err != nil {
+		return nil, StatusCorruptBlock, err
+	}
+
+	return decoded, StatusOK, nil
+}
