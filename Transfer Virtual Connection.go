@@ -11,19 +11,14 @@ package core
 
 import (
 	"sync"
-
-	"github.com/PeernetOfficial/core/protocol"
 )
 
 // virtualPacketConn is a virtual connection.
 type virtualPacketConn struct {
 	peer *PeerInfo
 
-	// Transfer settings
-	transferProtocol uint8  // 0 = UDT
-	hash             []byte // The requested hash.
-	offset           uint64 // Offset to start reading.
-	limit            uint64 // Limit of bytes to read at the offset.
+	// function to send data to the remote peer
+	sendData func(data []byte, sequenceNumber uint32)
 
 	// Sequence number from the first outgoing or incoming packet.
 	sequenceNumber uint32
@@ -40,13 +35,10 @@ type virtualPacketConn struct {
 }
 
 // newVirtualPacketConn creates a new virtual connection (both incomign and outgoing).
-func newVirtualPacketConn(peer *PeerInfo, protocol uint8, hash []byte, offset, limit uint64) (v *virtualPacketConn) {
+func newVirtualPacketConn(peer *PeerInfo, sendData func(data []byte, sequenceNumber uint32)) (v *virtualPacketConn) {
 	v = &virtualPacketConn{
 		peer:              peer,
-		transferProtocol:  protocol,
-		hash:              hash,
-		offset:            offset,
-		limit:             limit,
+		sendData:          sendData,
 		incomingData:      make(chan []byte, 100),
 		outgoingData:      make(chan []byte),
 		terminationSignal: make(chan struct{}),
@@ -62,7 +54,7 @@ func (v *virtualPacketConn) writeForward() {
 	for {
 		select {
 		case data := <-v.outgoingData:
-			v.peer.sendTransfer(data, protocol.TransferControlActive, v.transferProtocol, v.hash, v.offset, v.limit, v.sequenceNumber)
+			v.sendData(data, v.sequenceNumber)
 
 		case <-v.terminationSignal:
 			return

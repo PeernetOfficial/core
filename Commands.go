@@ -240,7 +240,7 @@ func SendChatAll(text string) {
 // cmdTransfer handles an incoming transfer message
 func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Connection) {
 	// Only UDT protocol is currently supported for file transfer.
-	if msg.TransferProtocol != 0 {
+	if msg.TransferProtocol != protocol.TransferProtocolUDT {
 		return
 	}
 

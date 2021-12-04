@@ -8,6 +8,14 @@ Offset  Size   Info
 0       1      Control
 1       1      Transfer Protocol
 2       32     File Hash
+
+Control = 0: Request Start
+34      8      Offset to start reading in the file
+42      8      Limit of bytes to read at the offset
+
+Offset + limit must not exceed the file size.
+
+Control = 3: Active
 34      ?      Embedded protocol data
 
 */
@@ -39,6 +47,8 @@ const (
 	TransferControlActive       = 2 // Active file transfer
 	TransferControlTerminate    = 3 // Terminate
 )
+
+const TransferProtocolUDT = 0 // Indicates that UDT is used as embedded transfer protocol.
 
 const transferPayloadHeaderSize = 34
 

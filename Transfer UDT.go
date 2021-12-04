@@ -36,7 +36,9 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, fileSize uint64, offset,
 		limit = fileSize - offset
 	}
 
-	virtualConnection := newVirtualPacketConn(peer, 0, hash, offset, limit)
+	virtualConnection := newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32) {
+		peer.sendTransfer(data, protocol.TransferControlActive, 0, hash, offset, limit, sequenceNumber)
+	})
 
 	// register the sequence since packets are sent bi-directional
 	virtualConnection.sequenceNumber = sequenceNumber
@@ -67,7 +69,9 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, fileSize uint64, offset,
 // The caller must call udtConn.Close() when done. Do not use any of the closing functions of virtualConn.
 // Limit is optional. 0 means the entire file.
 func (peer *PeerInfo) FileTransferRequestUDT(hash []byte, offset, limit uint64) (udtConn net.Conn, virtualConn *virtualPacketConn, err error) {
-	virtualConn = newVirtualPacketConn(peer, 0, hash, offset, limit)
+	virtualConn = newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32) {
+		peer.sendTransfer(data, protocol.TransferControlActive, protocol.TransferProtocolUDT, hash, offset, limit, sequenceNumber)
+	})
 
 	// new sequence
 	sequence := networks.Sequences.NewSequenceBi(peer.PublicKey, &peer.messageSequence, virtualConn, transferSequenceTimeout, virtualConn.sequenceTerminate)
@@ -84,7 +88,7 @@ func (peer *PeerInfo) FileTransferRequestUDT(hash []byte, offset, limit uint64) 
 	udtListener := udt.ListenUDT(udtConfig, virtualConn, virtualConn.incomingData, virtualConn.outgoingData, virtualConn.terminationSignal)
 
 	// request file transfer
-	peer.sendTransfer(nil, protocol.TransferControlRequestStart, virtualConn.transferProtocol, hash, offset, limit, virtualConn.sequenceNumber)
+	peer.sendTransfer(nil, protocol.TransferControlRequestStart, protocol.TransferProtocolUDT, hash, offset, limit, virtualConn.sequenceNumber)
 
 	// accept the connection
 	udtConn, err = udtListener.Accept()
