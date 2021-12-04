@@ -148,7 +148,7 @@ func (s *udtSocketSend) goSendEvent() {
 				return
 			}
 
-			s.fillDataToMTU(msg.content, messageOut) // a trick to fill up the packet immediately with data (stream only)
+			msg.content = s.fillDataToMTU(msg.content, messageOut) // a trick to fill up the packet immediately with data (stream only)
 
 			s.processDataMsg(msg.content, msg.tim, msg.ttl, true)
 
@@ -198,9 +198,9 @@ func (s *udtSocketSend) reevalSendState() sendState {
 }
 
 // fillDataToMTU tries to fill up data until MTU is reached if data is immediately available in the channel. Only for streaming socket.
-func (s *udtSocketSend) fillDataToMTU(data []byte, dataChan <-chan sendMessage) {
+func (s *udtSocketSend) fillDataToMTU(data []byte, dataChan <-chan sendMessage) (dataFilled []byte) {
 	if s.socket.isDatagram {
-		return
+		return data
 	}
 	mtu := int(s.socket.maxPacketSize) - 16 // 16 = data packet header
 
@@ -209,7 +209,7 @@ func (s *udtSocketSend) fillDataToMTU(data []byte, dataChan <-chan sendMessage) 
 		select {
 		case morePartialSend := <-dataChan:
 			if len(morePartialSend.content) == 0 { // Indicates EOF.
-				return
+				return data
 			}
 
 			// we have more data, concat and try again
@@ -217,9 +217,10 @@ func (s *udtSocketSend) fillDataToMTU(data []byte, dataChan <-chan sendMessage) 
 			continue
 		default:
 			// nothing immediately available, just send what we have
-			return
+			return data
 		}
 	}
+	return data
 }
 
 // try to pack a new data packet and send it
