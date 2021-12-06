@@ -36,7 +36,7 @@ func GenerateIndexes(text string) ([][]byte, error) {
 	// Appending normalized hash
 	hashes = append(hashes, normalizedHash)
 	// Appending lower case hash
-	hashes = append(hashes, LowerCaseHash(normalizedStr))
+	//hashes = append(hashes, LowerCaseHash(normalizedStr))
 	// Appending upper case hash
 	hashes = append(hashes, UpperCaseHash(normalizedStr))
 	// Appending split string by word
@@ -47,7 +47,7 @@ func GenerateIndexes(text string) ([][]byte, error) {
 		}
 		hashes = append(hashes, protocol.HashData([]byte(WordsHashes[i])))
 		// Appending lower case for the specific word
-		hashes = append(hashes, LowerCaseHash(WordsHashes[i]))
+		//hashes = append(hashes, LowerCaseHash(WordsHashes[i]))
 		// Appending upper case for the specific word
 		hashes = append(hashes, UpperCaseHash(WordsHashes[i]))
 	}
@@ -100,6 +100,9 @@ func UpperCaseHash(name string) []byte {
 
 // NormalizeWords Normalizes and sanitizes string passed as the parameter
 func NormalizeWords(text string) (string, error) {
+	// Make the string lower case
+	text = strings.ToLower(text)
+
 	// change spaces
 	wordsSplit := WordsSplitString(text)
 
@@ -130,10 +133,7 @@ func NormalizeWords(text string) (string, error) {
 
 // WordsSplitString splits the words in the string
 // by intensifying white spaces and returns
-// a multi-dimensional array of bytes and
-// if the word is less than or equivalent
-// to 3 characters we don't do generate
-// a hash for them.
+// a string of bytes
 func WordsSplitString(name string) []string {
 	words := strings.Fields(name)
 	return words
