@@ -60,11 +60,11 @@ func TestBlockEncoding(t *testing.T) {
 		case BlockRecordFile:
 			printFile(record)
 
-		case BlockRecordProfile:
-			printProfileField(record)
-
+		case []BlockRecordProfile:
+			for _, profileR := range record {
+				printProfileField(profileR)
+			}
 		}
-
 	}
 }
 
