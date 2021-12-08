@@ -18,7 +18,7 @@ import (
 )
 
 // transferSequenceTimeout is the timeout for a follow-up message to appear, otherwise the transfer will be terminated.
-var transferSequenceTimeout = time.Minute * 10
+var transferSequenceTimeout = time.Minute * 1
 
 // maxFlowWinSize is the maximum number of unacknowledged packets to permit. A higher number means using more memory, but reduces potential overhead since it does not stop so quickly for missing packets.
 // Each unacknowledged packet may store protocol.TransferMaxEmbedSize (currently 1121 bytes) payload data in memory. A too high number may impact the speed of real-time streaming in case of lost packets.
