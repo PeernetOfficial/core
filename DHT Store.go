@@ -1,5 +1,5 @@
 /*
-File Name:  Store.go
+File Name:  DHT Store.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */
@@ -11,19 +11,19 @@ import (
 	"github.com/PeernetOfficial/core/store"
 )
 
-// Warehouse contains all key-value data served via DHT
-var Warehouse store.Store
+// dhtStore contains all key-value data served via DHT
+var dhtStore store.Store
 
 // TODO: Via descriptors, files stored by other peers
 
 func initStore() {
-	Warehouse = store.NewMemoryStore()
+	dhtStore = store.NewMemoryStore()
 }
 
 // announcementGetData returns data for an announcement
 func announcementGetData(hash []byte) (stored bool, data []byte) {
 	// TODO: Create RetrieveIfSize to prevent files larger than EmbeddedFileSizeMax from being loaded
-	data, found := Warehouse.Get(hash)
+	data, found := dhtStore.Get(hash)
 	if !found {
 		return false, nil
 	}
