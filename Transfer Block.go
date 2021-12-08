@@ -1,5 +1,5 @@
 /*
-File Name:  Transfer Blocks.go
+File Name:  Transfer Block.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

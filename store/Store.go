@@ -3,7 +3,7 @@ File Name:  Store.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
-Simple key-value store implementation. Currently in-memory only.
+Simple key-value store interface.
 */
 
 package store
