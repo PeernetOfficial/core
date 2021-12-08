@@ -106,3 +106,14 @@ func (heap *receiveLossHeap) Range(sequenceFrom, sequenceTo packet.PacketID) (re
 
 	return result
 }
+
+func (heap *receiveLossHeap) FirstSequence() (sequence uint32, valid bool) {
+	heap.RLock()
+	defer heap.RUnlock()
+
+	if len(heap.list) > 0 {
+		return heap.list[0].packetID.Seq, true
+	} else {
+		return 0, false
+	}
+}
