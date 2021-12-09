@@ -2,3 +2,5 @@
 log.txt
 *debug_bin
 test.*
+# Ignore the IDE gitignore files
+.idea/
