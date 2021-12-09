@@ -3,6 +3,7 @@ package search
 import (
 	"fmt"
 	"github.com/PeernetOfficial/core"
+	"github.com/PeernetOfficial/core/protocol"
 	"testing"
 )
 
@@ -17,7 +18,7 @@ func TestGenerateIndexes(t *testing.T) {
 		t.Error(err)
 	}
 
-	search, err := Search("Name")
+	search, err := Search(protocol.HashData([]byte("Name")))
 	if err != nil {
 		t.Error(err)
 	}
@@ -30,7 +31,7 @@ func TestGenerateIndexes(t *testing.T) {
 
 // Test written to run remove Index workflow
 func TestRemoveIndexes(t *testing.T) {
-	err := RemoveIndexesHash([]byte("My Name is Akilan"))
+	err := RemoveIndexesHash(protocol.HashData([]byte("My Name is Akilan")))
 	if err != nil {
 		t.Error(err)
 	}
