@@ -306,7 +306,7 @@ func (ht *hashTable) getTotalNodesPerBucket() (total []int) {
 	ht.mutex.RLock()
 	defer ht.mutex.RUnlock()
 
-	for n, _ := range ht.RoutingTable {
+	for n := range ht.RoutingTable {
 		total = append(total, len(ht.RoutingTable[n]))
 	}
 
