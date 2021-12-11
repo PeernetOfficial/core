@@ -69,3 +69,8 @@ func (store *PogrebStore) Get(key []byte) (data []byte, found bool) {
 func (store *PogrebStore) Delete(key []byte) {
 	store.db.Delete(key)
 }
+
+// Count returns the count of records stored.
+func (store *PogrebStore) Count() uint64 {
+	return uint64(store.db.Count())
+}
