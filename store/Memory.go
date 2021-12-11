@@ -71,3 +71,10 @@ func (ms *MemoryStore) Delete(key []byte) {
 	delete(ms.data, string(key))
 	ms.mutex.Unlock()
 }
+
+// Count returns the count of records stored.
+func (ms *MemoryStore) Count() uint64 {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+	return uint64(len(ms.data))
+}

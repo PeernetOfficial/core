@@ -29,4 +29,7 @@ type Store interface {
 
 	// ExpireKeys is called to delete all keys that are marked for expiration.
 	ExpireKeys()
+
+	// Count returns the total number of records stored.
+	Count() uint64
 }
