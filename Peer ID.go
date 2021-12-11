@@ -100,7 +100,7 @@ type PeerInfo struct {
 	isVirtual          bool             // Whether it is a virtual peer for establishing a connection.
 	targetAddresses    []*peerAddress   // Virtual peer: Addresses to send any replies.
 	traversePeer       *PeerInfo        // Virtual peer: Same field as in connection.
-	BlockchainHeight   uint32           // Blockchain height
+	BlockchainHeight   uint64           // Blockchain height
 	BlockchainVersion  uint64           // Blockchain version
 
 	// statistics

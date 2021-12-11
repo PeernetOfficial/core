@@ -82,7 +82,7 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 	}
 
 	// get the old header
-	header, status, err := cache.store.AssessBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, uint64(peer.BlockchainHeight))
+	header, status, err := cache.store.AssessBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight)
 	if err != nil {
 		return
 	}
@@ -95,27 +95,27 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 		cache.store.DeleteBlockchain(peer.PublicKey, header)
 
 	case blockchain.MultiStatusHeaderNA:
-		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, uint64(peer.BlockchainHeight)); err != nil {
+		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
 			return
 		}
 
-		downloadAndProcessBlocks(peer, header, 0, uint64(peer.BlockchainHeight))
+		downloadAndProcessBlocks(peer, header, 0, peer.BlockchainHeight)
 
 	case blockchain.MultiStatusNewVersion:
 		// delete existing data first, then create it new
 		cache.store.DeleteBlockchain(peer.PublicKey, header)
 
-		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, uint64(peer.BlockchainHeight)); err != nil {
+		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
 			return
 		}
 
-		downloadAndProcessBlocks(peer, header, 0, uint64(peer.BlockchainHeight))
+		downloadAndProcessBlocks(peer, header, 0, peer.BlockchainHeight)
 
 	case blockchain.MultiStatusNewBlocks:
 		offset := header.Height
-		limit := uint64(peer.BlockchainHeight) - header.Height
+		limit := peer.BlockchainHeight - header.Height
 
-		header.Height = uint64(peer.BlockchainHeight)
+		header.Height = peer.BlockchainHeight
 
 		downloadAndProcessBlocks(peer, header, offset, limit)
 
