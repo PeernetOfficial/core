@@ -23,7 +23,7 @@ var config struct {
 	// Locations of important files and folders
 	LogFile          string `yaml:"LogFile"`          // Log file. It contains informational and error messages.
 	BlockchainMain   string `yaml:"BlockchainMain"`   // Blockchain main stores the end-users blockchain data. It contains meta data of shared files, profile data, and social interactions.
-	BlockchainGlobal string `yaml:"BlockchainGlobal"` // Blockchain global stores blockchain data from global users.
+	BlockchainGlobal string `yaml:"BlockchainGlobal"` // Blockchain global caches blockchain data from global users. Empty to disable.
 	WarehouseMain    string `yaml:"WarehouseMain"`    // Warehouse main stores the actual data of files shared by the end-user.
 
 	// Listen settings
@@ -45,6 +45,11 @@ var config struct {
 	// PortForward specifies an external port that was manually forwarded by the user. All listening IPs must have that same port number forwarded!
 	// If this setting is invalid, it will prohibit other peers from connecting. If set, it automatically disables UPnP.
 	PortForward uint16 `yaml:"PortForward"`
+
+	// Global blockchain cache limits
+	CacheMaxBlockSize  uint64 `yaml:"CacheMaxBlockSize"`  // Max block size to accept in bytes.
+	CacheMaxBlockCount uint64 `yaml:"CacheMaxBlockCount"` // Max block count to cache per peer.
+	LimitTotalRecords  uint64 `yaml:"LimitTotalRecords"`  // Record count limit. 0 = unlimited. Max Records * Max Block Size = Size Limit.
 }
 
 // peerSeed is a singl peer entry from the config's seed list
