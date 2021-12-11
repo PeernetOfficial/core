@@ -126,9 +126,9 @@ func packetGarbage(packetLength int) (random []byte) {
 	case packetLength == 508, packetLength == internetSafeMTU:
 		return nil
 	case packetLength < 508 && (508-packetLength) < maxRandomGarbage:
-		maxLength = packetLength - 508
+		maxLength = 508 - packetLength
 	case packetLength < internetSafeMTU && (internetSafeMTU-packetLength) < maxRandomGarbage:
-		maxLength = packetLength - internetSafeMTU
+		maxLength = internetSafeMTU - packetLength
 	}
 
 	b := make([]byte, rand.Intn(maxLength))
