@@ -17,12 +17,36 @@ import (
 // AddFiles adds files to the blockchain. Status is StatusX.
 // It makes sense to group all files in the same directory into one call, since only one directory record will be created per unique directory per block.
 func (blockchain *Blockchain) AddFiles(files []BlockRecordFile) (newHeight, newVersion uint64, status int) {
-	encoded, err := encodeBlockRecordFiles(files)
-	if err != nil {
-		return 0, 0, StatusCorruptBlockRecord
+	encodeFilesAppend := func(files []BlockRecordFile) (newHeight, newVersion uint64, status int) {
+		encoded, err := encodeBlockRecordFiles(files)
+		if err != nil {
+			return 0, 0, StatusCorruptBlockRecord
+		}
+
+		return blockchain.Append(encoded)
 	}
 
-	return blockchain.Append(encoded)
+	blockSize := uint64(blockHeaderSize)
+	var recordFiles []BlockRecordFile
+
+	for _, file := range files {
+		recordSize := file.SizeInBlock()
+
+		// need to create a new block due to target block size?
+		if len(recordFiles) > 0 && blockSize+recordSize > TargetBlockSize {
+			if newHeight, newVersion, status = encodeFilesAppend(recordFiles); status != StatusOK {
+				return newHeight, newVersion, status
+			}
+
+			blockSize = blockHeaderSize
+			recordFiles = nil
+		}
+
+		blockSize += recordSize
+		recordFiles = append(recordFiles, file)
+	}
+
+	return encodeFilesAppend(recordFiles)
 }
 
 // ListFiles returns a list of all files. Status is StatusX.
