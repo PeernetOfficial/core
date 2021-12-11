@@ -176,12 +176,18 @@ func (nets *Networks) packetWorker() {
 					peer.UserAgent = announce.UserAgent
 				}
 				peer.Features = announce.Features
+
+				isBlockchainUpdate := peer.BlockchainHeight != announce.BlockchainHeight || peer.BlockchainVersion != announce.BlockchainVersion
 				peer.BlockchainHeight = announce.BlockchainHeight
 				peer.BlockchainVersion = announce.BlockchainVersion
 
 				Filters.MessageIn(peer, raw, announce)
 
 				peer.cmdAnouncement(announce, connection)
+
+				if isBlockchainUpdate {
+					peer.remoteBlockchainUpdate()
+				}
 			}
 
 		case protocol.CommandResponse: // Response
@@ -205,12 +211,18 @@ func (nets *Networks) packetWorker() {
 					peer.UserAgent = response.UserAgent
 				}
 				peer.Features = response.Features
+
+				isBlockchainUpdate := peer.BlockchainHeight != response.BlockchainHeight || peer.BlockchainVersion != response.BlockchainVersion
 				peer.BlockchainHeight = response.BlockchainHeight
 				peer.BlockchainVersion = response.BlockchainVersion
 
 				Filters.MessageIn(peer, raw, response)
 
 				peer.cmdResponse(response, connection)
+
+				if isBlockchainUpdate {
+					peer.remoteBlockchainUpdate()
+				}
 			}
 
 		case protocol.CommandLocalDiscovery: // Local discovery, sent via IPv4 broadcast and IPv6 multicast
@@ -219,12 +231,18 @@ func (nets *Networks) packetWorker() {
 					peer.UserAgent = announce.UserAgent
 				}
 				peer.Features = announce.Features
+
+				isBlockchainUpdate := peer.BlockchainHeight != announce.BlockchainHeight || peer.BlockchainVersion != announce.BlockchainVersion
 				peer.BlockchainHeight = announce.BlockchainHeight
 				peer.BlockchainVersion = announce.BlockchainVersion
 
 				Filters.MessageIn(peer, raw, announce)
 
 				peer.cmdLocalDiscovery(announce, connection)
+
+				if isBlockchainUpdate {
+					peer.remoteBlockchainUpdate()
+				}
 			}
 
 		case protocol.CommandPing: // Ping

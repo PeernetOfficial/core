@@ -1,7 +1,7 @@
 # Locations of important files and folders
 LogFile:          "data/log.txt"                # Log file. It contains informational and error messages.
 BlockchainMain:   "data/blockchain main/"       # Blockchain main stores the end-users blockchain data. It contains meta data of shared files, profile data, and social interactions.
-BlockchainGlobal: "data/blockchain global/"     # Blockchain global stores blockchain data from global users.
+BlockchainGlobal: "data/blockchain global/"     # Blockchain global caches blockchain data from global users. Empty to disable.
 WarehouseMain:    "data/warehouse main/"        # Warehouse main stores the actual data of files shared by the end-user.
 
 # Listen defines all IP:Port combinations to listen on. If empty, it will listen on all IPs automatically on available ports.
@@ -35,3 +35,8 @@ LocalFirewall:  false   # Indicates that a local firewall may drop unsolicited i
 # PortForward specifies an external port that was manually forwarded by the user. All listening IPs must have that same port number forwarded!
 # If this setting is invalid, it will prohibit other peers from connecting. If set, it automatically disables UPnP.
 PortForward: 0          # Default not set.
+
+# Global blockchain cache limits
+CacheMaxBlockSize:    4096  # Max block size to accept in bytes.
+CacheMaxBlockCount:   256   # Max block count to cache per peer.
+LimitTotalRecords:    0     # Record count limit. 0 = unlimited. Max Records * Max Block Size = Size Limit.
