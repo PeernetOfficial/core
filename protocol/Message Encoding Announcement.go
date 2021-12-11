@@ -18,7 +18,7 @@ type MessageAnnouncement struct {
 	Protocol          uint8       // Protocol version supported (low 4 bits).
 	Features          uint8       // Feature support
 	Actions           uint8       // Action bit array. See ActionX
-	BlockchainHeight  uint32      // Blockchain height
+	BlockchainHeight  uint64      // Blockchain height
 	BlockchainVersion uint64      // Blockchain version
 	PortInternal      uint16      // Internal port. Can be used to detect NATs.
 	PortExternal      uint16      // External port if known. 0 if not. Can be used for UPnP support.
@@ -56,7 +56,7 @@ const (
 )
 
 // Minimum length of Announcement payload header without User Agent
-const announcementPayloadHeaderSize = 20
+const announcementPayloadHeaderSize = 24
 
 // DecodeAnnouncement decodes the incoming announcement message. Returns nil if invalid.
 func DecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error) {
@@ -71,12 +71,12 @@ func DecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error
 	result.Protocol = msg.Payload[0] & 0x0F // Protocol version support is stored in the first 4 bits
 	result.Features = msg.Payload[1]        // Feature support
 	result.Actions = msg.Payload[2]
-	result.BlockchainHeight = binary.LittleEndian.Uint32(msg.Payload[3:7])
-	result.BlockchainVersion = binary.LittleEndian.Uint64(msg.Payload[7:15])
-	result.PortInternal = binary.LittleEndian.Uint16(msg.Payload[15:17])
-	result.PortExternal = binary.LittleEndian.Uint16(msg.Payload[17:19])
+	result.BlockchainHeight = binary.LittleEndian.Uint64(msg.Payload[3 : 3+8])
+	result.BlockchainVersion = binary.LittleEndian.Uint64(msg.Payload[11 : 11+8])
+	result.PortInternal = binary.LittleEndian.Uint16(msg.Payload[19 : 19+2])
+	result.PortExternal = binary.LittleEndian.Uint16(msg.Payload[21 : 21+2])
 
-	userAgentLength := int(msg.Payload[19])
+	userAgentLength := int(msg.Payload[23])
 	if userAgentLength > 0 {
 		if userAgentLength > len(msg.Payload)-announcementPayloadHeaderSize {
 			return nil, errors.New("announcement: user agent overflow")
@@ -193,8 +193,8 @@ createPacketLoop:
 		raw[1] = features              // Feature support
 		//raw[2] = Actions                                   // Action bit array
 
-		binary.LittleEndian.PutUint32(raw[3:7], uint32(blockchainHeight))
-		binary.LittleEndian.PutUint64(raw[7:15], blockchainVersion)
+		binary.LittleEndian.PutUint64(raw[3:3+8], blockchainHeight)
+		binary.LittleEndian.PutUint64(raw[11:11+8], blockchainVersion)
 
 		// only on initial announcement the User Agent must be provided according to the protocol spec
 		if sendUA {
@@ -203,7 +203,7 @@ createPacketLoop:
 				userAgentB = userAgentB[:255]
 			}
 
-			raw[19] = byte(len(userAgentB))
+			raw[23] = byte(len(userAgentB))
 			copy(raw[announcementPayloadHeaderSize:announcementPayloadHeaderSize+len(userAgentB)], userAgentB)
 			packetSize += len(userAgentB)
 		}

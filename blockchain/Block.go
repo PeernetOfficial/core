@@ -8,9 +8,9 @@ Offset  Size   Info
 0       65     Signature of entire block
 65      32     Hash (blake3) of last block. 0 for first one.
 97      8      Blockchain version number
-105     4      Block number
-109     4      Size of entire block including this header
-113     2      Count of records that follow
+105     8      Block number
+113     4      Size of entire block including this header
+117     2      Count of records that follow
 
 */
 
@@ -44,7 +44,7 @@ type BlockRecordRaw struct {
 	Data []byte    // Data according to the type
 }
 
-const blockHeaderSize = 115
+const blockHeaderSize = 119
 const blockRecordHeaderSize = 13
 
 // decodeBlock decodes a single block
@@ -68,16 +68,16 @@ func decodeBlock(raw []byte) (block *Block, err error) {
 	copy(block.LastBlockHash, raw[65:65+protocol.HashSize])
 
 	block.BlockchainVersion = binary.LittleEndian.Uint64(raw[97 : 97+8])
-	block.Number = uint64(binary.LittleEndian.Uint32(raw[105 : 105+4])) // for now 32-bit in protocol
+	block.Number = binary.LittleEndian.Uint64(raw[105 : 105+8])
 
-	blockSize := binary.LittleEndian.Uint32(raw[109 : 109+4])
+	blockSize := binary.LittleEndian.Uint32(raw[113 : 113+4])
 	if blockSize != uint32(len(raw)) {
 		return nil, errors.New("decodeBlock invalid block size")
 	}
 
 	// decode on a low-level all block records
-	countRecords := binary.LittleEndian.Uint16(raw[113 : 113+2])
-	index := 115
+	countRecords := binary.LittleEndian.Uint16(raw[117 : 117+2])
+	index := blockHeaderSize
 
 	for n := uint16(0); n < countRecords; n++ {
 		if index+blockRecordHeaderSize > len(raw) {
@@ -114,10 +114,10 @@ func encodeBlock(block *Block, ownerPrivateKey *btcec.PrivateKey) (raw []byte, e
 
 	var temp [8]byte
 	binary.LittleEndian.PutUint64(temp[0:8], block.BlockchainVersion)
-	buffer.Write(temp[:])
+	buffer.Write(temp[:8])
 
-	binary.LittleEndian.PutUint32(temp[0:4], uint32(block.Number)) // for now 32-bit in protocol
-	buffer.Write(temp[:4])
+	binary.LittleEndian.PutUint64(temp[0:8], block.Number)
+	buffer.Write(temp[:8])
 
 	buffer.Write(make([]byte, 4)) // Size of block, filled later
 	buffer.Write(make([]byte, 2)) // Count of records, filled later
@@ -148,8 +148,8 @@ func encodeBlock(block *Block, ownerPrivateKey *btcec.PrivateKey) (raw []byte, e
 		return nil, errors.New("encodeBlock invalid block size")
 	}
 
-	binary.LittleEndian.PutUint32(raw[109:109+4], uint32(len(raw))) // Size of block
-	binary.LittleEndian.PutUint16(raw[113:113+2], countRecords)     // Count of records
+	binary.LittleEndian.PutUint32(raw[113:113+4], uint32(len(raw))) // Size of block
+	binary.LittleEndian.PutUint16(raw[117:117+2], countRecords)     // Count of records
 
 	// signature is last
 	signature, err := btcec.SignCompact(btcec.S256(), ownerPrivateKey, protocol.HashData(raw[65:]), true)

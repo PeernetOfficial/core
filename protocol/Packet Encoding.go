@@ -152,6 +152,6 @@ func (packet *PacketRaw) SetSelfReportedPorts(portI, portE uint16) {
 		return
 	}
 
-	binary.LittleEndian.PutUint16(packet.Payload[15:17], portI)
-	binary.LittleEndian.PutUint16(packet.Payload[17:19], portE)
+	binary.LittleEndian.PutUint16(packet.Payload[19:19+2], portI)
+	binary.LittleEndian.PutUint16(packet.Payload[21:21+2], portE)
 }
