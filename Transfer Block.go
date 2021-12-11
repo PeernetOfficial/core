@@ -67,7 +67,7 @@ func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey *btcec.PublicKey, L
 			udtConn.Write(blockData)
 
 			sentBlocks++
-			if sentBlocks >= MaxBlockSize {
+			if sentBlocks >= LimitBlockCount {
 				break
 			}
 		}
@@ -114,4 +114,45 @@ func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey *btcec.PublicKey,
 	// We do not close the UDT listener here. It should automatically close after udtConn is closed.
 
 	return udtConn, virtualConn, nil
+}
+
+// Downloads the requested blocks for the selected blockchain from the remote peer. The callback is called for each result.
+func (peer *PeerInfo) BlockDownload(BlockchainPublicKey *btcec.PublicKey, LimitBlockCount, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange, callback func(data []byte, targetBlock protocol.BlockRange, blockSize uint64, availability uint8)) (err error) {
+	conn, _, err := peer.BlockTransferRequest(BlockchainPublicKey, LimitBlockCount, MaxBlockSize, TargetBlocks)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	var limit uint64
+	for _, target := range TargetBlocks {
+		limit += target.Limit
+	}
+
+	for n := uint64(0); n < limit; {
+		data, targetBlock, blockSize, availability, err := protocol.BlockTransferReadBlock(conn, MaxBlockSize)
+		if err != nil {
+			return err
+		} else if !isTargetInRange(TargetBlocks, targetBlock.Offset, targetBlock.Limit) {
+			return errors.New("invalid returned block range")
+		}
+
+		// TODO: Check if the block was already returned in case the block is available. This can be done via simple map.
+
+		callback(data, targetBlock, blockSize, availability)
+
+		n += targetBlock.Limit
+	}
+
+	return nil
+}
+
+func isTargetInRange(targets []protocol.BlockRange, offset, limit uint64) (valid bool) {
+	for _, target := range targets {
+		if offset >= target.Offset && offset+limit <= target.Offset+target.Limit {
+			return true
+		}
+	}
+
+	return false
 }
