@@ -29,6 +29,8 @@ Offset  Size    Info
                 2 = Block range exceeds size limit.
 1       16      Block range
 17      8       Block size
+
+The limit in block range must be 1 if a block is returned.
 */
 
 package protocol
@@ -197,12 +199,16 @@ func BlockTransferReadBlock(reader io.Reader, maxBlockSize uint64) (data []byte,
 	targetBlock.Limit = binary.LittleEndian.Uint64(header[9:17])
 	blockSize = binary.LittleEndian.Uint64(header[17:25])
 
-	if availability != GetBlockStatusAvailable { // return if status isn't available
+	if targetBlock.Limit == 0 {
+		return nil, targetBlock, blockSize, availability, errors.New("empty target block limit")
+	} else if availability != GetBlockStatusAvailable { // return if status indicates the block is not available
 		return nil, targetBlock, blockSize, availability, nil
 	}
 
 	if blockSize > maxBlockSize {
 		return nil, targetBlock, blockSize, availability, errors.New("remote block size exceeds limit")
+	} else if targetBlock.Limit != 1 {
+		return nil, targetBlock, blockSize, availability, errors.New("invalid target block limit")
 	}
 
 	// read the block
