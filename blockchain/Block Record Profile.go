@@ -55,7 +55,7 @@ func encodeBlockRecordProfile(fields []BlockRecordProfile) (recordsRaw []BlockRe
 	}
 
 	for n := range fields {
-		if len(fields[n].Data) > math.MaxUint32 {
+		if uint64(len(fields[n].Data)) > math.MaxUint32 {
 			return nil, errors.New("exceeding max field size")
 		}
 
