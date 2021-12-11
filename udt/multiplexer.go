@@ -49,7 +49,9 @@ func (m *multiplexer) goRead() {
 		select {
 		case buf = <-m.incomingData:
 		case <-m.terminationSignal:
-			m.socket.Close() // Pass the external termination signal down to the socket. This makes sure any pending reader on the socket (especially if blocking) returns with EOF.
+			if m.socket != nil {
+				m.socket.Close() // Pass the external termination signal down to the socket. This makes sure any pending reader on the socket (especially if blocking) returns with EOF.
+			}
 			return
 		}
 
