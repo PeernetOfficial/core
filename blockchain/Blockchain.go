@@ -27,6 +27,13 @@ import (
 	"github.com/PeernetOfficial/core/store"
 )
 
+// TargetBlockSize is the target size that a generated block shall not exceed. This ensures the block will be transferred via blockchain exchange and cached in DHT.
+// Large blocks may be ignored by clients for size and spam reasons, resulting in decreased discoverability.
+var TargetBlockSize = uint64(4096)
+
+// MinAcceptableBlockSize is the minimum block size peers must accept.
+const MinAcceptableBlockSize = uint64(1024)
+
 // Blockchain stores the blockchain's header in memory. Any changes must be synced to disk!
 type Blockchain struct {
 	// header

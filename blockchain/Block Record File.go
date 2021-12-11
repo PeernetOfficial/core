@@ -59,12 +59,14 @@ type BlockRecordFileTag struct {
 	// This is an embedded basic compression algorithm for repetitive tag. For example directory tags or album tags might be heavily repetitive among files.
 }
 
+const blockRecordFileMinSize = 101
+
 // decodeBlockRecordFiles decodes only file records. Other records are ignored.
 func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw, nodeID []byte) (files []BlockRecordFile, err error) {
 	for i, record := range recordsRaw {
 		switch record.Type {
 		case RecordTypeFile:
-			if len(record.Data) < 101 {
+			if len(record.Data) < blockRecordFileMinSize {
 				return nil, errors.New("file record invalid size")
 			}
 
@@ -83,7 +85,7 @@ func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw, nodeID []byte) (files [
 
 			countTags := binary.LittleEndian.Uint16(record.Data[99 : 99+2])
 
-			index := 101
+			index := blockRecordFileMinSize
 
 			for n := uint16(0); n < countTags; n++ {
 				if index+6 > len(record.Data) {
@@ -160,7 +162,7 @@ func encodeBlockRecordFiles(files []BlockRecordFile) (recordsRaw []BlockRecordRa
 
 	// then encode all files as records
 	for n := range files {
-		data := make([]byte, 101)
+		data := make([]byte, blockRecordFileMinSize)
 
 		if len(files[n].Hash) != protocol.HashSize {
 			return nil, errors.New("encodeBlockRecords invalid file hash")
@@ -225,4 +227,20 @@ func intToBytes(number int) (buffer []byte) {
 
 	binary.LittleEndian.PutUint64(buffer[0:8], uint64(number))
 	return buffer[0:8]
+}
+
+// SizeInBlock returns the full size this file takes up in a single block. (i.e., the record size)
+// If paired with other files in a single block, compression (via tag references) may reduce the actual size.
+func (file *BlockRecordFile) SizeInBlock() (size uint64) {
+	size = blockRecordHeaderSize + blockRecordFileMinSize
+
+	for _, tag := range file.Tags {
+		if tag.IsVirtual() {
+			continue
+		}
+
+		size += 6 + uint64(len(tag.Data))
+	}
+
+	return size
 }

@@ -64,12 +64,36 @@ func (blockchain *Blockchain) ProfileList() (fields []BlockRecordProfile, status
 
 // ProfileWrite writes profile fields and blobs to the blockchain. Status is StatusX.
 func (blockchain *Blockchain) ProfileWrite(fields []BlockRecordProfile) (newHeight, newVersion uint64, status int) {
-	encoded, err := encodeBlockRecordProfile(fields)
-	if err != nil {
-		return 0, 0, StatusCorruptBlockRecord
+	encodeProfileAppend := func(fields []BlockRecordProfile) (newHeight, newVersion uint64, status int) {
+		encoded, err := encodeBlockRecordProfile(fields)
+		if err != nil {
+			return 0, 0, StatusCorruptBlockRecord
+		}
+
+		return blockchain.Append(encoded)
 	}
 
-	return blockchain.Append(encoded)
+	blockSize := uint64(blockHeaderSize)
+	var recordFields []BlockRecordProfile
+
+	for _, field := range fields {
+		recordSize := field.SizeInBlock()
+
+		// need to create a new block due to target block size?
+		if len(recordFields) > 0 && blockSize+recordSize > TargetBlockSize {
+			if newHeight, newVersion, status = encodeProfileAppend(recordFields); status != StatusOK {
+				return newHeight, newVersion, status
+			}
+
+			blockSize = blockHeaderSize
+			recordFields = nil
+		}
+
+		blockSize += recordSize
+		recordFields = append(recordFields, field)
+	}
+
+	return encodeProfileAppend(recordFields)
 }
 
 // ProfileDelete deletes fields and blobs from the blockchain. Status is StatusX.

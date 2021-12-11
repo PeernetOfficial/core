@@ -68,3 +68,8 @@ func encodeBlockRecordProfile(fields []BlockRecordProfile) (recordsRaw []BlockRe
 
 	return recordsRaw, nil
 }
+
+// SizeInBlock returns the full size this file takes up in a single block. (i.e., the record size)
+func (field *BlockRecordProfile) SizeInBlock() (size uint64) {
+	return blockRecordHeaderSize + 2 + uint64(len(field.Data))
+}

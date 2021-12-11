@@ -48,7 +48,12 @@ Offset  Size   Info
 
 ## Block Size
 
-The block size is currently recommended to be slightly below 64 KB (minus message header overhead), so that it fits within a single UDP packet. Having a block size smaller than the max. message size reduces complexity when exchanging individual blocks and increases performance for operations such as file search.
+Peers must accept a minimum block size of 1 KB.
+
+The target block size (for generating new blocks) is defined via `TargetBlockSize`. If records cannot fit within that target size, they are added into a new block.
+
+Small block sizes ensure that the block will be transferred via blockchain exchange and cached in DHT.
+Large blocks may be ignored by clients for size and spam reasons, resulting in decreased discoverability.
 
 ## Edge Cases
 
