@@ -25,6 +25,7 @@ var config struct {
 	BlockchainMain   string `yaml:"BlockchainMain"`   // Blockchain main stores the end-users blockchain data. It contains meta data of shared files, profile data, and social interactions.
 	BlockchainGlobal string `yaml:"BlockchainGlobal"` // Blockchain global caches blockchain data from global users. Empty to disable.
 	WarehouseMain    string `yaml:"WarehouseMain"`    // Warehouse main stores the actual data of files shared by the end-user.
+	SearchIndex      string `yaml:"SearchIndex"`      // Local search index of blockchain records. Empty to disable.
 
 	// Listen settings
 	Listen        []string `yaml:"Listen"`        // IP:Port combinations
