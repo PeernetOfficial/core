@@ -26,6 +26,26 @@ func (peer *PeerInfo) pingConnection(connection *Connection) {
 	}
 }
 
+// pingConnectionAnnouncement sends an empty announcement via a particular connection.
+// It has the same effect as ping, but returns the blockchain version and height of the other peer in the Response message, which may be useful for keeping the global blockchain cache up to date.
+func (peer *PeerInfo) pingConnectionAnnouncement(connection *Connection) {
+	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
+	packets := protocol.EncodeAnnouncement(false, false, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion, userAgent)
+	if len(packets) != 1 {
+		return
+	}
+
+	raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packets[0], Sequence: networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, nil).SequenceNumber}
+	Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, false, nil, nil, nil)
+
+	err := peer.sendConnection(raw, connection)
+	connection.LastPingOut = time.Now()
+
+	if (connection.Status == ConnectionActive || connection.Status == ConnectionRedundant) && IsNetworkErrorFatal(err) {
+		peer.invalidateActiveConnection(connection)
+	}
+}
+
 // Ping sends a ping. This function exists only for debugging purposes, it should not be used normally.
 // This ping is not used for uptime detection and the LastPingOut time in connections is not set.
 func (peer *PeerInfo) Ping() {

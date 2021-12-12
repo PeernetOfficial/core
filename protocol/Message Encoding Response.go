@@ -110,7 +110,8 @@ func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 	read += 6
 
 	if countPeerResponses == 0 && countEmbeddedFiles == 0 && countHashesNotFound == 0 {
-		return nil, errors.New("response: empty")
+		// Empty responses are allowed. They can be useful as quasi-pings to get the latest blockchain info of the peer.
+		return
 	}
 
 	data := msg.Payload[read:]
