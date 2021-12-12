@@ -180,6 +180,7 @@ func (nets *Networks) packetWorker() {
 				isBlockchainUpdate := peer.BlockchainHeight != announce.BlockchainHeight || peer.BlockchainVersion != announce.BlockchainVersion
 				peer.BlockchainHeight = announce.BlockchainHeight
 				peer.BlockchainVersion = announce.BlockchainVersion
+				peer.blockchainLastRefresh = time.Now()
 
 				Filters.MessageIn(peer, raw, announce)
 
@@ -215,6 +216,7 @@ func (nets *Networks) packetWorker() {
 				isBlockchainUpdate := peer.BlockchainHeight != response.BlockchainHeight || peer.BlockchainVersion != response.BlockchainVersion
 				peer.BlockchainHeight = response.BlockchainHeight
 				peer.BlockchainVersion = response.BlockchainVersion
+				peer.blockchainLastRefresh = time.Now()
 
 				Filters.MessageIn(peer, raw, response)
 
@@ -235,6 +237,7 @@ func (nets *Networks) packetWorker() {
 				isBlockchainUpdate := peer.BlockchainHeight != announce.BlockchainHeight || peer.BlockchainVersion != announce.BlockchainVersion
 				peer.BlockchainHeight = announce.BlockchainHeight
 				peer.BlockchainVersion = announce.BlockchainVersion
+				peer.blockchainLastRefresh = time.Now()
 
 				Filters.MessageIn(peer, raw, announce)
 

@@ -6,10 +6,16 @@ Author:     Peter Kleissner
 
 package core
 
-import "time"
+import (
+	"time"
+)
 
 // pingTime is the time in seconds to send out ping messages
 const pingTime = 10
+
+// thresholdBlockchainRefresh is the threshold to refresh the blockchain information by sending an Announcement (and expecting the Response message).
+// This helps for keeping the global blockchain cache up to date.
+const thresholdBlockchainRefresh = 60 * time.Second
 
 // connectionInvalidate is the threshold in seconds to invalidate formerly active connections that no longer receive incoming packets.
 const connectionInvalidate = 22
@@ -25,6 +31,7 @@ func autoPingAll() {
 		thresholdInvalidate2 := time.Now().Add(-connectionInvalidate * time.Second * 4)
 		thresholdPingOut1 := time.Now().Add(-pingTime * time.Second)
 		thresholdPingOut2 := time.Now().Add(-pingTime * time.Second * 4)
+		thresholdBlockchainRefresh := time.Now().Add(-thresholdBlockchainRefresh)
 
 		for _, peer := range PeerlistGet() {
 			// first handle active connections
@@ -43,7 +50,12 @@ func autoPingAll() {
 				}
 
 				if connection.LastPacketIn.Before(thresholdPing) && connection.LastPingOut.Before(thresholdPing) {
-					peer.pingConnection(connection)
+					if connection.Status == ConnectionActive && peer.blockchainLastRefresh.Before(thresholdBlockchainRefresh) {
+						peer.pingConnectionAnnouncement(connection)
+					} else {
+						// just a regular ping otherwise
+						peer.pingConnection(connection)
+					}
 					continue
 				}
 			}
