@@ -73,6 +73,8 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 			}
 			cache.store.WriteBlock(peer.PublicKey, peer.BlockchainVersion, targetBlock.Offset, data)
 			header.ListBlocks = append(header.ListBlocks, targetBlock.Offset)
+
+			currentBackend.SearchIndex.IndexNewBlock(peer.PublicKey, targetBlock.Offset, data)
 		})
 
 		// only update the blockchain header if it changed
@@ -94,6 +96,10 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 	case blockchain.MultiStatusInvalidRemote:
 		cache.store.DeleteBlockchain(peer.PublicKey, header)
 
+		for _, blockN := range header.ListBlocks {
+			currentBackend.SearchIndex.UnindexBlock(peer.PublicKey, blockN)
+		}
+
 	case blockchain.MultiStatusHeaderNA:
 		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
 			return
@@ -104,6 +110,10 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 	case blockchain.MultiStatusNewVersion:
 		// delete existing data first, then create it new
 		cache.store.DeleteBlockchain(peer.PublicKey, header)
+
+		for _, blockN := range header.ListBlocks {
+			currentBackend.SearchIndex.UnindexBlock(peer.PublicKey, blockN)
+		}
 
 		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
 			return

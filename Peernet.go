@@ -6,6 +6,10 @@ Author:     Peter Kleissner
 
 package core
 
+import (
+	"github.com/PeernetOfficial/core/search"
+)
+
 var userAgent = "Peernet Core/0.1" // must be overwritten by the caller
 
 // Init initializes the client. The config must be loaded first!
@@ -14,6 +18,9 @@ func Init(UserAgent string) (backend *Backend) {
 	if userAgent = UserAgent; userAgent == "" {
 		return
 	}
+
+	backend = &Backend{}
+	currentBackend = backend
 
 	initFilters()
 	initPeerID()
@@ -27,10 +34,14 @@ func Init(UserAgent string) (backend *Backend) {
 	initStore()
 	initNetwork()
 
-	backend = &Backend{}
-	backend.GlobalBlockchainCache = initBlockchainCache(config.BlockchainGlobal, config.CacheMaxBlockSize, config.CacheMaxBlockCount, config.LimitTotalRecords)
+	var err error
 
-	currentBackend = backend
+	backend.GlobalBlockchainCache = initBlockchainCache(config.BlockchainGlobal, config.CacheMaxBlockSize, config.CacheMaxBlockCount, config.LimitTotalRecords)
+	backend.SearchIndex, err = search.InitSearchIndexStore(config.SearchIndex)
+
+	if err != nil {
+		Filters.LogError("Init", "search index '%s' init: %s", config.SearchIndex, err.Error())
+	}
 
 	return backend
 }
@@ -49,7 +60,8 @@ func Connect() {
 // The Backend represents an instance of a Peernet client to be used by a frontend.
 // Global variables and init functions are to be merged.
 type Backend struct {
-	GlobalBlockchainCache *BlockchainCache // stores other peers blockchains
+	GlobalBlockchainCache *BlockchainCache         // Caches blockchains of other peers.
+	SearchIndex           *search.SearchIndexStore // Search index of blockchain records.
 }
 
 // This variable is to be replaced later by pointers in structures.
