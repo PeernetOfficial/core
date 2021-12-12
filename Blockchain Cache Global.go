@@ -8,8 +8,10 @@ package core
 
 import (
 	"github.com/PeernetOfficial/core/blockchain"
+	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/enfipy/locker"
+	"github.com/google/uuid"
 )
 
 // The blockchain cache stores blockchains.
@@ -74,7 +76,7 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 			cache.store.WriteBlock(peer.PublicKey, peer.BlockchainVersion, targetBlock.Offset, data)
 			header.ListBlocks = append(header.ListBlocks, targetBlock.Offset)
 
-			currentBackend.SearchIndex.IndexNewBlock(peer.PublicKey, targetBlock.Offset, data)
+			currentBackend.SearchIndex.IndexNewBlock(peer.PublicKey, peer.BlockchainVersion, targetBlock.Offset, data)
 		})
 
 		// only update the blockchain header if it changed
@@ -97,7 +99,7 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 		cache.store.DeleteBlockchain(peer.PublicKey, header)
 
 		for _, blockN := range header.ListBlocks {
-			currentBackend.SearchIndex.UnindexBlock(peer.PublicKey, blockN)
+			currentBackend.SearchIndex.UnindexBlock(peer.PublicKey, header.Version, blockN)
 		}
 
 	case blockchain.MultiStatusHeaderNA:
@@ -112,7 +114,7 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 		cache.store.DeleteBlockchain(peer.PublicKey, header)
 
 		for _, blockN := range header.ListBlocks {
-			currentBackend.SearchIndex.UnindexBlock(peer.PublicKey, blockN)
+			currentBackend.SearchIndex.UnindexBlock(peer.PublicKey, header.Version, blockN)
 		}
 
 		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
@@ -146,4 +148,24 @@ func (peer *PeerInfo) remoteBlockchainUpdate() {
 
 	// TODO: This entire function should be instead a non-blocking message via a buffer channel.
 	go currentBackend.GlobalBlockchainCache.SeenBlockchainVersion(peer)
+}
+
+func (cache *BlockchainCache) ReadFile(PublicKey *btcec.PublicKey, Version, BlockNumber uint64, FileID uuid.UUID) (file blockchain.BlockRecordFile, raw []byte, found bool, err error) {
+	if raw, found = cache.store.ReadBlock(PublicKey, Version, BlockNumber); !found {
+		return file, nil, false, nil
+	}
+
+	// decode the entire block and find the file based on its ID
+	blockDecoded, status, err := blockchain.DecodeBlockRaw(raw)
+	if err != nil || status != blockchain.StatusOK {
+		return file, raw, false, err
+	}
+
+	for _, decodedR := range blockDecoded.RecordsDecoded {
+		if file, ok := decodedR.(blockchain.BlockRecordFile); ok && file.ID == FileID {
+			return file, raw, true, nil
+		}
+	}
+
+	return file, raw, false, nil
 }
