@@ -170,6 +170,7 @@ func apiFileView(w http.ResponseWriter, r *http.Request) {
 	offset, _ := strconv.Atoi(r.Form.Get("offset"))
 	limit, _ := strconv.Atoi(r.Form.Get("limit"))
 	format, _ := strconv.Atoi(r.Form.Get("format"))
+	localCacheDisable, _ := strconv.ParseBool(r.Form.Get("nocache"))
 
 	// Range header?
 	var ranges []HTTPRange
@@ -192,8 +193,10 @@ func apiFileView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Is the file available in the local warehouse? In that case requesting it from the remote is unnecessary.
-	if serveFileFromWarehouse(w, fileHash, uint64(offset), uint64(limit), ranges) {
-		return
+	if !localCacheDisable {
+		if serveFileFromWarehouse(w, fileHash, uint64(offset), uint64(limit), ranges) {
+			return
+		}
 	}
 
 	// try connecting via node ID or peer ID?
