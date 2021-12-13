@@ -86,22 +86,21 @@ func (index *SearchIndexStore) IndexNewBlock(publicKey *btcec.PublicKey, blockch
 	}
 }
 
-func (index *SearchIndexStore) UnindexBlock(publicKey *btcec.PublicKey, blockchainVersion, blockNumber uint64) {
+// UnindexBlockchain deletes all index for a given blockchain. This is intentionally not done on a version/block level, because it could easily lead to orphans.
+func (index *SearchIndexStore) UnindexBlockchain(publicKey *btcec.PublicKey) {
 	if index.Database == nil {
 		return
 	}
 
-	// get the reverse records
-	key := reverseIndexKey(publicKey, blockchainVersion, blockNumber)
+	// get the reverse record
+	key := publicKey.SerializeCompressed()
 	raw, found := index.Database.Get(key)
 
 	if !found || len(raw)%reverseIndexRecordSize != 0 { // corrupt record
 		return
 	}
 
-	offset := 0
-
-	for n := 0; n < len(raw)/reverseIndexRecordSize; n++ {
+	for offset := 0; offset < len(raw); offset += reverseIndexRecordSize {
 		var hash []byte
 		var fileID uuid.UUID
 
@@ -128,15 +127,12 @@ func (index *SearchIndexStore) IndexHash(publicKey *btcec.PublicKey, blockchainV
 	// parse existing records, check if already stored
 	raw, found := index.Database.Get(hash)
 	if found && len(raw)%indexRecordSize == 0 { // check if record is corrupt
-		offset := 0
-		for n := 0; n < len(raw)/indexRecordSize; n++ {
+		for offset := 0; offset < len(raw); offset += indexRecordSize {
 			if record := decodeIndexRecord(raw[offset : offset+indexRecordSize]); record != nil {
 				if fileID == record.FileID {
 					return errors.New("already indexed")
 				}
 			}
-
-			offset += indexRecordSize
 		}
 	}
 
@@ -165,15 +161,12 @@ func (index *SearchIndexStore) UnindexHash(fileID uuid.UUID, hash []byte) (err e
 	}
 
 	if len(raw)%indexRecordSize == 0 { // check if record is corrupt
-		offset := 0
-		for n := 0; n < len(raw)/indexRecordSize; n++ {
+		for offset := 0; offset < len(raw); offset += indexRecordSize {
 			if record := decodeIndexRecord(raw[offset : offset+indexRecordSize]); record != nil {
 				if fileID != record.FileID {
 					newRaw = append(newRaw, raw[offset:offset+indexRecordSize]...)
 				}
 			}
-
-			offset += indexRecordSize
 		}
 	}
 
@@ -257,10 +250,13 @@ func encodeIndexRecord(publicKey *btcec.PublicKey, blockchainVersion, blockNumbe
 	return raw
 }
 
+// Reverse index records keep track of all hashes and file IDs searchable for a given blockchain.
+const reverseIndexRecordSize = 32 + 16
+
 // This creates a reverse index record. It uses the blockchain and block number as key, and provides the hash and file ID as value.
 // This function must be called in a RW locked database state. The caller must ensure that this does not result in a duplicate.
 func (index *SearchIndexStore) createReverseIndexRecord(publicKey *btcec.PublicKey, blockchainVersion, blockNumber uint64, fileID uuid.UUID, hash []byte) (err error) {
-	key := reverseIndexKey(publicKey, blockchainVersion, blockNumber)
+	key := publicKey.SerializeCompressed()
 	raw, _ := index.Database.Get(key)
 
 	// each record is only hash + file ID
@@ -271,17 +267,4 @@ func (index *SearchIndexStore) createReverseIndexRecord(publicKey *btcec.PublicK
 	raw = append(raw, reverseRecord...)
 
 	return index.Database.Set(key, raw)
-}
-
-const reverseIndexRecordSize = 32 + 16
-
-func reverseIndexKey(publicKey *btcec.PublicKey, blockchainVersion, blockNumber uint64) (key []byte) {
-	key = publicKey.SerializeCompressed()
-
-	var temp [16]byte
-	binary.LittleEndian.PutUint64(temp[0:8], blockchainVersion)
-	binary.LittleEndian.PutUint64(temp[8:16], blockNumber)
-	key = append(key, temp[:]...)
-
-	return key
 }
