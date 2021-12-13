@@ -23,7 +23,8 @@ type WebapiInstance struct {
 	backend *core.Backend
 
 	// Router can be used to register additional API functions
-	Router *mux.Router
+	Router          *mux.Router
+	AllowKeyInParam []string // List of paths that accept the API key as &k= parameter
 }
 
 // WSUpgrader is used for websocket functionality. It allows all requests.
@@ -45,12 +46,13 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 	}
 
 	api = &WebapiInstance{
-		backend: Backend,
-		Router:  mux.NewRouter(),
+		backend:         Backend,
+		Router:          mux.NewRouter(),
+		AllowKeyInParam: []string{"/file/read", "/file/view"},
 	}
 
 	if APIKey != uuid.Nil {
-		api.Router.Use(authenticateMiddleware(APIKey))
+		api.Router.Use(api.authenticateMiddleware(APIKey))
 	}
 
 	api.Router.HandleFunc("/test", apiTest).Methods("GET")
@@ -152,10 +154,19 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, data interface{}) (err e
 }
 
 // authenticateMiddleware returns a middleware function to be used with mux.Router.Use(). It handles all authentication functionality.
-func authenticateMiddleware(APIKey uuid.UUID) func(http.Handler) http.Handler {
+func (api *WebapiInstance) authenticateMiddleware(APIKey uuid.UUID) func(http.Handler) http.Handler {
 	return (func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			keyID, err := uuid.Parse(r.Header.Get("x-api-key"))
+			if err != nil { // special case for some paths
+				for _, exceptPath := range api.AllowKeyInParam {
+					if exceptPath == r.URL.Path {
+						r.ParseForm()
+						keyID, err = uuid.Parse(r.Form.Get("k"))
+						break
+					}
+				}
+			}
 			if err != nil { // Invalid key format
 				w.WriteHeader(http.StatusUnauthorized)
 				return
