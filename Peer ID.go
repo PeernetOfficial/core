@@ -28,6 +28,7 @@ var nodeID []byte
 
 func initPeerID() {
 	peerList = make(map[[btcec.PubKeyBytesLenCompressed]byte]*PeerInfo)
+	nodeList = make(map[[protocol.HashSize]byte]*PeerInfo)
 
 	// load existing key from config, if available
 	if len(config.PrivateKey) > 0 {
@@ -120,6 +121,9 @@ type peerAddress struct {
 var peerList map[[btcec.PubKeyBytesLenCompressed]byte]*PeerInfo
 var peerlistMutex sync.RWMutex
 
+// nodeList is a mirror of peerList but using the node ID
+var nodeList map[[protocol.HashSize]byte]*PeerInfo
+
 // PeerlistAdd adds a new peer to the peer list. It does not validate the peer info. If the peer is already added, it does nothing. Connections must be live.
 func PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*Connection) (peer *PeerInfo, added bool) {
 	if len(connections) == 0 {
@@ -139,6 +143,11 @@ func PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*Connection) (peer *
 	_, peer.IsRootPeer = rootPeers[publicKeyCompressed]
 
 	peerList[publicKeyCompressed] = peer
+
+	// also add to mirrored nodeList
+	var nodeID [protocol.HashSize]byte
+	copy(nodeID[:], peer.NodeID)
+	nodeList[nodeID] = peer
 
 	// add to Kademlia
 	nodesDHT.AddNode(&dht.Node{ID: peer.NodeID, Info: peer})
@@ -168,6 +177,11 @@ func PeerlistRemove(peer *PeerInfo) {
 	nodesDHT.RemoveNode(peer.NodeID)
 
 	delete(peerList, publicKey2Compressed(peer.PublicKey))
+
+	var nodeID [protocol.HashSize]byte
+	copy(nodeID[:], peer.NodeID)
+
+	delete(nodeList, nodeID)
 }
 
 // PeerlistGet returns the full peer list
