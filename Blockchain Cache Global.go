@@ -98,9 +98,7 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 	case blockchain.MultiStatusInvalidRemote:
 		cache.store.DeleteBlockchain(peer.PublicKey, header)
 
-		for _, blockN := range header.ListBlocks {
-			currentBackend.SearchIndex.UnindexBlock(peer.PublicKey, header.Version, blockN)
-		}
+		currentBackend.SearchIndex.UnindexBlockchain(peer.PublicKey)
 
 	case blockchain.MultiStatusHeaderNA:
 		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
@@ -113,9 +111,7 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 		// delete existing data first, then create it new
 		cache.store.DeleteBlockchain(peer.PublicKey, header)
 
-		for _, blockN := range header.ListBlocks {
-			currentBackend.SearchIndex.UnindexBlock(peer.PublicKey, header.Version, blockN)
-		}
+		currentBackend.SearchIndex.UnindexBlockchain(peer.PublicKey)
 
 		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
 			return
@@ -151,14 +147,9 @@ func (peer *PeerInfo) remoteBlockchainUpdate() {
 }
 
 func (cache *BlockchainCache) ReadFile(PublicKey *btcec.PublicKey, Version, BlockNumber uint64, FileID uuid.UUID) (file blockchain.BlockRecordFile, raw []byte, found bool, err error) {
-	if raw, found = cache.store.ReadBlock(PublicKey, Version, BlockNumber); !found {
-		return file, nil, false, nil
-	}
-
-	// decode the entire block and find the file based on its ID
-	blockDecoded, status, err := blockchain.DecodeBlockRaw(raw)
-	if err != nil || status != blockchain.StatusOK {
-		return file, raw, false, err
+	blockDecoded, raw, found, err := cache.ReadBlock(PublicKey, Version, BlockNumber)
+	if !found {
+		return file, raw, found, err
 	}
 
 	for _, decodedR := range blockDecoded.RecordsDecoded {
@@ -168,4 +159,19 @@ func (cache *BlockchainCache) ReadFile(PublicKey *btcec.PublicKey, Version, Bloc
 	}
 
 	return file, raw, false, nil
+}
+
+// ReadBlock reads a block and decodes the records.
+func (cache *BlockchainCache) ReadBlock(PublicKey *btcec.PublicKey, Version, BlockNumber uint64) (decoded *blockchain.BlockDecoded, raw []byte, found bool, err error) {
+	if raw, found = cache.store.ReadBlock(PublicKey, Version, BlockNumber); !found {
+		return nil, nil, false, nil
+	}
+
+	// decode the entire block
+	blockDecoded, status, err := blockchain.DecodeBlockRaw(raw)
+	if err != nil || status != blockchain.StatusOK {
+		return nil, raw, false, err
+	}
+
+	return blockDecoded, raw, true, nil
 }
