@@ -291,9 +291,25 @@ func (s *udtSocket) Write(p []byte) (n int, err error) {
 // Close closes the connection.
 // Any blocked Read or Write operations will be unblocked.
 // Write operations will be permitted to send (initial packets)
-// Read operations will return an error
-// (required for net.Conn implementation)
+// Read operations will return an error // (required for net.Conn implementation).
+// Note: Do not simultaneously call Close() and Write(). To close while the socket is still in use, use Terminate().
 func (s *udtSocket) Close() error {
+	s.closeMutex.Lock()
+	defer s.closeMutex.Unlock()
+
+	if s.isClosed || !s.isOpen() {
+		return nil // already closed
+	}
+
+	s.isClosed = true
+
+	close(s.messageOut)
+	return nil
+}
+
+// Terminate terminates the connection immediately. Unlike Close, it does not permit any reading/writing.
+// If the connection should be ordinarily closed (after reading/writing) use Close().
+func (s *udtSocket) Terminate() error {
 	s.closeMutex.Lock()
 	defer s.closeMutex.Unlock()
 
