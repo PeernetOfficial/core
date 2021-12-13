@@ -16,8 +16,7 @@ type udtSocketRecv struct {
 
 	nextSequenceExpect packet.PacketID  // the peer's next largest packet ID expected.
 	lastSequence       packet.PacketID  // the peer's last received packet ID before any loss events
-	lastACK            uint32           // last ACK packet we've sent
-	largestACK         uint32           // largest ACK packet we've sent that has been acknowledged (by an ACK2).
+	lastACKID          uint32           // last ACK packet we've sent
 	recvPktPend        *sendPacketHeap  // list of packets that are waiting to be processed.
 	recvLossList       *receiveLossHeap // loss list.
 	ackHistory         *ackHistoryHeap  // list of sent ACKs.
@@ -32,6 +31,8 @@ type udtSocketRecv struct {
 	ackLinkInfoSent    time.Time        // when link info was sent in ACK packet last time
 	resendNAKTimer     <-chan time.Time // Timer for resending outgoing NAK
 	resendNAKTicker    time.Ticker      // Ticker for resending outgoing NAK
+	resendACKTimer     <-chan time.Time // Timer for resending outgoing ACK
+	resendACKTicker    time.Ticker      // Ticker for resending outgoing ACK
 }
 
 func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
@@ -45,6 +46,7 @@ func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
 		recvLossList:   createPacketIDHeap(),
 		ackHistory:     createHistoryHeap(),
 		resendNAKTimer: make(chan time.Time),
+		resendACKTimer: make(chan time.Time),
 	}
 	go sr.goReceiveEvent()
 	return sr
@@ -76,8 +78,9 @@ func (s *udtSocketRecv) goReceiveEvent() {
 			case *packet.ErrPacket:
 				s.ingestError(sp)
 			}
-		case _, _ = <-sockClosed: // socket is closed, leave now
+		case <-sockClosed: // socket is closed, leave now
 			s.resendNAKTicker.Stop()
+			s.resendACKTicker.Stop()
 			return
 		case <-s.resendNAKTimer:
 			if first, valid := s.recvLossList.FirstSequence(); valid {
@@ -86,6 +89,14 @@ func (s *udtSocketRecv) goReceiveEvent() {
 				// the trigger should not be activated if there is no loss list, but in case it happens, deactivate it
 				s.resendNAKTimer = make(chan time.Time)
 				s.resendNAKTicker.Stop()
+			}
+		case <-s.resendACKTimer:
+			if s.recvAck2.IsLess(s.sentAck) {
+				s.sendACK(s.sentAck)
+			} else {
+				// the trigger should not be activated if there is no unacknowledged ACK list, but in case it happens, deactivate it
+				s.resendACKTimer = make(chan time.Time)
+				s.resendACKTicker.Stop()
 			}
 		}
 	}
@@ -106,20 +117,20 @@ ACK is used to trigger an acknowledgement (ACK). Its period is set by
 
 // ingestAck2 is called to process an ACK2 packet
 func (s *udtSocketRecv) ingestAck2(p *packet.Ack2Packet, now time.Time) {
-	ackHistEntry := s.ackHistory.Remove(p.AckSeqNo)
+	ackHistEntry := s.ackHistory.Remove(p.AckSeqNo) // this also removes all other unacknoweldged ACKs with a lower lastPacket
 	if ackHistEntry == nil {
 		return // this ACK not found
 	}
-	if s.recvAck2.BlindDiff(ackHistEntry.lastPacket) < 0 {
-		s.recvAck2 = ackHistEntry.lastPacket
-	}
 
-	// Update the largest ACK number ever been acknowledged.
-	if s.largestACK < p.AckSeqNo {
-		s.largestACK = p.AckSeqNo
-	}
+	s.recvAck2 = ackHistEntry.lastPacket
 
 	s.socket.applyRTT(uint(now.Sub(ackHistEntry.sendTime) / time.Microsecond))
+
+	if s.ackHistory.Count() == 0 {
+		// deactivate ACK timer, nothing expected for now
+		s.resendACKTimer = make(chan time.Time)
+		s.resendACKTicker.Stop()
+	}
 
 	//s.rto = 4 * s.rtt + s.rttVar
 }
@@ -426,9 +437,9 @@ func (s *udtSocketRecv) getRcvSpeeds() (recvSpeed, bandwidth int) {
 func (s *udtSocketRecv) sendACK(ack packet.PacketID) {
 	s.sentAck = ack
 
-	s.lastACK++
+	s.lastACKID++
 	s.ackHistory.Add(ackHistoryEntry{
-		ackID:      s.lastACK,
+		ackID:      s.lastACKID,
 		lastPacket: ack,
 		sendTime:   time.Now(),
 	})
@@ -442,7 +453,7 @@ func (s *udtSocketRecv) sendACK(ack packet.PacketID) {
 	}
 
 	p := &packet.AckPacket{
-		AckSeqNo:  s.lastACK,
+		AckSeqNo:  s.lastACKID,
 		PktSeqHi:  ack,
 		Rtt:       uint32(rtt),
 		RttVar:    uint32(rttVar),
@@ -495,4 +506,8 @@ func (s *udtSocketRecv) ackEvent() {
 
 	s.sendACK(ack)
 	s.unackPktCount = 0
+
+	// set the timer for constantly resending ACKs for the highest sequence ID
+	s.resendACKTicker = *time.NewTicker(s.socket.Config.SynTime)
+	s.resendACKTimer = s.resendACKTicker.C
 }

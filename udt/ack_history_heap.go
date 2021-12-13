@@ -38,13 +38,22 @@ func (heap *ackHistoryHeap) Remove(sequence uint32) (found *ackHistoryEntry) {
 	heap.Lock()
 	defer heap.Unlock()
 
+	for n := range heap.list {
+		if heap.list[n].ackID == sequence {
+			found = &heap.list[n]
+		}
+	}
+
+	if found == nil {
+		return nil
+	}
+
+	// if found, automatically remove all entries with a lower lastPacket
 	var newList []ackHistoryEntry
 
 	for n := range heap.list {
-		if heap.list[n].ackID != sequence {
+		if heap.list[n].ackID != sequence && heap.list[n].lastPacket.IsBigger(found.lastPacket) {
 			newList = append(newList, heap.list[n])
-		} else {
-			found = &heap.list[n]
 		}
 	}
 

@@ -29,33 +29,35 @@ type udtSocketSend struct {
 	shutdownEvent chan<- shutdownMessage // channel signals the connection to be shutdown
 	socket        *udtSocket
 
-	sendState      sendState        // current sender state
-	sendPktPend    *sendPacketHeap  // list of packets that have been sent but not yet acknowledged
-	sendPktSeq     packet.PacketID  // the current packet sequence number
-	msgRemainder   *sendMessage     // when a message can only partially fit in a socket, this is the remainder
-	msgSeq         uint32           // the current message sequence number
-	lastSendTime   time.Time        // the last time we've sent a data packet to the remote system
-	lastRecvTime   time.Time        // the last time we've heard something from the remote system
-	recvAckSeq     packet.PacketID  // largest packetID we've received an ACK from
-	sendLossList   *receiveLossHeap // loss list. New entries added via incoming NAK.
-	sndPeriod      atomicDuration   // (set by congestion control) delay between sending packets
-	congestWindow  atomicUint32     // (set by congestion control) size of the current congestion window (in packets)
-	flowWindowSize uint             // negotiated maximum number of unacknowledged packets (in packets)
+	sendState       sendState        // current sender state
+	sendPktPend     *sendPacketHeap  // list of packets that have been sent but not yet acknowledged
+	sendPktSeq      packet.PacketID  // the current packet sequence number
+	msgRemainder    *sendMessage     // when a message can only partially fit in a socket, this is the remainder
+	msgSeq          uint32           // the current message sequence number
+	lastSendTime    time.Time        // the last time we've sent a data packet to the remote system
+	recvAckSeq      packet.PacketID  // largest packetID we've received an ACK from
+	sendLossList    *receiveLossHeap // loss list. New entries added via incoming NAK.
+	sndPeriod       atomicDuration   // (set by congestion control) delay between sending packets
+	congestWindow   atomicUint32     // (set by congestion control) size of the current congestion window (in packets)
+	flowWindowSize  uint             // negotiated maximum number of unacknowledged packets (in packets)
+	resendDataTimer <-chan time.Time // Timer for resending outgoing data packets
+	resendDataTime  time.Duration    // Doubles after every send to prevent ddos
 }
 
 func newUdtSocketSend(s *udtSocket) *udtSocketSend {
 	ss := &udtSocketSend{
-		socket:         s,
-		sendPktSeq:     s.initPktSeq,
-		sockClosed:     s.sockClosed,
-		sendEvent:      s.sendEvent,
-		messageOut:     s.messageOut,
-		congestWindow:  atomicUint32{val: 16},
-		flowWindowSize: s.maxFlowWinSize,
-		sendPacket:     s.sendPacket,
-		shutdownEvent:  s.shutdownEvent,
-		sendPktPend:    createPacketHeap(),
-		sendLossList:   createPacketIDHeap(),
+		socket:          s,
+		sendPktSeq:      s.initPktSeq,
+		sockClosed:      s.sockClosed,
+		sendEvent:       s.sendEvent,
+		messageOut:      s.messageOut,
+		congestWindow:   atomicUint32{val: 16},
+		flowWindowSize:  s.maxFlowWinSize,
+		sendPacket:      s.sendPacket,
+		shutdownEvent:   s.shutdownEvent,
+		sendPktPend:     createPacketHeap(),
+		sendLossList:    createPacketIDHeap(),
+		resendDataTimer: make(chan time.Time),
 	}
 	go ss.goSendEvent()
 	return ss
@@ -129,7 +131,7 @@ func (s *udtSocketSend) goSendEvent() {
 			}
 
 		case sendStateWaiting:
-			// Destination is full (congested). Do not use event timer, do not check for new messages. Only wait for incoming ACKs.
+			// Destination is full (congested). Do not use event timer, do not check for new messages. Only wait for incoming ACKs + resend data packets.
 
 		case sendStateProcessDrop:
 			// Immediately resend any missing packets. The status will only be updated by incoming ACKs.
@@ -169,6 +171,16 @@ func (s *udtSocketSend) goSendEvent() {
 			s.sendPacket <- &packet.ShutdownPacket{}
 			s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: !s.socket.isServer, reason: TerminateReasonCannotProcessOutgoing}
 			return
+
+		case <-s.resendDataTimer:
+			// Resend data that was not acknowledged yet.
+			for _, dp := range s.sendPktPend.list {
+				s.sendPacket <- dp.pkt
+			}
+
+			// to prevent ddos, always double the time
+			s.resendDataTime = s.resendDataTime * 2
+			s.resendDataTimer = time.NewTimer(s.resendDataTime).C
 		}
 	}
 }
@@ -182,7 +194,17 @@ func (s *udtSocketSend) reevalSendState() sendState {
 	}
 	if uint(s.sendPktPend.Count()) > cwnd {
 		s.sendState = sendStateWaiting
+
+		// set the timer for constantly resending data packets until ACKed
+		s.resendDataTime = s.socket.Config.SynTime
+		s.resendDataTimer = time.NewTimer(s.resendDataTime).C
+
 		return s.sendState
+	}
+
+	if s.sendState == sendStateWaiting {
+		// constant resending no longer needed
+		s.resendDataTimer = make(chan time.Time)
 	}
 
 	// is the current packet data to send empty? Switch to idle in this case.
@@ -460,6 +482,9 @@ func (s *udtSocketSend) ingestNak(p *packet.NakPacket, now time.Time) {
 	// Some loss entries may be discarded if out of date (already ACK received), so make sure loss list contains entries before changing the sending state.
 	if s.sendLossList.Count() > 0 {
 		s.sendState = sendStateProcessDrop // immediately restart transmission
+
+		// resending now orderly handled via NAKs instead of constant data packet resending
+		s.resendDataTimer = make(chan time.Time)
 	}
 }
 
