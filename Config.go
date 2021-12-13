@@ -17,7 +17,7 @@ import (
 )
 
 // Version is the current core library version
-const Version = "Alpha 4/20.11.2021"
+const Version = "Alpha 5/13.12.2021"
 
 var config struct {
 	// Locations of important files and folders
