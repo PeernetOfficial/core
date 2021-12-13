@@ -6,6 +6,8 @@ Author:     Peter Kleissner
 
 package search
 
+import "github.com/google/uuid"
+
 func (index *SearchIndexStore) Search(term string) (results []SearchIndexRecord) {
 	termS, isExact, _ := sanitizeInputTerm(term)
 
@@ -13,16 +15,23 @@ func (index *SearchIndexStore) Search(term string) (results []SearchIndexRecord)
 		return
 	}
 
+	resultMap := make(map[uuid.UUID]*SearchIndexRecord)
+	resultMapToSlice := func() (results []SearchIndexRecord) {
+		for _, result := range resultMap {
+			results = append(results, *result)
+		}
+		return results
+	}
+
 	// start with exact search
 	hashExact := hashWord(termS)
 	if hashExact != nil {
-		records, _ := index.LookupHash(hashExact)
-		results = append(results, setSearchIndexFields(records, termS)...)
+		index.LookupHash(SearchSelector{Hash: hashExact, Word: termS, ExactSearch: true}, resultMap)
 	}
 
 	// exact search only?
 	if isExact {
-		return
+		return resultMapToSlice()
 	}
 
 	// break up the term into hashes
@@ -35,17 +44,8 @@ func (index *SearchIndexStore) Search(term string) (results []SearchIndexRecord)
 
 	// look up the hashes!
 	for hash, keyword := range hashes {
-		records, _ := index.LookupHash(hash[:])
-		results = append(results, setSearchIndexFields(records, keyword)...)
+		index.LookupHash(SearchSelector{Hash: hash[:], Word: keyword}, resultMap)
 	}
 
-	return
-}
-
-// setSearchIndexFields sets certain fields in the index record for adding context in the output
-func setSearchIndexFields(records []SearchIndexRecord, word string) []SearchIndexRecord {
-	for n := range records {
-		records[n].Word = word
-	}
-	return records
+	return resultMapToSlice()
 }
