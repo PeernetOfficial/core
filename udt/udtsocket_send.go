@@ -142,7 +142,14 @@ func (s *udtSocketSend) goSendEvent() {
 
 		// wait for a channel to fire
 		select {
-		case msg := <-messageOut: // nil if we can't process outgoing messages right now, which means it will not be selected
+		case msg, ok := <-messageOut: // nil if we can't process outgoing messages right now, which means it will not be selected
+			// new message outgoing
+			if !ok {
+				s.sendPacket <- &packet.ShutdownPacket{}
+				s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: !s.socket.isServer, reason: TerminateReasonSocketClosed}
+				return
+			}
+
 			msg.content = s.fillDataToMTU(msg.content, messageOut) // a trick to fill up the packet immediately with data (stream only)
 
 			s.processDataMsg(msg.content, msg.tim, msg.ttl, true)
@@ -169,7 +176,7 @@ func (s *udtSocketSend) goSendEvent() {
 
 		case <-s.socket.terminateSignal:
 			s.sendPacket <- &packet.ShutdownPacket{}
-			s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: !s.socket.isServer, reason: TerminateReasonCannotProcessOutgoing}
+			s.shutdownEvent <- shutdownMessage{sockState: sockStateClosed, permitLinger: false, reason: TerminateReasonSignal}
 			return
 
 		case <-s.resendDataTimer:
