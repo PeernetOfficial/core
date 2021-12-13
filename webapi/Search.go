@@ -82,7 +82,7 @@ Request:    POST /search with JSON SearchRequest
 Result:     200 on success with JSON SearchRequestResponse
             400 on invalid JSON
 */
-func apiSearch(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiSearch(w http.ResponseWriter, r *http.Request) {
 
 	var input SearchRequest
 	if err := DecodeJSON(w, r, &input); err != nil {
@@ -104,7 +104,7 @@ func apiSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	job := dispatchSearch(input)
+	job := api.dispatchSearch(input)
 
 	EncodeJSON(w, r, SearchRequestResponse{Status: 0, ID: job.id})
 }
@@ -332,7 +332,7 @@ Special type -2 = Binary, Compressed, Container, Executable. This special type i
 Request:    GET /explore?limit=[max records]&type=[file type]
 Result:     200 with JSON structure SearchResult. Check the field status.
 */
-func apiExplore(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	limit, err := strconv.Atoi(r.Form.Get("limit"))
 	if err != nil {
@@ -343,14 +343,14 @@ func apiExplore(w http.ResponseWriter, r *http.Request) {
 		fileType = -1
 	}
 
-	resultFiles := queryRecentShared(fileType, limit)
+	resultFiles := queryRecentShared(api.backend, fileType, uint64(limit*20/100), uint64(limit))
 
 	var result SearchResult
 	result.Files = []apiFile{}
 
 	// loop over results
 	for n := range resultFiles {
-		result.Files = append(result.Files, blockRecordFileToAPI(*resultFiles[n]))
+		result.Files = append(result.Files, blockRecordFileToAPI(resultFiles[n]))
 	}
 
 	if len(result.Files) == 0 {

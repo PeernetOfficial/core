@@ -19,8 +19,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Router can be used to register additional API functions
-var Router *mux.Router
+type WebapiInstance struct {
+	backend *core.Backend
+
+	// Router can be used to register additional API functions
+	Router *mux.Router
+}
 
 // WSUpgrader is used for websocket functionality. It allows all requests.
 var WSUpgrader = websocket.Upgrader{
@@ -35,53 +39,58 @@ var WSUpgrader = websocket.Upgrader{
 // Start starts the API. ListenAddresses is a list of IP:Ports.
 // The certificate file and key are only used if SSL is enabled. The read and write timeout may be 0 for no timeout.
 // The API key may be uuid.Nil to disable it although this is not recommended for security reasons.
-func Start(ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKey string, TimeoutRead, TimeoutWrite time.Duration, APIKey uuid.UUID) {
+func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKey string, TimeoutRead, TimeoutWrite time.Duration, APIKey uuid.UUID) (api *WebapiInstance) {
 	if len(ListenAddresses) == 0 {
-		return
+		return nil
 	}
 
-	Router = mux.NewRouter()
+	api = &WebapiInstance{
+		backend: Backend,
+		Router:  mux.NewRouter(),
+	}
 
 	if APIKey != uuid.Nil {
-		Router.Use(authenticateMiddleware(APIKey))
+		api.Router.Use(authenticateMiddleware(APIKey))
 	}
 
-	Router.HandleFunc("/test", apiTest).Methods("GET")
-	Router.HandleFunc("/status", apiStatus).Methods("GET")
-	Router.HandleFunc("/account/info", apiAccountInfo).Methods("GET")
-	Router.HandleFunc("/account/delete", apiAccountDelete).Methods("GET")
-	Router.HandleFunc("/blockchain/header", apiBlockchainHeaderFunc).Methods("GET")
-	Router.HandleFunc("/blockchain/append", apiBlockchainAppend).Methods("POST")
-	Router.HandleFunc("/blockchain/read", apiBlockchainRead).Methods("GET")
-	Router.HandleFunc("/blockchain/file/add", apiBlockchainFileAdd).Methods("POST")
-	Router.HandleFunc("/blockchain/file/list", apiBlockchainFileList).Methods("GET")
-	Router.HandleFunc("/blockchain/file/delete", apiBlockchainFileDelete).Methods("POST")
-	Router.HandleFunc("/blockchain/file/update", apiBlockchainFileUpdate).Methods("POST")
-	Router.HandleFunc("/profile/list", apiProfileList).Methods("GET")
-	Router.HandleFunc("/profile/read", apiProfileRead).Methods("GET")
-	Router.HandleFunc("/profile/write", apiProfileWrite).Methods("POST")
-	Router.HandleFunc("/profile/delete", apiProfileDelete).Methods("POST")
-	Router.HandleFunc("/search", apiSearch).Methods("POST")
-	Router.HandleFunc("/search/result", apiSearchResult).Methods("GET")
-	Router.HandleFunc("/search/result/ws", apiSearchResultStream).Methods("GET")
-	Router.HandleFunc("/search/statistic", apiSearchStatistic).Methods("GET")
-	Router.HandleFunc("/search/terminate", apiSearchTerminate).Methods("GET")
-	Router.HandleFunc("/explore", apiExplore).Methods("GET")
-	Router.HandleFunc("/file/format", apiFileFormat).Methods("GET")
-	Router.HandleFunc("/download/start", apiDownloadStart).Methods("GET")
-	Router.HandleFunc("/download/status", apiDownloadStatus).Methods("GET")
-	Router.HandleFunc("/download/action", apiDownloadAction).Methods("GET")
-	Router.HandleFunc("/warehouse/create", apiWarehouseCreateFile).Methods("POST")
-	Router.HandleFunc("/warehouse/create/path", apiWarehouseCreateFilePath).Methods("GET")
-	Router.HandleFunc("/warehouse/read", apiWarehouseReadFile).Methods("GET")
-	Router.HandleFunc("/warehouse/read/path", apiWarehouseReadFilePath).Methods("GET")
-	Router.HandleFunc("/warehouse/delete", apiWarehouseDeleteFile).Methods("GET")
-	Router.HandleFunc("/file/read", apiFileRead).Methods("GET")
-	Router.HandleFunc("/file/view", apiFileView).Methods("GET")
+	api.Router.HandleFunc("/test", apiTest).Methods("GET")
+	api.Router.HandleFunc("/status", apiStatus).Methods("GET")
+	api.Router.HandleFunc("/account/info", apiAccountInfo).Methods("GET")
+	api.Router.HandleFunc("/account/delete", apiAccountDelete).Methods("GET")
+	api.Router.HandleFunc("/blockchain/header", apiBlockchainHeaderFunc).Methods("GET")
+	api.Router.HandleFunc("/blockchain/append", apiBlockchainAppend).Methods("POST")
+	api.Router.HandleFunc("/blockchain/read", apiBlockchainRead).Methods("GET")
+	api.Router.HandleFunc("/blockchain/file/add", apiBlockchainFileAdd).Methods("POST")
+	api.Router.HandleFunc("/blockchain/file/list", apiBlockchainFileList).Methods("GET")
+	api.Router.HandleFunc("/blockchain/file/delete", apiBlockchainFileDelete).Methods("POST")
+	api.Router.HandleFunc("/blockchain/file/update", apiBlockchainFileUpdate).Methods("POST")
+	api.Router.HandleFunc("/profile/list", apiProfileList).Methods("GET")
+	api.Router.HandleFunc("/profile/read", apiProfileRead).Methods("GET")
+	api.Router.HandleFunc("/profile/write", apiProfileWrite).Methods("POST")
+	api.Router.HandleFunc("/profile/delete", apiProfileDelete).Methods("POST")
+	api.Router.HandleFunc("/search", api.apiSearch).Methods("POST")
+	api.Router.HandleFunc("/search/result", apiSearchResult).Methods("GET")
+	api.Router.HandleFunc("/search/result/ws", apiSearchResultStream).Methods("GET")
+	api.Router.HandleFunc("/search/statistic", apiSearchStatistic).Methods("GET")
+	api.Router.HandleFunc("/search/terminate", apiSearchTerminate).Methods("GET")
+	api.Router.HandleFunc("/explore", api.apiExplore).Methods("GET")
+	api.Router.HandleFunc("/file/format", apiFileFormat).Methods("GET")
+	api.Router.HandleFunc("/download/start", apiDownloadStart).Methods("GET")
+	api.Router.HandleFunc("/download/status", apiDownloadStatus).Methods("GET")
+	api.Router.HandleFunc("/download/action", apiDownloadAction).Methods("GET")
+	api.Router.HandleFunc("/warehouse/create", apiWarehouseCreateFile).Methods("POST")
+	api.Router.HandleFunc("/warehouse/create/path", apiWarehouseCreateFilePath).Methods("GET")
+	api.Router.HandleFunc("/warehouse/read", apiWarehouseReadFile).Methods("GET")
+	api.Router.HandleFunc("/warehouse/read/path", apiWarehouseReadFilePath).Methods("GET")
+	api.Router.HandleFunc("/warehouse/delete", apiWarehouseDeleteFile).Methods("GET")
+	api.Router.HandleFunc("/file/read", apiFileRead).Methods("GET")
+	api.Router.HandleFunc("/file/view", apiFileView).Methods("GET")
 
 	for _, listen := range ListenAddresses {
-		go startWebAPI(listen, UseSSL, CertificateFile, CertificateKey, Router, "API", TimeoutRead, TimeoutWrite)
+		go startWebAPI(listen, UseSSL, CertificateFile, CertificateKey, api.Router, "API", TimeoutRead, TimeoutWrite)
 	}
+
+	return api
 }
 
 // startWebAPI starts a web-server with given parameters and logs the status. If may block forever and only returns if there is an error.
