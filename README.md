@@ -2,9 +2,7 @@
 
 The core library which is needed for any Peernet application. It provides connectivity to the network and all basic functions. For details about Peernet see https://peernet.org/.
 
-Current version: Alpha 4
-
-Current development status: The last remaining features (blockchain exchange, search) are in development and will be finished in the upcoming MVP (beta 1). ETA EOY 2021.
+Current version: Alpha 5
 
 ## Use
 
