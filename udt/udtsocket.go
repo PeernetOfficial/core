@@ -80,15 +80,16 @@ type udtSocket struct {
 	bandwidth       uint         // bandwidth reported from peer (packets/sec)
 
 	// channels
-	messageIn     chan []byte          // inbound messages. Sender is goReceiveEvent->ingestData, Receiver is client caller (Read)
-	messageOut    chan sendMessage     // outbound messages. Sender is client caller (Write), Receiver is goSendEvent. Closed when socket is closed
-	recvEvent     chan recvPktEvent    // receiver: ingest the specified packet. Sender is readPacket, receiver is goReceiveEvent
-	sendEvent     chan recvPktEvent    // sender: ingest the specified packet. Sender is readPacket, receiver is goSendEvent
-	sendPacket    chan packet.Packet   // packets to send out on the wire (once goManageConnection is running)
-	shutdownEvent chan shutdownMessage // channel signals the connection to be shutdown
-	sockClosed    chan struct{}        // closed when socket is closed
-	closeMutex    sync.Mutex
-	isClosed      bool
+	messageIn       chan []byte          // inbound messages. Sender is goReceiveEvent->ingestData, Receiver is client caller (Read)
+	messageOut      chan sendMessage     // outbound messages. Sender is client caller (Write), Receiver is goSendEvent. Closed when socket is closed
+	recvEvent       chan recvPktEvent    // receiver: ingest the specified packet. Sender is readPacket, receiver is goReceiveEvent
+	sendEvent       chan recvPktEvent    // sender: ingest the specified packet. Sender is readPacket, receiver is goSendEvent
+	sendPacket      chan packet.Packet   // packets to send out on the wire (once goManageConnection is running)
+	shutdownEvent   chan shutdownMessage // channel signals the connection to be shutdown
+	sockClosed      chan struct{}        // closed when socket is closed
+	terminateSignal chan struct{}        // termination signal
+	closeMutex      sync.Mutex
+	isClosed        bool
 
 	// timers
 	connTimeout <-chan time.Time // connecting: fires when connection attempt times out
@@ -271,6 +272,8 @@ func (s *udtSocket) Write(p []byte) (n int, err error) {
 			deadline = s.writeDeadline.C
 		}
 		select {
+		case <-s.terminateSignal:
+			return n, errors.New("terminate signal")
 		case s.messageOut <- sendMessage{content: data, tim: time.Now()}:
 			// send successful
 			return
@@ -300,7 +303,7 @@ func (s *udtSocket) Close() error {
 
 	s.isClosed = true
 
-	close(s.messageOut)
+	close(s.terminateSignal)
 	return nil
 }
 
@@ -419,24 +422,25 @@ func newSocket(m *multiplexer, config *Config, sockID uint32, isServer bool, isD
 		m:      m,
 		Config: config,
 		//raddr:          raddr,
-		created:        now,
-		sockState:      sockStateInit,
-		udtVer:         4,
-		isServer:       isServer,
-		maxPacketSize:  uint32(config.MaxPacketSize),
-		maxFlowWinSize: maxFlowWinSize,
-		isDatagram:     isDatagram,
-		sockID:         sockID,
-		initPktSeq:     packet.RandomPacketSequence(),
-		messageIn:      make(chan []byte, 256),
-		messageOut:     make(chan sendMessage, 256),
-		recvEvent:      make(chan recvPktEvent, 256),
-		sendEvent:      make(chan recvPktEvent, 256),
-		sockClosed:     make(chan struct{}, 1),
-		deliveryRate:   16,
-		bandwidth:      1,
-		sendPacket:     make(chan packet.Packet, 256),
-		shutdownEvent:  make(chan shutdownMessage, 5),
+		created:         now,
+		sockState:       sockStateInit,
+		udtVer:          4,
+		isServer:        isServer,
+		maxPacketSize:   uint32(config.MaxPacketSize),
+		maxFlowWinSize:  maxFlowWinSize,
+		isDatagram:      isDatagram,
+		sockID:          sockID,
+		initPktSeq:      packet.RandomPacketSequence(),
+		messageIn:       make(chan []byte, 256),
+		messageOut:      make(chan sendMessage, 256),
+		recvEvent:       make(chan recvPktEvent, 256),
+		sendEvent:       make(chan recvPktEvent, 256),
+		sockClosed:      make(chan struct{}, 1),
+		terminateSignal: make(chan struct{}),
+		deliveryRate:    16,
+		bandwidth:       1,
+		sendPacket:      make(chan packet.Packet, 256),
+		shutdownEvent:   make(chan shutdownMessage, 5),
 	}
 	s.cong = newUdtSocketCc(s)
 
