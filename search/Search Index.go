@@ -17,11 +17,17 @@ import (
 	"github.com/google/uuid"
 )
 
+// A search selector is a term that discovers a file.
+type SearchSelector struct {
+	Word        string // Normalized version of the word
+	Hash        []byte // Hash of the word
+	ExactSearch bool   // Indicates this is an exact search term, for example a full filename.
+}
+
 // SearchIndexRecord identifies a hash to a given file
 type SearchIndexRecord struct {
-	// input data
-	Word string
-	Hash []byte
+	// List of selectors that found the result. Multiple keywords may find the same file.
+	Selectors []SearchSelector
 
 	// result data
 	FileID            uuid.UUID
@@ -180,7 +186,7 @@ func (index *SearchIndexStore) UnindexHash(fileID uuid.UUID, hash []byte) (err e
 }
 
 // LookupHash returns all index records stored for the hash.
-func (index *SearchIndexStore) LookupHash(hash []byte) (records []SearchIndexRecord, err error) {
+func (index *SearchIndexStore) LookupHash(selector SearchSelector, resultMap map[uuid.UUID]*SearchIndexRecord) (err error) {
 	if index.Database == nil {
 		return
 	}
@@ -188,21 +194,25 @@ func (index *SearchIndexStore) LookupHash(hash []byte) (records []SearchIndexRec
 	index.RLock()
 	defer index.RUnlock()
 
-	raw, found := index.Database.Get(hash)
+	raw, found := index.Database.Get(selector.Hash)
 	if !found {
-		return nil, nil
+		return nil
 	} else if len(raw)%indexRecordSize != 0 { // check if record is corrupt
-		return nil, errors.New("corrupt index record")
+		return errors.New("corrupt index record")
 	}
 
 	for offset := 0; offset < len(raw); offset += indexRecordSize {
 		if record := decodeIndexRecord(raw[offset : offset+indexRecordSize]); record != nil {
-			record.Hash = hash
-			records = append(records, *record)
+			if existingRecord, ok := resultMap[record.FileID]; ok {
+				existingRecord.Selectors = append(existingRecord.Selectors, selector)
+			} else {
+				record.Selectors = []SearchSelector{selector}
+				resultMap[record.FileID] = record
+			}
 		}
 	}
 
-	return records, nil
+	return nil
 }
 
 // ---- index and reverse index code ----
