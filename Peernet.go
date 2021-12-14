@@ -37,10 +37,11 @@ func Init(UserAgent string) (backend *Backend) {
 	var err error
 
 	backend.GlobalBlockchainCache = initBlockchainCache(config.BlockchainGlobal, config.CacheMaxBlockSize, config.CacheMaxBlockCount, config.LimitTotalRecords)
-	backend.SearchIndex, err = search.InitSearchIndexStore(config.SearchIndex)
 
-	if err != nil {
+	if backend.SearchIndex, err = search.InitSearchIndexStore(config.SearchIndex); err != nil {
 		Filters.LogError("Init", "search index '%s' init: %s", config.SearchIndex, err.Error())
+	} else {
+		backend.userBlockchainUpdateSearchIndex()
 	}
 
 	return backend

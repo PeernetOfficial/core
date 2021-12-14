@@ -9,14 +9,22 @@ Temporary download code to provide dummy results for testing. To be replaced!
 package webapi
 
 import (
+	"bytes"
 	"os"
 	"time"
 
 	"github.com/PeernetOfficial/core"
+	"github.com/PeernetOfficial/core/warehouse"
 )
 
 // Starts the download.
 func (info *downloadInfo) Start() {
+	// current user?
+	if bytes.Equal(info.nodeID, core.SelfNodeID()) {
+		info.DownloadSelf()
+		return
+	}
+
 	for n := 0; n < 3 && info.peer == nil; n++ {
 		_, info.peer, _ = core.FindNode(info.nodeID, time.Second*5)
 
@@ -167,4 +175,29 @@ func (info *downloadInfo) storeDownloadData(data []byte, offset uint64) (status 
 	info.DiskFile.StoredSize += uint64(len(data))
 
 	return DownloadResponseSuccess
+}
+
+func (info *downloadInfo) DownloadSelf() {
+	// Check if the file is available in the local warehouse.
+	_, fileInfo, status, _ := core.UserWarehouse.FileExists(info.hash)
+	if status != warehouse.StatusOK {
+		info.status = DownloadCanceled
+		return
+	}
+
+	info.file.Size = uint64(fileInfo.Size())
+	info.status = DownloadActive
+
+	// read the file
+	status, bytesRead, _ := core.UserWarehouse.ReadFile(info.hash, 0, int64(fileInfo.Size()), info.DiskFile.Handle)
+
+	info.DiskFile.StoredSize = uint64(bytesRead)
+
+	if status != warehouse.StatusOK {
+		info.status = DownloadCanceled
+		return
+	}
+
+	info.Finish()
+	info.DeleteDefer(time.Hour * 1) // cache the details for 1 hour before removing}
 }

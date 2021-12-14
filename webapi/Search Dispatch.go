@@ -54,7 +54,10 @@ resultLoop:
 			}
 		}
 
-		if peer := core.NodelistLookup(file.NodeID); peer != nil {
+		if bytes.Equal(file.NodeID, core.SelfNodeID()) {
+			// Indicates data from the current user.
+			file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
+		} else if peer := core.NodelistLookup(file.NodeID); peer != nil {
 			// add the tags 'Shared By Count' and 'Shared By GeoIP'
 			file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
 			if latitude, longitude, valid := api.Peer2GeoIP(peer); valid {
