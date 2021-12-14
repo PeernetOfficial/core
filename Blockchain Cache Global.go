@@ -163,8 +163,23 @@ func (cache *BlockchainCache) ReadFile(PublicKey *btcec.PublicKey, Version, Bloc
 
 // ReadBlock reads a block and decodes the records.
 func (cache *BlockchainCache) ReadBlock(PublicKey *btcec.PublicKey, Version, BlockNumber uint64) (decoded *blockchain.BlockDecoded, raw []byte, found bool, err error) {
-	if raw, found = cache.store.ReadBlock(PublicKey, Version, BlockNumber); !found {
-		return nil, nil, false, nil
+	// requesting a block from the user's blockchain?
+	if PublicKey.IsEqual(peerPublicKey) {
+		_, _, version := UserBlockchain.Header()
+		if Version != version {
+			return nil, nil, false, nil
+		}
+
+		var status int
+		raw, status, err = UserBlockchain.GetBlockRaw(BlockNumber)
+		if err != nil || status != blockchain.StatusOK {
+			return nil, raw, false, err
+		}
+	} else {
+		// read from the cache
+		if raw, found = cache.store.ReadBlock(PublicKey, Version, BlockNumber); !found {
+			return nil, nil, false, nil
+		}
 	}
 
 	// decode the entire block

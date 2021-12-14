@@ -47,6 +47,9 @@ type Blockchain struct {
 	path       string            // Path of the blockchain on disk. Depends on key-value store whether a filename or folder.
 	database   store.Store       // The database storing the blockchain.
 	sync.Mutex                   // synchronized access to the header
+
+	// callback
+	BlockchainUpdate func(blockchain *Blockchain, oldHeight, oldVersion, newHeight, newVersion uint64)
 }
 
 // Init initializes the given blockchain. It creates the blockchain file if it does not exist already.
@@ -109,6 +112,9 @@ func (blockchain *Blockchain) headerRead() (found bool, err error) {
 
 // headerWrite writes the header to the blockchain and signs it.
 func (blockchain *Blockchain) headerWrite(height, version uint64) (err error) {
+	oldHeight := blockchain.height
+	oldVersion := blockchain.version
+
 	blockchain.height = height
 	blockchain.version = version
 
@@ -128,6 +134,11 @@ func (blockchain *Blockchain) headerWrite(height, version uint64) (err error) {
 	copy(buffer[18:18+65], signature)
 
 	err = blockchain.database.Set([]byte(keyHeader), buffer[:])
+
+	// call the callback, if any
+	if blockchain.BlockchainUpdate != nil {
+		blockchain.BlockchainUpdate(blockchain, oldHeight, oldVersion, blockchain.height, blockchain.version)
+	}
 
 	return err
 }

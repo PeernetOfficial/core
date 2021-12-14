@@ -26,3 +26,38 @@ func initUserBlockchain() {
 		os.Exit(ExitBlockchainCorrupt)
 	}
 }
+
+// Index the user's blockchain each time there is an update.
+func (backend *Backend) userBlockchainUpdateSearchIndex() {
+	UserBlockchain.BlockchainUpdate = func(blockchainU *blockchain.Blockchain, oldHeight, oldVersion, newHeight, newVersion uint64) {
+
+		if newVersion != oldVersion || newHeight < oldHeight {
+			// invalidate search index data for the user's blockchain
+			backend.SearchIndex.UnindexBlockchain(peerPublicKey)
+
+			// reindex everything
+			for blockN := uint64(0); blockN < newHeight; blockN++ {
+				raw, status, err := blockchainU.GetBlockRaw(blockN)
+				if err != nil || status != blockchain.StatusOK {
+					continue
+				}
+
+				backend.SearchIndex.IndexNewBlock(peerPublicKey, newVersion, blockN, raw)
+			}
+
+			return
+		}
+
+		if newVersion == oldVersion && newHeight > oldHeight {
+			// index the new blocks
+			for blockN := oldHeight; blockN < newHeight; blockN++ {
+				raw, status, err := blockchainU.GetBlockRaw(blockN)
+				if err != nil || status != blockchain.StatusOK {
+					continue
+				}
+
+				backend.SearchIndex.IndexNewBlock(peerPublicKey, newVersion, blockN, raw)
+			}
+		}
+	}
+}
