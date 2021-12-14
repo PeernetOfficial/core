@@ -3,10 +3,12 @@ File Name:  Search Dispatch.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */
+
 package webapi
 
 import (
 	"bytes"
+	"fmt"
 	"time"
 
 	"github.com/PeernetOfficial/core"
@@ -22,25 +24,25 @@ func (api *WebapiInstance) dispatchSearch(input SearchRequest) (job *SearchJob) 
 
 	// todo: create actual search clients!
 
-	go job.localSearch(api.backend, input.Term)
+	go job.localSearch(api, input.Term)
 
 	job.RemoveDefer(job.timeout + time.Minute*10)
 
 	return job
 }
 
-func (job *SearchJob) localSearch(backend *core.Backend, term string) {
-	if backend.SearchIndex == nil || backend.GlobalBlockchainCache == nil {
+func (job *SearchJob) localSearch(api *WebapiInstance, term string) {
+	if api.backend.SearchIndex == nil || api.backend.GlobalBlockchainCache == nil {
 		return
 	}
 
-	results := backend.SearchIndex.Search(term)
+	results := api.backend.SearchIndex.Search(term)
 
 	job.ResultSync.Lock()
 
 resultLoop:
 	for _, result := range results {
-		file, _, found, err := backend.GlobalBlockchainCache.ReadFile(result.PublicKey, result.BlockchainVersion, result.BlockNumber, result.FileID)
+		file, _, found, err := api.backend.GlobalBlockchainCache.ReadFile(result.PublicKey, result.BlockchainVersion, result.BlockNumber, result.FileID)
 		if err != nil || !found {
 			continue
 		}
@@ -53,7 +55,12 @@ resultLoop:
 		}
 
 		if peer := core.NodelistLookup(file.NodeID); peer != nil {
+			// add the tags 'Shared By Count' and 'Shared By GeoIP'
 			file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
+			if latitude, longitude, valid := api.Peer2GeoIP(peer); valid {
+				sharedByGeoIP := fmt.Sprintf("%.4f", latitude) + "," + fmt.Sprintf("%.4f", longitude)
+				file.Tags = append(file.Tags, blockchain.TagFromText(blockchain.TagSharedByGeoIP, sharedByGeoIP))
+			}
 		}
 
 		// new result

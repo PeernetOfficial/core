@@ -6,12 +6,14 @@ Author:     Peter Kleissner
 package webapi
 
 import (
+	"fmt"
+
 	"github.com/PeernetOfficial/core"
 	"github.com/PeernetOfficial/core/blockchain"
 )
 
 // queryRecentShared returns recently shared files on the network from random peers until the limit is reached.
-func queryRecentShared(backend *core.Backend, fileType int, limitPeer, limitTotal uint64) (files []blockchain.BlockRecordFile) {
+func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int, limitPeer, limitTotal uint64) (files []blockchain.BlockRecordFile) {
 	if limitPeer == 0 {
 		limitPeer = 1
 	}
@@ -39,7 +41,12 @@ func queryRecentShared(backend *core.Backend, fileType int, limitPeer, limitTota
 
 			for _, record := range blockDecoded.RecordsDecoded {
 				if file, ok := record.(blockchain.BlockRecordFile); ok && isFileTypeMatchBlock(&file, fileType) {
+					// add the tags 'Shared By Count' and 'Shared By GeoIP'
 					file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
+					if latitude, longitude, valid := api.Peer2GeoIP(peer); valid {
+						sharedByGeoIP := fmt.Sprintf("%.4f", latitude) + "," + fmt.Sprintf("%.4f", longitude)
+						file.Tags = append(file.Tags, blockchain.TagFromText(blockchain.TagSharedByGeoIP, sharedByGeoIP))
+					}
 
 					// found a new file! append.
 					if filesFromPeer < limitPeer {

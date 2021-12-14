@@ -1,3 +1,5 @@
+github.com/IncSW/geoip2 v0.1.1 h1:afzzYF7n9JbdcPy8aiBSgBJuXi4mTWXZ3z6V3o6Vg34=
+github.com/IncSW/geoip2 v0.1.1/go.mod h1:adcasR40vXiUBjtzdaTTKL/6wSf+fgO4M8Gve/XzPUk=
 github.com/akrylysov/pogreb v0.10.1 h1:FqlR8VR7uCbJdfUob916tPM+idpKgeESDXOA1K0DK4w=
 github.com/akrylysov/pogreb v0.10.1/go.mod h1:pNs6QmpQ1UlTJKDezuRWmaqkgUE2TuU0YTWyqJZ7+lI=
 github.com/enfipy/locker v1.1.0 h1:2zVJ0ky7cS1Vjs0x6OQWFiT2dSEiHrI5/O2KCz1fgGc=
