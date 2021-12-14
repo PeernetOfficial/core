@@ -39,6 +39,8 @@ func queryRecentShared(backend *core.Backend, fileType int, limitPeer, limitTota
 
 			for _, record := range blockDecoded.RecordsDecoded {
 				if file, ok := record.(blockchain.BlockRecordFile); ok && isFileTypeMatchBlock(&file, fileType) {
+					file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
+
 					// found a new file! append.
 					if filesFromPeer < limitPeer {
 						files = append(files, file)
