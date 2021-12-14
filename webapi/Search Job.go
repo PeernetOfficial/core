@@ -359,7 +359,7 @@ func (job *SearchJob) IsTerminated() bool {
 	// 	}
 	// }
 
-	return false
+	return job.Status == SearchStatusTerminated || job.Status == SearchStatusNoIndex
 }
 
 // Terminate terminates all searches
