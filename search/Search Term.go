@@ -6,7 +6,9 @@ Author:     Peter Kleissner
 
 package search
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+)
 
 func (index *SearchIndexStore) Search(term string) (results []SearchIndexRecord) {
 	termS, isExact, _ := sanitizeInputTerm(term)
@@ -24,9 +26,9 @@ func (index *SearchIndexStore) Search(term string) (results []SearchIndexRecord)
 	}
 
 	// start with exact search
-	hashExact := hashWord(termS)
+	hashExact, wordH := hashWord(termS)
 	if hashExact != nil {
-		index.LookupHash(SearchSelector{Hash: hashExact, Word: termS, ExactSearch: true}, resultMap)
+		index.LookupHash(SearchSelector{Hash: hashExact, Word: wordH, ExactSearch: true}, resultMap)
 	}
 
 	// exact search only?
