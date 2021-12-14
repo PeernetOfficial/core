@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/PeernetOfficial/core"
 	"github.com/google/uuid"
 )
 
@@ -199,6 +200,9 @@ type downloadInfo struct {
 	Swarm struct { // Information about the swarm. Only valid for status >= DownloadActive.
 		CountPeers uint64 // Count of peers participating in the swarm.
 	}
+
+	// live connections, to be changed
+	peer *core.PeerInfo
 }
 
 var (
