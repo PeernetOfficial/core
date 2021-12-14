@@ -171,7 +171,11 @@ func apiSearchResult(w http.ResponseWriter, r *http.Request) {
 
 	// set the status
 	if len(result.Files) > 0 {
-		result.Status = 0 // 0 = Success with results
+		if job.IsSearchResults() {
+			result.Status = 0 // 0 = Success with results
+		} else {
+			result.Status = 1 // No more results to expect
+		}
 	} else {
 		switch job.Status {
 		case SearchStatusLive:
@@ -184,8 +188,6 @@ func apiSearchResult(w http.ResponseWriter, r *http.Request) {
 			result.Status = 1 // No more results to expect
 		}
 	}
-
-	//if !job.IsSearchResults() { // if no fresh results to be expected
 
 	// embedded statistics?
 	if returnStats, _ := strconv.ParseBool(r.Form.Get("stats")); returnStats {
