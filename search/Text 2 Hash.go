@@ -21,7 +21,7 @@ func text2Hashes(text string, hashes map[[32]byte]string) {
 		if unicode.IsSpace(char) {
 			return true
 		}
-		return strings.ContainsAny(string(char), "+-._()[],")
+		return strings.ContainsAny(string(char), "+-._()[],–")
 	})
 
 	for _, word := range words {

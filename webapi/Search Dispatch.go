@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/PeernetOfficial/core"
+	"github.com/PeernetOfficial/core/blockchain"
 )
 
 func (api *WebapiInstance) dispatchSearch(input SearchRequest) (job *SearchJob) {
@@ -44,15 +45,19 @@ resultLoop:
 			continue
 		}
 
-		// new result
-		newFile := blockRecordFileToAPI(file)
-
 		// Deduplicate based on file hash from the same peer.
 		for n := range job.AllFiles {
-			if bytes.Equal(job.AllFiles[n].Hash, newFile.Hash) && bytes.Equal(job.AllFiles[n].NodeID, newFile.NodeID) {
+			if bytes.Equal(job.AllFiles[n].Hash, file.Hash) && bytes.Equal(job.AllFiles[n].NodeID, file.NodeID) {
 				continue resultLoop
 			}
 		}
+
+		if peer := core.NodelistLookup(file.NodeID); peer != nil {
+			file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
+		}
+
+		// new result
+		newFile := blockRecordFileToAPI(file)
 
 		job.Files = append(job.Files, &newFile)
 		job.AllFiles = append(job.AllFiles, &newFile)
