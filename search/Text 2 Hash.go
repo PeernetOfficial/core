@@ -25,6 +25,9 @@ func text2Hashes(text string, hashes map[[32]byte]string) {
 	})
 
 	for _, word := range words {
+		// remove hash tag prefix
+		word = strings.TrimPrefix(word, "#")
+
 		hashWordMap(word, hashes)
 	}
 }
