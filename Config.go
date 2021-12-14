@@ -17,7 +17,7 @@ import (
 )
 
 // Version is the current core library version
-const Version = "Alpha 5/13.12.2021"
+const Version = "Alpha 5/14.12.2021"
 
 var config struct {
 	// Locations of important files and folders
@@ -26,6 +26,7 @@ var config struct {
 	BlockchainGlobal string `yaml:"BlockchainGlobal"` // Blockchain global caches blockchain data from global users. Empty to disable.
 	WarehouseMain    string `yaml:"WarehouseMain"`    // Warehouse main stores the actual data of files shared by the end-user.
 	SearchIndex      string `yaml:"SearchIndex"`      // Local search index of blockchain records. Empty to disable.
+	GeoIPDatabase    string `yaml:"GeoIPDatabase"`    // GeoLite2 City database to provide GeoIP information.
 
 	// Listen settings
 	Listen        []string `yaml:"Listen"`        // IP:Port combinations
