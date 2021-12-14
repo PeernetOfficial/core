@@ -204,6 +204,17 @@ func PeerlistLookup(publicKey *btcec.PublicKey) (peer *PeerInfo) {
 	return peerList[publicKey2Compressed(publicKey)]
 }
 
+// NodelistLookup returns the peer from the list with the node ID
+func NodelistLookup(nodeID []byte) (peer *PeerInfo) {
+	peerlistMutex.RLock()
+	defer peerlistMutex.RUnlock()
+
+	var nodeID2 [protocol.HashSize]byte
+	copy(nodeID2[:], nodeID)
+
+	return nodeList[nodeID2]
+}
+
 // PeerlistCount returns the current count of peers in the peer list
 func PeerlistCount() (count int) {
 	peerlistMutex.RLock()
