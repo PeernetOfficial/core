@@ -13,10 +13,10 @@ import (
 	"strings"
 )
 
+// sanitizeGeneric sanitizes the text. It intentionally does not lowercase the text so CamelCase can be detcted later.
 func sanitizeGeneric(filename string) string {
-	filename = strings.TrimSpace(filename)
-	filename = strings.ToLower(filename)
 	filename = strings.ToValidUTF8(filename, "")
+	filename = strings.TrimSpace(filename)
 
 	return filename
 }
