@@ -169,12 +169,23 @@ func apiSearchResult(w http.ResponseWriter, r *http.Request) {
 		result.Files = append(result.Files, *resultFiles[n])
 	}
 
-	if len(result.Files) == 0 {
-		result.Status = 3 // No results yet available keep trying
+	// set the status
+	if len(result.Files) > 0 {
+		result.Status = 0 // 0 = Success with results
+	} else {
+		switch job.Status {
+		case SearchStatusLive:
+			result.Status = 3 // No results yet available keep trying
+
+		case SearchStatusTerminated:
+			result.Status = 1 // No more results to expect
+
+		default: // SearchStatusNoIndex, SearchStatusNotStarted
+			result.Status = 1 // No more results to expect
+		}
 	}
 
 	//if !job.IsSearchResults() { // if no fresh results to be expected
-	result.Status = 1 // No more results to expect
 
 	// embedded statistics?
 	if returnStats, _ := strconv.ParseBool(r.Form.Get("stats")); returnStats {

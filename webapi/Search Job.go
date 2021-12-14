@@ -48,6 +48,9 @@ type SearchJob struct {
 
 	// -- result data --
 
+	// Status indicates the overall search status. This will be removed later when relying on search clients.
+	Status int
+
 	// runtime data
 	//clients        []*SearchClient // all search clients
 	clientsMutex sync.Mutex // mutex for manipulating client list
@@ -67,10 +70,18 @@ type SearchJob struct {
 	currentOffset int // for always getting the next results
 }
 
+const (
+	SearchStatusNotStarted = iota // Search was not yet started
+	SearchStatusLive              // Search running
+	SearchStatusTerminated        // Search is terminated. No more results are expected.
+	SearchStatusNoIndex           // Search is terminated. No search index to use.
+)
+
 // CreateSearchJob creates a new search job and adds it to the lookup list.
 // Timeout and MaxResults must be set and must not be 0.
 func CreateSearchJob(Timeout time.Duration, MaxResults int, Filter SearchFilter) (job *SearchJob) {
 	job = &SearchJob{}
+	job.Status = SearchStatusNotStarted
 	job.id = uuid.New()
 	job.timeout = Timeout
 	job.maxResult = MaxResults
