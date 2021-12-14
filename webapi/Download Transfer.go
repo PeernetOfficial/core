@@ -1,5 +1,5 @@
 /*
-File Name:  Download Temp.go
+File Name:  Download Transfer.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 
@@ -9,31 +9,77 @@ Temporary download code to provide dummy results for testing. To be replaced!
 package webapi
 
 import (
-	"math/rand"
 	"os"
 	"time"
+
+	"github.com/PeernetOfficial/core"
 )
 
-// Start is a dummy downloader
+// Starts the download.
 func (info *downloadInfo) Start() {
-	time.Sleep(time.Second * time.Duration(rand.Intn(5)))
+	for n := 0; n < 3 && info.peer == nil; n++ {
+		_, info.peer, _ = core.FindNode(info.nodeID, time.Second*5)
 
-	// request metadata
-	//info.file = blockRecordFileToAPI(createTestResult(-1))
+		if info.status == DownloadCanceled {
+			return
+		}
+	}
 
-	// join swarm
+	if info.peer != nil {
+		info.Download()
+	} else {
+		info.status = DownloadCanceled
+	}
+}
 
+func (info *downloadInfo) Download() {
+	//fmt.Printf("Download start of %s\n", hex.EncodeToString(info.hash))
+
+	// try to download the entire file
+	reader, fileSize, transferSize, err := FileStartReader(info.peer, info.hash, 0, 0, nil)
+	if reader != nil {
+		defer reader.Close()
+	}
+	if err != nil {
+		info.status = DownloadCanceled
+		return
+	} else if fileSize != transferSize {
+		info.status = DownloadCanceled
+		return
+	}
+
+	info.file.Size = fileSize
 	info.status = DownloadActive
 
-	// start download
-	for n := uint64(0); n < 10; n++ {
-		time.Sleep(time.Second * time.Duration(rand.Intn(5)))
+	// download in a loop
+	var fileOffset, totalRead uint64
+	dataRemaining := fileSize
+	readSize := uint64(4096)
 
-		randomData := make([]byte, info.file.Size/10)
-		rand.Read(randomData)
+	for dataRemaining > 0 {
+		//fmt.Printf("data remaining:  downloaded %d from total %d   = %d %%\n", totalRead, fileSize, totalRead*100/fileSize)
+		if dataRemaining < readSize {
+			readSize = dataRemaining
+		}
 
-		info.storeDownloadData(randomData, n*info.file.Size/10)
+		data := make([]byte, readSize)
+		n, err := reader.Read(data)
+
+		totalRead += uint64(n)
+		dataRemaining -= uint64(n)
+		data = data[:n]
+
+		if err != nil {
+			info.status = DownloadCanceled
+			return
+		}
+
+		info.storeDownloadData(data[:n], fileOffset)
+
+		fileOffset += uint64(n)
 	}
+
+	//fmt.Printf("data finished:  downloaded %d from total %d   = %d %%\n", totalRead, fileSize, totalRead*100/fileSize)
 
 	info.Finish()
 	info.DeleteDefer(time.Hour * 1) // cache the details for 1 hour before removing
@@ -113,10 +159,6 @@ func (info *downloadInfo) storeDownloadData(data []byte, offset uint64) (status 
 	if info.status != DownloadActive { // The download must be active.
 		return DownloadResponseActionInvalid
 	}
-
-	//if _, err := info.DiskFile.Handle.Seek(int64(offset), 0); err != nil {
-	//	return err
-	//}
 
 	if _, err := info.DiskFile.Handle.WriteAt(data, int64(offset)); err != nil {
 		return DownloadResponseFileWrite
