@@ -182,9 +182,7 @@ func IsNodeContact(nodeID []byte) (node *dht.Node, peer *PeerInfo) {
 // FindNode finds a node via the DHT
 func FindNode(nodeID []byte, Timeout time.Duration) (node *dht.Node, peer *PeerInfo, err error) {
 	// first check if in mirrored node list
-	var nodeID2 [protocol.HashSize]byte
-	copy(nodeID2[:], nodeID)
-	if peer, ok := nodeList[nodeID2]; ok {
+	if peer = NodelistLookup(nodeID); peer != nil {
 		return nil, peer, nil
 	}
 
