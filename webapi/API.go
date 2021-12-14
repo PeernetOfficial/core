@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/IncSW/geoip2"
 	"github.com/PeernetOfficial/core"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -20,7 +21,8 @@ import (
 )
 
 type WebapiInstance struct {
-	backend *core.Backend
+	backend         *core.Backend
+	geoipCityReader *geoip2.CityReader
 
 	// Router can be used to register additional API functions
 	Router          *mux.Router

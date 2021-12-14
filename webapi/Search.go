@@ -343,7 +343,7 @@ func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 		fileType = -1
 	}
 
-	resultFiles := queryRecentShared(api.backend, fileType, uint64(limit*20/100), uint64(limit))
+	resultFiles := api.queryRecentShared(api.backend, fileType, uint64(limit*20/100), uint64(limit))
 
 	var result SearchResult
 	result.Files = []apiFile{}
