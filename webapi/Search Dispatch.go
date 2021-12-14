@@ -23,6 +23,7 @@ func (api *WebapiInstance) dispatchSearch(input SearchRequest) (job *SearchJob) 
 	job = CreateSearchJob(Timeout, input.MaxResults, Filter)
 
 	// todo: create actual search clients!
+	job.Status = SearchStatusLive
 
 	go job.localSearch(api, input.Term)
 
@@ -33,6 +34,7 @@ func (api *WebapiInstance) dispatchSearch(input SearchRequest) (job *SearchJob) 
 
 func (job *SearchJob) localSearch(api *WebapiInstance, term string) {
 	if api.backend.SearchIndex == nil || api.backend.GlobalBlockchainCache == nil {
+		job.Status = SearchStatusNoIndex
 		return
 	}
 
@@ -74,6 +76,8 @@ resultLoop:
 		job.requireSort = true
 		job.statsAdd(&newFile)
 	}
+
+	job.Status = SearchStatusTerminated
 
 	job.ResultSync.Unlock()
 	job.Terminate()
