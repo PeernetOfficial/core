@@ -4,3 +4,11 @@ log.txt
 test.*
 # Ignore the IDE gitignore files
 .idea/
+# ignores the main.go file
+main.go
+# ignore generated config file
+Config.yaml
+# ignore generated data folder
+data/
+# ignore the folder main
+main/
