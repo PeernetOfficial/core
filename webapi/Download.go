@@ -76,7 +76,7 @@ func (api *WebapiInstance) apiDownloadStart(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	info := &downloadInfo{backend: api.backend, id: uuid.New(), created: time.Now(), hash: hash, nodeID: nodeID}
+	info := &downloadInfo{backend: api.backend, api: api, id: uuid.New(), created: time.Now(), hash: hash, nodeID: nodeID}
 
 	// create the file immediately
 	if info.initDiskFile(filePath) != nil {
@@ -85,7 +85,7 @@ func (api *WebapiInstance) apiDownloadStart(w http.ResponseWriter, r *http.Reque
 	}
 
 	// add the download to the list
-	downloadAdd(info)
+	api.downloadAdd(info)
 
 	// start the download!
 	go info.Start()
@@ -107,7 +107,7 @@ func (api *WebapiInstance) apiDownloadStatus(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	info := downloadLookup(id)
+	info := api.downloadLookup(id)
 	if info == nil {
 		EncodeJSON(api.backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseIDNotFound})
 		return
@@ -152,7 +152,7 @@ func (api *WebapiInstance) apiDownloadAction(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	info := downloadLookup(id)
+	info := api.downloadLookup(id)
 	if info == nil {
 		EncodeJSON(api.backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseIDNotFound})
 		return
@@ -204,30 +204,26 @@ type downloadInfo struct {
 	// live connections, to be changed
 	peer *core.PeerInfo
 
+	api     *WebapiInstance
 	backend *core.Backend
 }
 
-var (
-	downloads      = make(map[uuid.UUID]*downloadInfo)
-	downloadsMutex sync.RWMutex
-)
-
-func downloadAdd(info *downloadInfo) {
-	downloadsMutex.Lock()
-	downloads[info.id] = info
-	downloadsMutex.Unlock()
+func (api *WebapiInstance) downloadAdd(info *downloadInfo) {
+	api.downloadsMutex.Lock()
+	api.downloads[info.id] = info
+	api.downloadsMutex.Unlock()
 }
 
-func downloadDelete(id uuid.UUID) {
-	downloadsMutex.Lock()
-	delete(downloads, id)
-	downloadsMutex.Unlock()
+func (api *WebapiInstance) downloadDelete(id uuid.UUID) {
+	api.downloadsMutex.Lock()
+	delete(api.downloads, id)
+	api.downloadsMutex.Unlock()
 }
 
-func downloadLookup(id uuid.UUID) (info *downloadInfo) {
-	downloadsMutex.Lock()
-	info = downloads[id]
-	downloadsMutex.Unlock()
+func (api *WebapiInstance) downloadLookup(id uuid.UUID) (info *downloadInfo) {
+	api.downloadsMutex.Lock()
+	info = api.downloads[id]
+	api.downloadsMutex.Unlock()
 	return info
 }
 
@@ -236,7 +232,7 @@ func downloadLookup(id uuid.UUID) (info *downloadInfo) {
 func (info *downloadInfo) DeleteDefer(Duration time.Duration) {
 	go func() {
 		<-time.After(Duration)
-		downloadDelete(info.id)
+		info.api.downloadDelete(info.id)
 	}()
 }
 

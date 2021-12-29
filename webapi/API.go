@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/IncSW/geoip2"
@@ -27,6 +28,10 @@ type WebapiInstance struct {
 	// Router can be used to register additional API functions
 	Router          *mux.Router
 	AllowKeyInParam []string // List of paths that accept the API key as &k= parameter
+
+	// download info
+	downloads      map[uuid.UUID]*downloadInfo
+	downloadsMutex sync.RWMutex
 }
 
 // WSUpgrader is used for websocket functionality. It allows all requests.
@@ -51,6 +56,7 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 		backend:         Backend,
 		Router:          mux.NewRouter(),
 		AllowKeyInParam: []string{"/file/read", "/file/view"},
+		downloads:       make(map[uuid.UUID]*downloadInfo),
 	}
 
 	if APIKey != uuid.Nil {
