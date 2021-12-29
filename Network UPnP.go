@@ -11,17 +11,13 @@ package core
 import (
 	"math/rand"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/PeernetOfficial/core/upnp"
 )
 
-var upnpListInterfaces map[string]struct{}
-var upnpMutex sync.RWMutex
-
 func (nets *Networks) startUPnP() {
-	upnpListInterfaces = make(map[string]struct{})
+	nets.upnpListInterfaces = make(map[string]struct{})
 
 	for _, cidr := range []string{
 		"10.0.0.0/8",     // RFC1918
@@ -103,11 +99,11 @@ func (network *Network) upnpAuto() {
 	network.ipExternal = externalIP
 
 	// Only allow 1 UPnP worker at a time for registering the adapter.
-	upnpMutex.Lock()
-	defer upnpMutex.Unlock()
+	network.networkGroup.upnpMutex.Lock()
+	defer network.networkGroup.upnpMutex.Unlock()
 
 	// If there is already a running UPnP on the adapter, skip.
-	if _, ok := upnpListInterfaces[network.GetAdapterName()]; ok {
+	if _, ok := network.networkGroup.upnpListInterfaces[network.GetAdapterName()]; ok {
 		return
 	}
 
@@ -115,7 +111,7 @@ func (network *Network) upnpAuto() {
 		return
 	}
 
-	upnpListInterfaces[network.GetAdapterName()] = struct{}{}
+	network.networkGroup.upnpListInterfaces[network.GetAdapterName()] = struct{}{}
 
 	go network.upnpMonitorPortForward()
 }
@@ -157,9 +153,9 @@ monitorLoop:
 
 	ticker.Stop()
 
-	upnpMutex.Lock()
-	delete(upnpListInterfaces, network.GetAdapterName())
-	upnpMutex.Unlock()
+	network.networkGroup.upnpMutex.Lock()
+	delete(network.networkGroup.upnpListInterfaces, network.GetAdapterName())
+	network.networkGroup.upnpMutex.Unlock()
 }
 
 func (network *Network) upnpTryPortForward() (err error) {

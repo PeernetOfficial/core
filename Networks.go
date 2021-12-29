@@ -36,6 +36,10 @@ type Networks struct {
 	// localFirewall indicates if a local firewall may drop unsolicited incoming packets
 	localFirewall bool
 
+	// UPnP data
+	upnpListInterfaces map[string]struct{}
+	upnpMutex          sync.RWMutex
+
 	// backend
 	backend *Backend
 }
