@@ -15,8 +15,8 @@ import (
 
 // pingConnection sends a ping to the target peer via the specified connection
 func (peer *PeerInfo) pingConnection(connection *Connection) {
-	raw := &protocol.PacketRaw{Command: protocol.CommandPing, Sequence: networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, nil).SequenceNumber}
-	Filters.MessageOutPing(peer, raw, connection)
+	raw := &protocol.PacketRaw{Command: protocol.CommandPing, Sequence: peer.Backend.networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, nil).SequenceNumber}
+	peer.Backend.Filters.MessageOutPing(peer, raw, connection)
 
 	err := peer.sendConnection(raw, connection)
 	connection.LastPingOut = time.Now()
@@ -29,14 +29,14 @@ func (peer *PeerInfo) pingConnection(connection *Connection) {
 // pingConnectionAnnouncement sends an empty announcement via a particular connection.
 // It has the same effect as ping, but returns the blockchain version and height of the other peer in the Response message, which may be useful for keeping the global blockchain cache up to date.
 func (peer *PeerInfo) pingConnectionAnnouncement(connection *Connection) {
-	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets := protocol.EncodeAnnouncement(false, false, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion, userAgent)
+	_, blockchainHeight, blockchainVersion := peer.Backend.UserBlockchain.Header()
+	packets := protocol.EncodeAnnouncement(false, false, nil, nil, nil, peer.Backend.FeatureSupport(), blockchainHeight, blockchainVersion, peer.Backend.userAgent)
 	if len(packets) != 1 {
 		return
 	}
 
-	raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packets[0], Sequence: networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, nil).SequenceNumber}
-	Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, false, nil, nil, nil)
+	raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packets[0], Sequence: peer.Backend.networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, nil).SequenceNumber}
+	peer.Backend.Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, false, nil, nil, nil)
 
 	err := peer.sendConnection(raw, connection)
 	connection.LastPingOut = time.Now()
@@ -49,7 +49,7 @@ func (peer *PeerInfo) pingConnectionAnnouncement(connection *Connection) {
 // Ping sends a ping. This function exists only for debugging purposes, it should not be used normally.
 // This ping is not used for uptime detection and the LastPingOut time in connections is not set.
 func (peer *PeerInfo) Ping() {
-	peer.send(&protocol.PacketRaw{Command: protocol.CommandPing, Sequence: networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, nil).SequenceNumber})
+	peer.send(&protocol.PacketRaw{Command: protocol.CommandPing, Sequence: peer.Backend.networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, nil).SequenceNumber})
 }
 
 // Chat sends a text message
@@ -59,24 +59,24 @@ func (peer *PeerInfo) Chat(text string) {
 
 // sendAnnouncement sends the announcement message. It acquires a new sequence for each message.
 func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []protocol.KeyHash, findValue []protocol.KeyHash, files []protocol.InfoStore, sequenceData interface{}) {
-	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets := protocol.EncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files, FeatureSupport(), blockchainHeight, blockchainVersion, userAgent)
+	_, blockchainHeight, blockchainVersion := peer.Backend.UserBlockchain.Header()
+	packets := protocol.EncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files, peer.Backend.FeatureSupport(), blockchainHeight, blockchainVersion, peer.Backend.userAgent)
 
 	for _, packet := range packets {
-		raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packet, Sequence: networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, sequenceData).SequenceNumber}
-		Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, findSelf, findPeer, findValue, files)
+		raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packet, Sequence: peer.Backend.networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, sequenceData).SequenceNumber}
+		peer.Backend.Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, findSelf, findPeer, findValue, files)
 		peer.send(raw)
 	}
 }
 
 // sendResponse sends the response message
 func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []protocol.Hash2Peer, filesEmbed []protocol.EmbeddedFileData, hashesNotFound [][]byte) (err error) {
-	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets, err := protocol.EncodeResponse(sendUA, hash2Peers, filesEmbed, hashesNotFound, FeatureSupport(), blockchainHeight, blockchainVersion, userAgent)
+	_, blockchainHeight, blockchainVersion := peer.Backend.UserBlockchain.Header()
+	packets, err := protocol.EncodeResponse(sendUA, hash2Peers, filesEmbed, hashesNotFound, peer.Backend.FeatureSupport(), blockchainHeight, blockchainVersion, peer.Backend.userAgent)
 
 	for _, packet := range packets {
 		raw := &protocol.PacketRaw{Command: protocol.CommandResponse, Payload: packet, Sequence: sequence}
-		Filters.MessageOutResponse(peer, raw, hash2Peers, filesEmbed, hashesNotFound)
+		peer.Backend.Filters.MessageOutResponse(peer, raw, hash2Peers, filesEmbed, hashesNotFound)
 		peer.send(raw)
 	}
 
@@ -89,26 +89,26 @@ func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd *btce
 	// self-reported ports are not set, as this isn't sent via a specific network but a relay
 	//packet.SetSelfReportedPorts(c.Network.SelfReportedPorts())
 
-	embeddedPacketRaw, err := protocol.PacketEncrypt(peerPrivateKey, receiverEnd, packet)
+	embeddedPacketRaw, err := protocol.PacketEncrypt(peer.Backend.peerPrivateKey, receiverEnd, packet)
 	if err != nil {
 		return err
 	}
 
-	packetRaw, err := protocol.EncodeTraverse(peerPrivateKey, embeddedPacketRaw, receiverEnd, peer.PublicKey)
+	packetRaw, err := protocol.EncodeTraverse(peer.Backend.peerPrivateKey, embeddedPacketRaw, receiverEnd, peer.PublicKey)
 	if err != nil {
 		return err
 	}
 
 	raw := &protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: packetRaw}
 
-	Filters.MessageOutTraverse(peer, raw, packet, receiverEnd)
+	peer.Backend.Filters.MessageOutTraverse(peer, raw, packet, receiverEnd)
 
 	return peer.send(raw)
 }
 
 // sendTransfer sends a transfer message
 func (peer *PeerInfo) sendTransfer(data []byte, control, transferProtocol uint8, hash []byte, offset, limit uint64, sequenceNumber uint32) (err error) {
-	packetRaw, err := protocol.EncodeTransfer(peerPrivateKey, data, control, transferProtocol, hash, offset, limit)
+	packetRaw, err := protocol.EncodeTransfer(peer.Backend.peerPrivateKey, data, control, transferProtocol, hash, offset, limit)
 	if err != nil {
 		return err
 	}
@@ -122,7 +122,7 @@ func (peer *PeerInfo) sendTransfer(data []byte, control, transferProtocol uint8,
 
 // sendGetBlock sends a get block message
 func (peer *PeerInfo) sendGetBlock(data []byte, control uint8, blockchainPublicKey *btcec.PublicKey, limitBlockCount, maxBlockSize uint64, targetBlocks []protocol.BlockRange, sequenceNumber uint32) (err error) {
-	packetRaw, err := protocol.EncodeGetBlock(peerPrivateKey, data, control, blockchainPublicKey, limitBlockCount, maxBlockSize, targetBlocks)
+	packetRaw, err := protocol.EncodeGetBlock(peer.Backend.peerPrivateKey, data, control, blockchainPublicKey, limitBlockCount, maxBlockSize, targetBlocks)
 	if err != nil {
 		return err
 	}

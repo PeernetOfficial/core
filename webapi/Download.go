@@ -59,7 +59,7 @@ The hash parameter identifies the file to download. The node ID identifies the b
 Request:    GET /download/start?path=[target path on disk]&hash=[file hash to download]&node=[node ID]
 Result:     200 with JSON structure apiResponseDownloadStatus
 */
-func apiDownloadStart(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiDownloadStart(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
 	// validate hashes, must be blake3
@@ -76,11 +76,11 @@ func apiDownloadStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info := &downloadInfo{id: uuid.New(), created: time.Now(), hash: hash, nodeID: nodeID}
+	info := &downloadInfo{backend: api.backend, id: uuid.New(), created: time.Now(), hash: hash, nodeID: nodeID}
 
 	// create the file immediately
 	if info.initDiskFile(filePath) != nil {
-		EncodeJSON(w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseFileInvalid})
+		EncodeJSON(api.backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseFileInvalid})
 		return
 	}
 
@@ -90,7 +90,7 @@ func apiDownloadStart(w http.ResponseWriter, r *http.Request) {
 	// start the download!
 	go info.Start()
 
-	EncodeJSON(w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseSuccess, ID: info.id, DownloadStatus: DownloadWaitMetadata})
+	EncodeJSON(api.backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseSuccess, ID: info.id, DownloadStatus: DownloadWaitMetadata})
 }
 
 /*
@@ -99,7 +99,7 @@ apiDownloadStatus returns the status of an active download.
 Request:    GET /download/status?id=[download ID]
 Result:     200 with JSON structure apiResponseDownloadStatus
 */
-func apiDownloadStatus(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiDownloadStatus(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	id, err := uuid.Parse(r.Form.Get("id"))
 	if err != nil {
@@ -109,7 +109,7 @@ func apiDownloadStatus(w http.ResponseWriter, r *http.Request) {
 
 	info := downloadLookup(id)
 	if info == nil {
-		EncodeJSON(w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseIDNotFound})
+		EncodeJSON(api.backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseIDNotFound})
 		return
 	}
 
@@ -132,7 +132,7 @@ func apiDownloadStatus(w http.ResponseWriter, r *http.Request) {
 
 	info.RUnlock()
 
-	EncodeJSON(w, r, response)
+	EncodeJSON(api.backend, w, r, response)
 }
 
 /*
@@ -143,7 +143,7 @@ Action: 0 = Pause, 1 = Resume, 2 = Cancel.
 Request:    GET /download/action?id=[download ID]&action=[action]
 Result:     200 with JSON structure apiResponseDownloadStatus (using APIStatus and DownloadStatus)
 */
-func apiDownloadAction(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiDownloadAction(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	id, err := uuid.Parse(r.Form.Get("id"))
 	action, err2 := strconv.Atoi(r.Form.Get("action"))
@@ -154,7 +154,7 @@ func apiDownloadAction(w http.ResponseWriter, r *http.Request) {
 
 	info := downloadLookup(id)
 	if info == nil {
-		EncodeJSON(w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseIDNotFound})
+		EncodeJSON(api.backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseIDNotFound})
 		return
 	}
 
@@ -171,7 +171,7 @@ func apiDownloadAction(w http.ResponseWriter, r *http.Request) {
 		apiStatus = info.Cancel()
 	}
 
-	EncodeJSON(w, r, apiResponseDownloadStatus{APIStatus: apiStatus, ID: info.id, DownloadStatus: info.status})
+	EncodeJSON(api.backend, w, r, apiResponseDownloadStatus{APIStatus: apiStatus, ID: info.id, DownloadStatus: info.status})
 }
 
 // ---- download tracking ----
@@ -203,6 +203,8 @@ type downloadInfo struct {
 
 	// live connections, to be changed
 	peer *core.PeerInfo
+
+	backend *core.Backend
 }
 
 var (

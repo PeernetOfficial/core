@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/PeernetOfficial/core"
 	"github.com/PeernetOfficial/core/blockchain"
 )
 
@@ -27,10 +26,10 @@ apiBlockchainHeaderFunc returns the current blockchain header information
 Request:    GET /blockchain/header
 Result:     200 with JSON structure apiResponsePeerSelf
 */
-func apiBlockchainHeaderFunc(w http.ResponseWriter, r *http.Request) {
-	publicKey, height, version := core.UserBlockchain.Header()
+func (api *WebapiInstance) apiBlockchainHeaderFunc(w http.ResponseWriter, r *http.Request) {
+	publicKey, height, version := api.backend.UserBlockchain.Header()
 
-	EncodeJSON(w, r, apiBlockchainHeader{Version: version, Height: height, PeerID: hex.EncodeToString(publicKey.SerializeCompressed())})
+	EncodeJSON(api.backend, w, r, apiBlockchainHeader{Version: version, Height: height, PeerID: hex.EncodeToString(publicKey.SerializeCompressed())})
 }
 
 type apiBlockRecordRaw struct {
@@ -56,7 +55,7 @@ Do not use this function. Adding invalid data to the blockchain may corrupt it w
 Request:    POST /blockchain/append with JSON structure apiBlockchainBlockRaw
 Response:   200 with JSON structure apiBlockchainBlockStatus
 */
-func apiBlockchainAppend(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiBlockchainAppend(w http.ResponseWriter, r *http.Request) {
 	var input apiBlockchainBlockRaw
 	if err := DecodeJSON(w, r, &input); err != nil {
 		return
@@ -68,9 +67,9 @@ func apiBlockchainAppend(w http.ResponseWriter, r *http.Request) {
 		records = append(records, blockchain.BlockRecordRaw{Type: record.Type, Data: record.Data})
 	}
 
-	newHeight, newVersion, status := core.UserBlockchain.Append(records)
+	newHeight, newVersion, status := api.backend.UserBlockchain.Append(records)
 
-	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
+	EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 type apiBlockchainBlock struct {
@@ -89,7 +88,7 @@ apiBlockchainRead reads a block and returns the decoded information.
 Request:    GET /blockchain/read?block=[number]
 Result:     200 with JSON structure apiBlockchainBlock
 */
-func apiBlockchainRead(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiBlockchainRead(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	blockN, err := strconv.Atoi(r.Form.Get("block"))
 	if err != nil || blockN < 0 {
@@ -97,7 +96,7 @@ func apiBlockchainRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	block, status, _ := core.UserBlockchain.Read(uint64(blockN))
+	block, status, _ := api.backend.UserBlockchain.Read(uint64(blockN))
 	result := apiBlockchainBlock{Status: status}
 
 	if status == 0 {
@@ -119,5 +118,5 @@ func apiBlockchainRead(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	EncodeJSON(w, r, result)
+	EncodeJSON(api.backend, w, r, result)
 }

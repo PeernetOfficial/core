@@ -29,7 +29,7 @@ func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse) {
 	// Check if the target peer is known in the peer list. If not, nothing will be done.
 	// The original sender should only send the Traverse message as answer to a Response that contains a reported peer that is behind a NAT.
 	// In that case the target peer should be still in this peers' peer list.
-	peerTarget := PeerlistLookup(msg.TargetPeer)
+	peerTarget := peer.Backend.PeerlistLookup(msg.TargetPeer)
 	if peerTarget == nil {
 		return
 	}
@@ -72,7 +72,7 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse) {
 
 	// Already an active connection established? The relayed message should not be needed in this case.
 	// This could be changed in the future if it turns out that there are 1-way connection issues.
-	if peerTarget := PeerlistLookup(msg.SignerPublicKey); peerTarget != nil {
+	if peerTarget := peer.Backend.PeerlistLookup(msg.SignerPublicKey); peerTarget != nil {
 		return
 	}
 
@@ -99,13 +99,13 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse) {
 
 	// ---- fork packetWorker to decode and validate embedded packet ---
 	// Due to missing connection and other embedded details in the message (such as ports), the packet is not just simply queued to rawPacketsIncoming.
-	decoded, senderPublicKey, err := protocol.PacketDecrypt(msg.EmbeddedPacketRaw, peerPublicKey)
+	decoded, senderPublicKey, err := protocol.PacketDecrypt(msg.EmbeddedPacketRaw, peer.Backend.peerPublicKey)
 	if err != nil {
 		return
 	}
 	if !senderPublicKey.IsEqual(msg.SignerPublicKey) {
 		return
-	} else if senderPublicKey.IsEqual(peerPublicKey) {
+	} else if senderPublicKey.IsEqual(peer.Backend.peerPublicKey) {
 		return
 	} else if decoded.Protocol != 0 {
 		return
@@ -115,7 +115,7 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse) {
 
 	// process the packet and create a virtual peer
 	raw := &protocol.MessageRaw{SenderPublicKey: senderPublicKey, PacketRaw: *decoded}
-	peerV := &PeerInfo{PublicKey: senderPublicKey, connectionActive: nil, connectionLatest: nil, NodeID: protocol.PublicKey2NodeID(senderPublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses}
+	peerV := &PeerInfo{Backend: peer.Backend, PublicKey: senderPublicKey, connectionActive: nil, connectionLatest: nil, NodeID: protocol.PublicKey2NodeID(senderPublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses}
 
 	// process it!
 	switch decoded.Command {

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/PeernetOfficial/core"
 	"github.com/PeernetOfficial/core/blockchain"
 )
 
@@ -35,15 +34,15 @@ apiProfileList lists all users profile fields.
 Request:    GET /profile/list
 Response:   200 with JSON structure apiProfileData
 */
-func apiProfileList(w http.ResponseWriter, r *http.Request) {
-	fields, status := core.UserBlockchain.ProfileList()
+func (api *WebapiInstance) apiProfileList(w http.ResponseWriter, r *http.Request) {
+	fields, status := api.backend.UserBlockchain.ProfileList()
 
 	result := apiProfileData{Status: status}
 	for n := range fields {
 		result.Fields = append(result.Fields, blockRecordProfileToAPI(fields[n]))
 	}
 
-	EncodeJSON(w, r, result)
+	EncodeJSON(api.backend, w, r, result)
 }
 
 /*
@@ -52,7 +51,7 @@ apiProfileRead reads a specific users profile field. See core.ProfileX for recog
 Request:    GET /profile/read?field=[index]
 Response:   200 with JSON structure apiProfileData
 */
-func apiProfileRead(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiProfileRead(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	fieldN, err1 := strconv.Atoi(r.Form.Get("field"))
 
@@ -64,11 +63,11 @@ func apiProfileRead(w http.ResponseWriter, r *http.Request) {
 	var result apiProfileData
 
 	var data []byte
-	if data, result.Status = core.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.StatusOK {
+	if data, result.Status = api.backend.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.StatusOK {
 		result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: uint16(fieldN), Data: data}))
 	}
 
-	EncodeJSON(w, r, result)
+	EncodeJSON(api.backend, w, r, result)
 }
 
 /*
@@ -77,7 +76,7 @@ apiProfileWrite writes profile fields. See core.ProfileX for recognized fields.
 Request:    POST /profile/write with JSON structure apiProfileData
 Response:   200 with JSON structure apiBlockchainBlockStatus
 */
-func apiProfileWrite(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiProfileWrite(w http.ResponseWriter, r *http.Request) {
 	var input apiProfileData
 	if err := DecodeJSON(w, r, &input); err != nil {
 		return
@@ -89,9 +88,9 @@ func apiProfileWrite(w http.ResponseWriter, r *http.Request) {
 		fields = append(fields, blockRecordProfileFromAPI(input.Fields[n]))
 	}
 
-	newHeight, newVersion, status := core.UserBlockchain.ProfileWrite(fields)
+	newHeight, newVersion, status := api.backend.UserBlockchain.ProfileWrite(fields)
 
-	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
+	EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 /*
@@ -100,7 +99,7 @@ apiProfileDelete deletes profile fields identified by the types. See core.Profil
 Request:    POST /profile/delete with JSON structure apiProfileData
 Response:   200 with JSON structure apiBlockchainBlockStatus
 */
-func apiProfileDelete(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiProfileDelete(w http.ResponseWriter, r *http.Request) {
 	var input apiProfileData
 	if err := DecodeJSON(w, r, &input); err != nil {
 		return
@@ -112,9 +111,9 @@ func apiProfileDelete(w http.ResponseWriter, r *http.Request) {
 		fields = append(fields, input.Fields[n].Type)
 	}
 
-	newHeight, newVersion, status := core.UserBlockchain.ProfileDelete(fields)
+	newHeight, newVersion, status := api.backend.UserBlockchain.ProfileDelete(fields)
 
-	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
+	EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 // --- conversion from core to API data ---

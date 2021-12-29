@@ -13,20 +13,19 @@ import (
 	"os"
 	"time"
 
-	"github.com/PeernetOfficial/core"
 	"github.com/PeernetOfficial/core/warehouse"
 )
 
 // Starts the download.
 func (info *downloadInfo) Start() {
 	// current user?
-	if bytes.Equal(info.nodeID, core.SelfNodeID()) {
+	if bytes.Equal(info.nodeID, info.backend.SelfNodeID()) {
 		info.DownloadSelf()
 		return
 	}
 
 	for n := 0; n < 3 && info.peer == nil; n++ {
-		_, info.peer, _ = core.FindNode(info.nodeID, time.Second*5)
+		_, info.peer, _ = info.backend.FindNode(info.nodeID, time.Second*5)
 
 		if info.status == DownloadCanceled {
 			return
@@ -179,7 +178,7 @@ func (info *downloadInfo) storeDownloadData(data []byte, offset uint64) (status 
 
 func (info *downloadInfo) DownloadSelf() {
 	// Check if the file is available in the local warehouse.
-	_, fileInfo, status, _ := core.UserWarehouse.FileExists(info.hash)
+	_, fileInfo, status, _ := info.backend.UserWarehouse.FileExists(info.hash)
 	if status != warehouse.StatusOK {
 		info.status = DownloadCanceled
 		return
@@ -189,7 +188,7 @@ func (info *downloadInfo) DownloadSelf() {
 	info.status = DownloadActive
 
 	// read the file
-	status, bytesRead, _ := core.UserWarehouse.ReadFile(info.hash, 0, int64(fileInfo.Size()), info.DiskFile.Handle)
+	status, bytesRead, _ := info.backend.UserWarehouse.ReadFile(info.hash, 0, int64(fileInfo.Size()), info.DiskFile.Handle)
 
 	info.DiskFile.StoredSize = uint64(bytesRead)
 

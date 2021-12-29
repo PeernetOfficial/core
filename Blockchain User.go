@@ -12,28 +12,25 @@ import (
 	"github.com/PeernetOfficial/core/blockchain"
 )
 
-// UserBlockchain is the user's blockchain and exports functions to directly read and write it
-var UserBlockchain *blockchain.Blockchain
-
 // initUserBlockchain initializes the users blockchain. It creates the blockchain file if it does not exist already.
 // If it is corrupted, it will log the error and exit the process.
-func initUserBlockchain() {
+func (backend *Backend) initUserBlockchain() {
 	var err error
-	UserBlockchain, err = blockchain.Init(peerPrivateKey, config.BlockchainMain)
+	backend.UserBlockchain, err = blockchain.Init(backend.peerPrivateKey, backend.Config.BlockchainMain)
 
 	if err != nil {
-		Filters.LogError("initUserBlockchain", "error: %s\n", err.Error())
+		backend.Filters.LogError("initUserBlockchain", "error: %s\n", err.Error())
 		os.Exit(ExitBlockchainCorrupt)
 	}
 }
 
 // Index the user's blockchain each time there is an update.
 func (backend *Backend) userBlockchainUpdateSearchIndex() {
-	UserBlockchain.BlockchainUpdate = func(blockchainU *blockchain.Blockchain, oldHeight, oldVersion, newHeight, newVersion uint64) {
+	backend.UserBlockchain.BlockchainUpdate = func(blockchainU *blockchain.Blockchain, oldHeight, oldVersion, newHeight, newVersion uint64) {
 
 		if newVersion != oldVersion || newHeight < oldHeight {
 			// invalidate search index data for the user's blockchain
-			backend.SearchIndex.UnindexBlockchain(peerPublicKey)
+			backend.SearchIndex.UnindexBlockchain(backend.peerPublicKey)
 
 			// reindex everything
 			for blockN := uint64(0); blockN < newHeight; blockN++ {
@@ -42,7 +39,7 @@ func (backend *Backend) userBlockchainUpdateSearchIndex() {
 					continue
 				}
 
-				backend.SearchIndex.IndexNewBlock(peerPublicKey, newVersion, blockN, raw)
+				backend.SearchIndex.IndexNewBlock(backend.peerPublicKey, newVersion, blockN, raw)
 			}
 
 			return
@@ -56,7 +53,7 @@ func (backend *Backend) userBlockchainUpdateSearchIndex() {
 					continue
 				}
 
-				backend.SearchIndex.IndexNewBlock(peerPublicKey, newVersion, blockN, raw)
+				backend.SearchIndex.IndexNewBlock(backend.peerPublicKey, newVersion, blockN, raw)
 			}
 		}
 	}

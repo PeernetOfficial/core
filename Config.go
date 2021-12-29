@@ -17,9 +17,10 @@ import (
 )
 
 // Version is the current core library version
-const Version = "Alpha 5/14.12.2021"
+const Version = "Alpha 6/28.12.2021"
 
-var config struct {
+// Config defines the minimum required config for a Peernet client.
+type Config struct {
 	// Locations of important files and folders
 	LogFile          string `yaml:"LogFile"`          // Log file. It contains informational and error messages.
 	BlockchainMain   string `yaml:"BlockchainMain"`   // Blockchain main stores the end-users blockchain data. It contains meta data of shared files, profile data, and social interactions.
@@ -60,84 +61,74 @@ type peerSeed struct {
 	Address   []string `yaml:"Address"`   // IP:Port
 }
 
-var configFile string
-
 //go:embed "Config Default.yaml"
 var defaultConfig []byte
 
-// LoadConfig reads the YAML configuration file. If an error is returned, the application shall exit.
-// Status: 0 = Unknown error checking config file, 1 = Error reading config file, 2 = Error parsing config file, 3 = Success
-func LoadConfig(filename string) (status int, err error) {
+// LoadConfig reads the YAML configuration file and unmarshals it into the provided structure.
+// If the config file does not exist or is empty, it will fall back to the default config which is hardcoded.
+// Status is of type ExitX.
+func LoadConfig(Filename string, ConfigOut interface{}) (status int, err error) {
 	var configData []byte
-	configFile = filename
-
-	// check if the file is non existent or empty
-	stats, err := os.Stat(filename)
-	if err != nil && os.IsNotExist(err) || err == nil && stats.Size() == 0 {
-		configData = defaultConfig
-	} else if err != nil {
-		return 0, err
-	} else if configData, err = ioutil.ReadFile(filename); err != nil {
-		return 1, err
-	}
-
-	// parse the config
-	err = yaml.Unmarshal(configData, &config)
-	if err != nil {
-		return 2, err
-	}
-
-	return 3, nil
-}
-
-// LoadConfigOut is similar to LoadConfig but unmarshals the config into a caller provided structure.
-func LoadConfigOut(Filename string, ConfigOut interface{}) (status int, err error) {
-	var configData []byte
-	configFile = Filename
 
 	// check if the file is non existent or empty
 	stats, err := os.Stat(Filename)
 	if err != nil && os.IsNotExist(err) || err == nil && stats.Size() == 0 {
 		configData = defaultConfig
 	} else if err != nil {
-		return 0, err
+		return ExitErrorConfigAccess, err
 	} else if configData, err = ioutil.ReadFile(Filename); err != nil {
-		return 1, err
+		return ExitErrorConfigRead, err
 	}
 
 	// parse the config
-	if err = yaml.Unmarshal(configData, &config); err != nil {
-		return 2, err
-	}
-	if err = yaml.Unmarshal(configData, ConfigOut); err != nil {
-		return 2, err
+	err = yaml.Unmarshal(configData, ConfigOut)
+	if err != nil {
+		return ExitErrorConfigParse, err
 	}
 
-	return 3, nil
+	return ExitSuccess, nil
 }
 
-func saveConfig() {
-	data, err := yaml.Marshal(config)
+// SaveConfig stores the config.
+func SaveConfig(Filename string, Config interface{}) (err error) {
+	data, err := yaml.Marshal(Config)
 	if err != nil {
-		Filters.LogError("saveConfig", "marshalling config: %v\n", err.Error())
+		return err
+	}
+
+	return ioutil.WriteFile(Filename, data, 0666)
+}
+
+// SaveConfig stores the current runtime config to file. Any foreign settings not present in the Config structure will be deleted.
+func (backend *Backend) SaveConfig() {
+	if err := SaveConfig(backend.ConfigFilename, *backend.Config); err != nil {
+		backend.Filters.LogError("SaveConfig", "writing config '%s': %v\n", backend.ConfigFilename, err.Error())
+	}
+}
+
+func (backend *Backend) configUpdateSeedList() {
+	// parse the embedded config
+	var configD Config
+	if err := yaml.Unmarshal(defaultConfig, &configD); err != nil {
 		return
 	}
 
-	err = ioutil.WriteFile(configFile, data, 0666)
-	if err != nil {
-		Filters.LogError("saveConfig", "writing config '%s': %v\n", configFile, err.Error())
-		return
+	// check if the seed list needs an update
+	if backend.Config.SeedListVersion < configD.SeedListVersion {
+		backend.Config.SeedList = configD.SeedList
+		backend.Config.SeedListVersion = configD.SeedListVersion
+		backend.SaveConfig()
 	}
 }
 
 // InitLog redirects subsequent log messages into the default log file specified in the configuration
-func InitLog() (err error) {
+func (backend *Backend) initLog() (err error) {
 	// create the directory to the log file if specified
-	if directory, _ := path.Split(config.LogFile); directory != "" {
+	if directory, _ := path.Split(backend.Config.LogFile); directory != "" {
 		os.MkdirAll(directory, os.ModePerm)
 	}
 
-	logFile, err := os.OpenFile(config.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666) // 666 : All uses can read/write
+	logFile, err := os.OpenFile(backend.Config.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666) // 666 : All uses can read/write
 	if err != nil {
 		return err
 	}
@@ -147,18 +138,4 @@ func InitLog() (err error) {
 	log.Printf("---- Peernet Command-Line Client " + Version + " ----\n")
 
 	return nil
-}
-
-func configUpdateSeedList() {
-	// parse the embedded config
-	configD := config
-	if err := yaml.Unmarshal(defaultConfig, &configD); err != nil {
-		return
-	}
-
-	if config.SeedListVersion < configD.SeedListVersion {
-		config.SeedList = configD.SeedList
-		config.SeedListVersion = configD.SeedListVersion
-		saveConfig()
-	}
 }

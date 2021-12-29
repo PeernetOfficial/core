@@ -2,7 +2,7 @@
 
 The core library which is needed for any Peernet application. It provides connectivity to the network and all basic functions. For details about Peernet see https://peernet.org/.
 
-Current version: Alpha 5
+Current version: Alpha 6
 
 ## Use
 
@@ -11,25 +11,21 @@ package main
 
 import (
     "fmt"
-    "os"
 
     "github.com/PeernetOfficial/core"
 )
 
-func init() {
-    if status, err := core.LoadConfig("Config.yaml"); err != nil {
-        fmt.Printf("Error loading config file: %s", err.Error())
-        os.Exit(core.ExitErrorConfigAccess)
+func main() {
+  	backend, status, err := core.Init("Your application/1.0", "Config.yaml", nil)
+    if status != core.ExitSuccess {
+        fmt.Printf("Error %d initializing backend: %s\n", status, err.Error())
+        return
     }
 
-    core.InitLog()
-    core.Init("Your application/1.0")
-}
+    backend.Connect()
 
-func main() {
-    core.Connect()
-
-    // use functions from core package, for example to find and download files
+    // Use the backend functions for example to search for files or download them.
+    // The webapi package exports some high-level functions that can be used directly (without calling the HTTP API).
 }
 ```
 

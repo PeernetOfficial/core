@@ -31,33 +31,33 @@ type networkWire struct {
 }
 
 // initNetwork sets up the network configuration and starts listening.
-func initNetwork() {
+func (backend *Backend) initNetwork() {
 	rand.Seed(time.Now().UnixNano()) // we are not using "crypto/rand" for speed tradeoff
 
 	// start listen workers
-	if config.ListenWorkers == 0 {
-		config.ListenWorkers = 2
+	if backend.Config.ListenWorkers == 0 {
+		backend.Config.ListenWorkers = 2
 	}
-	for n := 0; n < config.ListenWorkers; n++ {
-		go networks.packetWorker()
+	for n := 0; n < backend.Config.ListenWorkers; n++ {
+		go backend.networks.packetWorker()
 	}
 
 	// check if user specified where to listen
-	if len(config.Listen) > 0 {
-		for _, listenA := range config.Listen {
+	if len(backend.Config.Listen) > 0 {
+		for _, listenA := range backend.Config.Listen {
 			host, portA, err := net.SplitHostPort(listenA)
 			if err != nil && strings.Contains(err.Error(), "missing port in address") { // port is optional
 				host = listenA
 				portA = "0"
 			} else if err != nil {
-				Filters.LogError("initNetwork", "invalid input listen address '%s': %s\n", listenA, err.Error())
+				backend.Filters.LogError("initNetwork", "invalid input listen address '%s': %s\n", listenA, err.Error())
 				continue
 			}
 
 			portI, _ := strconv.Atoi(portA)
 
-			if _, err := networks.PrepareListen(host, portI); err != nil {
-				Filters.LogError("initNetwork", "listen on '%s': %s\n", listenA, err.Error())
+			if _, err := backend.networks.PrepareListen(host, portI); err != nil {
+				backend.Filters.LogError("initNetwork", "listen on '%s': %s\n", listenA, err.Error())
 				continue
 			}
 		}
@@ -79,20 +79,20 @@ func initNetwork() {
 	// * Network adapters and IPs might change. Simplest case is if someone changes Wifi network.
 	interfaceList, err := net.Interfaces()
 	if err != nil {
-		Filters.LogError("initNetwork", "enumerating network adapters failed: %s\n", err.Error())
+		backend.Filters.LogError("initNetwork", "enumerating network adapters failed: %s\n", err.Error())
 		return
 	}
 
 	for _, iface := range interfaceList {
 		addresses, err := iface.Addrs()
 		if err != nil {
-			Filters.LogError("initNetwork", "enumerating IPs for network adapter '%s': %s\n", iface.Name, err.Error())
+			backend.Filters.LogError("initNetwork", "enumerating IPs for network adapter '%s': %s\n", iface.Name, err.Error())
 			continue
 		}
 
-		networks.ipListen.ifacesExist[iface.Name] = addresses
+		backend.networks.ipListen.ifacesExist[iface.Name] = addresses
 
-		networks.InterfaceStart(iface, addresses)
+		backend.networks.InterfaceStart(iface, addresses)
 	}
 }
 
@@ -116,13 +116,13 @@ func (nets *Networks) InterfaceStart(iface net.Interface, addresses []net.Addr) 
 				continue
 			}
 
-			Filters.LogError("networks.InterfaceStart", "listening on network adapter '%s' IPv4 '%s': %s\n", iface.Name, net1.IP.String(), err.Error())
+			nets.backend.Filters.LogError("networks.InterfaceStart", "listening on network adapter '%s' IPv4 '%s': %s\n", iface.Name, net1.IP.String(), err.Error())
 			continue
 		}
 
 		nets.ipListen.Add(networkNew.address)
 
-		Filters.LogError("networks.InterfaceStart", "listen on network '%s' UDP %s\n", iface.Name, networkNew.address.String())
+		nets.backend.Filters.LogError("networks.InterfaceStart", "listen on network '%s' UDP %s\n", iface.Name, networkNew.address.String())
 
 		networksNew = append(networksNew, networkNew)
 	}
@@ -137,7 +137,7 @@ func (nets *Networks) PrepareListen(ipA string, port int) (network *Network, err
 		return nil, errors.New("invalid input IP")
 	}
 
-	network = &Network{networkGroup: nets}
+	network = &Network{backend: nets.backend, networkGroup: nets}
 	network.terminateSignal = make(chan interface{})
 
 	// get the network interface that belongs to the IP

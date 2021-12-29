@@ -56,7 +56,7 @@ func (network *Network) MulticastIPv6Join() (err error) {
 	// listen on a special socket
 	network.multicastSocket, err = reuseport.ListenPacket("udp6", net.JoinHostPort(network.address.IP.String(), strconv.Itoa(ipv6MulticastPort)))
 	if err != nil {
-		Filters.LogError("MulticastIPv6Join", "multicast socket listen on IP '%s' port '%d': %v\n", network.address.IP.String(), ipv6MulticastPort, err)
+		network.backend.Filters.LogError("MulticastIPv6Join", "multicast socket listen on IP '%s' port '%d': %v\n", network.address.IP.String(), ipv6MulticastPort, err)
 		return err
 	}
 
@@ -70,7 +70,7 @@ func (network *Network) MulticastIPv6Join() (err error) {
 		// receive messages from self or other processes running on the same computer
 		if loop, err := pc.MulticastLoopback(); err == nil && !loop {
 			if err := pc.SetMulticastLoopback(true); err != nil {
-				Filters.LogError("MulticastIPv6Join", "setting multicast loopback status: %v\n", err)
+				network.backend.Filters.LogError("MulticastIPv6Join", "setting multicast loopback status: %v\n", err)
 			}
 		}
 
@@ -108,8 +108,8 @@ func (network *Network) MulticastIPv6Listen() {
 		length, sender, err := network.multicastSocket.ReadFrom(buffer)
 
 		if err != nil {
-			Filters.LogError("MulticastIPv6Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
-			time.Sleep(time.Millisecond * 50)                                           // In case of endless errors, prevent ddos of CPU.
+			network.backend.Filters.LogError("MulticastIPv6Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
+			time.Sleep(time.Millisecond * 50)                                                           // In case of endless errors, prevent ddos of CPU.
 			continue
 		}
 
@@ -137,13 +137,13 @@ func (network *Network) MulticastIPv6Listen() {
 
 // MulticastIPv6Send sends out a single multicast messages to discover peers at the same site
 func (network *Network) MulticastIPv6Send() (err error) {
-	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets := protocol.EncodeAnnouncement(true, true, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion, userAgent)
+	_, blockchainHeight, blockchainVersion := network.backend.UserBlockchain.Header()
+	packets := protocol.EncodeAnnouncement(true, true, nil, nil, nil, network.backend.FeatureSupport(), blockchainHeight, blockchainVersion, network.backend.userAgent)
 	if len(packets) == 0 {
 		return errors.New("error encoding multicast announcement")
 	}
 
-	raw, err := protocol.PacketEncrypt(peerPrivateKey, ipv6MulticastPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: packets[0]})
+	raw, err := protocol.PacketEncrypt(network.backend.peerPrivateKey, ipv6MulticastPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: packets[0]})
 	if err != nil {
 		return err
 	}

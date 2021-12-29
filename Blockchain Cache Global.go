@@ -24,35 +24,35 @@ type BlockchainCache struct {
 
 	store    *blockchain.MultiStore
 	peerLock *locker.Locker
+
+	backend *Backend
 }
 
-func initBlockchainCache(BlockchainDirectory string, MaxBlockSize, MaxBlockCount, LimitTotalRecords uint64) (cache *BlockchainCache) {
-	if BlockchainDirectory == "" {
-		return nil
+func (backend *Backend) initBlockchainCache() {
+	if backend.Config.BlockchainGlobal == "" {
+		return
+	}
+
+	backend.GlobalBlockchainCache = &BlockchainCache{
+		backend:             backend,
+		BlockchainDirectory: backend.Config.BlockchainGlobal,
+		MaxBlockSize:        backend.Config.CacheMaxBlockSize,
+		MaxBlockCount:       backend.Config.CacheMaxBlockCount,
+		LimitTotalRecords:   backend.Config.LimitTotalRecords,
 	}
 
 	var err error
-
-	cache = &BlockchainCache{
-		BlockchainDirectory: BlockchainDirectory,
-		MaxBlockSize:        MaxBlockSize,
-		MaxBlockCount:       MaxBlockCount,
-		LimitTotalRecords:   LimitTotalRecords,
-	}
-
-	cache.store, err = blockchain.InitMultiStore(BlockchainDirectory)
+	backend.GlobalBlockchainCache.store, err = blockchain.InitMultiStore(backend.Config.BlockchainGlobal)
 	if err != nil {
-		Filters.LogError("initBlockchainCache", "initializing database '%s': %s", BlockchainDirectory, err.Error())
-		return nil
+		backend.Filters.LogError("initBlockchainCache", "initializing database '%s': %s", backend.Config.BlockchainGlobal, err.Error())
+		return
 	}
 
-	cache.peerLock = locker.Initialize()
+	backend.GlobalBlockchainCache.peerLock = locker.Initialize()
 
-	if LimitTotalRecords > 0 && cache.store.Database.Count() >= LimitTotalRecords {
-		cache.ReadOnly = true
+	if backend.Config.LimitTotalRecords > 0 && backend.GlobalBlockchainCache.store.Database.Count() >= backend.Config.LimitTotalRecords {
+		backend.GlobalBlockchainCache.ReadOnly = true
 	}
-
-	return cache
 }
 
 // SeenBlockchainVersion shall be called with information about another peer's blockchain.
@@ -76,7 +76,7 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 			cache.store.WriteBlock(peer.PublicKey, peer.BlockchainVersion, targetBlock.Offset, data)
 			header.ListBlocks = append(header.ListBlocks, targetBlock.Offset)
 
-			currentBackend.SearchIndex.IndexNewBlock(peer.PublicKey, peer.BlockchainVersion, targetBlock.Offset, data)
+			cache.backend.SearchIndex.IndexNewBlock(peer.PublicKey, peer.BlockchainVersion, targetBlock.Offset, data)
 		})
 
 		// only update the blockchain header if it changed
@@ -98,7 +98,7 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 	case blockchain.MultiStatusInvalidRemote:
 		cache.store.DeleteBlockchain(peer.PublicKey, header)
 
-		currentBackend.SearchIndex.UnindexBlockchain(peer.PublicKey)
+		cache.backend.SearchIndex.UnindexBlockchain(peer.PublicKey)
 
 	case blockchain.MultiStatusHeaderNA:
 		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
@@ -111,7 +111,7 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 		// delete existing data first, then create it new
 		cache.store.DeleteBlockchain(peer.PublicKey, header)
 
-		currentBackend.SearchIndex.UnindexBlockchain(peer.PublicKey)
+		cache.backend.SearchIndex.UnindexBlockchain(peer.PublicKey)
 
 		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
 			return
@@ -138,12 +138,12 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 // It will use the blockchain version and height to update the data lake as appropriate.
 // This function is called in the Go routine of the packet worker and therefore must not stall.
 func (peer *PeerInfo) remoteBlockchainUpdate() {
-	if currentBackend.GlobalBlockchainCache == nil || currentBackend.GlobalBlockchainCache.ReadOnly || peer.BlockchainVersion == 0 && peer.BlockchainHeight == 0 {
+	if peer.Backend.GlobalBlockchainCache == nil || peer.Backend.GlobalBlockchainCache.ReadOnly || peer.BlockchainVersion == 0 && peer.BlockchainHeight == 0 {
 		return
 	}
 
 	// TODO: This entire function should be instead a non-blocking message via a buffer channel.
-	go currentBackend.GlobalBlockchainCache.SeenBlockchainVersion(peer)
+	go peer.Backend.GlobalBlockchainCache.SeenBlockchainVersion(peer)
 }
 
 func (cache *BlockchainCache) ReadFile(PublicKey *btcec.PublicKey, Version, BlockNumber uint64, FileID uuid.UUID) (file blockchain.BlockRecordFile, raw []byte, found bool, err error) {
@@ -164,14 +164,14 @@ func (cache *BlockchainCache) ReadFile(PublicKey *btcec.PublicKey, Version, Bloc
 // ReadBlock reads a block and decodes the records.
 func (cache *BlockchainCache) ReadBlock(PublicKey *btcec.PublicKey, Version, BlockNumber uint64) (decoded *blockchain.BlockDecoded, raw []byte, found bool, err error) {
 	// requesting a block from the user's blockchain?
-	if PublicKey.IsEqual(peerPublicKey) {
-		_, _, version := UserBlockchain.Header()
+	if PublicKey.IsEqual(cache.backend.peerPublicKey) {
+		_, _, version := cache.backend.UserBlockchain.Header()
 		if Version != version {
 			return nil, nil, false, nil
 		}
 
 		var status int
-		raw, status, err = UserBlockchain.GetBlockRaw(BlockNumber)
+		raw, status, err = cache.backend.UserBlockchain.GetBlockRaw(BlockNumber)
 		if err != nil || status != blockchain.StatusOK {
 			return nil, raw, false, err
 		}

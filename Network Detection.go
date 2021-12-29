@@ -95,7 +95,7 @@ const changeMonitorFrequency = 10
 // networkChangeMonitor() monitors for network changes to act accordingly
 func (nets *Networks) networkChangeMonitor() {
 	// If manual IPs are entered, no need for monitoring for any network changes.
-	if len(config.Listen) > 0 {
+	if len(nets.backend.Config.Listen) > 0 {
 		return
 	}
 
@@ -104,7 +104,7 @@ func (nets *Networks) networkChangeMonitor() {
 
 		interfaceList, err := net.Interfaces()
 		if err != nil {
-			Filters.LogError("networkChangeMonitor", "enumerating network adapters failed: %s\n", err.Error())
+			nets.backend.Filters.LogError("networkChangeMonitor", "enumerating network adapters failed: %s\n", err.Error())
 			continue
 		}
 
@@ -113,7 +113,7 @@ func (nets *Networks) networkChangeMonitor() {
 		for _, iface := range interfaceList {
 			addressesNew, err := iface.Addrs()
 			if err != nil {
-				Filters.LogError("networkChangeMonitor", "enumerating IPs for network adapter '%s': %s\n", iface.Name, err.Error())
+				nets.backend.Filters.LogError("networkChangeMonitor", "enumerating IPs for network adapter '%s': %s\n", iface.Name, err.Error())
 				continue
 			}
 			ifacesNew[iface.Name] = addressesNew
@@ -168,7 +168,7 @@ func (nets *Networks) networkChangeMonitor() {
 
 // networkChangeInterfaceNew is called when a new interface is detected
 func (nets *Networks) networkChangeInterfaceNew(iface net.Interface, addresses []net.Addr) {
-	Filters.LogError("networkChangeInterfaceNew", "new interface '%s' (%d IPs)\n", iface.Name, len(addresses))
+	nets.backend.Filters.LogError("networkChangeInterfaceNew", "new interface '%s' (%d IPs)\n", iface.Name, len(addresses))
 
 	networksNew := nets.InterfaceStart(iface, addresses)
 
@@ -176,7 +176,7 @@ func (nets *Networks) networkChangeInterfaceNew(iface net.Interface, addresses [
 		go network.upnpAuto()
 	}
 
-	go nodesDHT.RefreshBuckets(0)
+	go nets.backend.nodesDHT.RefreshBuckets(0)
 }
 
 // networkChangeInterfaceRemove is called when an existing interface is removed
@@ -184,7 +184,7 @@ func (nets *Networks) networkChangeInterfaceRemove(iface string, addresses []net
 	nets.RLock()
 	defer nets.RUnlock()
 
-	Filters.LogError("networkChangeInterfaceRemove", "removing interface '%s' (%d IPs)\n", iface, len(addresses))
+	nets.backend.Filters.LogError("networkChangeInterfaceRemove", "removing interface '%s' (%d IPs)\n", iface, len(addresses))
 
 	for n, network := range nets.networks6 {
 		if network.iface != nil && network.iface.Name == iface {
@@ -215,7 +215,7 @@ func (nets *Networks) networkChangeInterfaceRemove(iface string, addresses []net
 
 // networkChangeIPNew is called when an existing interface lists a new IP
 func (nets *Networks) networkChangeIPNew(iface net.Interface, address net.Addr) {
-	Filters.LogError("networkChangeIPNew", "new interface '%s' IP %s\n", iface.Name, address.String())
+	nets.backend.Filters.LogError("networkChangeIPNew", "new interface '%s' IP %s\n", iface.Name, address.String())
 
 	networksNew := nets.InterfaceStart(iface, []net.Addr{address})
 
@@ -223,7 +223,7 @@ func (nets *Networks) networkChangeIPNew(iface net.Interface, address net.Addr) 
 		go network.upnpAuto()
 	}
 
-	go nodesDHT.RefreshBuckets(0)
+	go nets.backend.nodesDHT.RefreshBuckets(0)
 }
 
 // networkChangeIPRemove is called when an existing interface removes an IP
@@ -231,7 +231,7 @@ func (nets *Networks) networkChangeIPRemove(iface net.Interface, address net.Add
 	nets.RLock()
 	defer nets.RUnlock()
 
-	Filters.LogError("networkChangeIPRemove", "remove interface '%s' IP %s\n", iface.Name, address.String())
+	nets.backend.Filters.LogError("networkChangeIPRemove", "remove interface '%s' IP %s\n", iface.Name, address.String())
 
 	for n, network := range nets.networks6 {
 		if network.address.IP.Equal(address.(*net.IPNet).IP) {

@@ -34,7 +34,7 @@ Response:   200 with the content
             404 if the file was not found or other error on transfer initiate
             502 if unable to find or connect to the remote peer in time
 */
-func apiFileRead(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiFileRead(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	var err error
 
@@ -69,7 +69,7 @@ func apiFileRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Is the file available in the local warehouse? In that case requesting it from the remote is unnecessary.
-	if serveFileFromWarehouse(w, fileHash, uint64(offset), uint64(limit), ranges) {
+	if serveFileFromWarehouse(api.backend, w, fileHash, uint64(offset), uint64(limit), ranges) {
 		return
 	}
 
@@ -77,9 +77,9 @@ func apiFileRead(w http.ResponseWriter, r *http.Request) {
 	var peer *core.PeerInfo
 
 	if valid2 {
-		peer, err = PeerConnectNode(nodeID, timeout)
+		peer, err = PeerConnectNode(api.backend, nodeID, timeout)
 	} else if err3 == nil {
-		peer, err = PeerConnectPublicKey(publicKey, timeout)
+		peer, err = PeerConnectPublicKey(api.backend, publicKey, timeout)
 	}
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
@@ -105,9 +105,9 @@ func apiFileRead(w http.ResponseWriter, r *http.Request) {
 
 // serveFileFromWarehouse serves the file from the warehouse. If it is not available, it returns false and does not use the writer.
 // Limit is optional, 0 means the entire file.
-func serveFileFromWarehouse(w http.ResponseWriter, fileHash []byte, offset, limit uint64, ranges []HTTPRange) (valid bool) {
+func serveFileFromWarehouse(backend *core.Backend, w http.ResponseWriter, fileHash []byte, offset, limit uint64, ranges []HTTPRange) (valid bool) {
 	// Check if the file is available in the local warehouse.
-	_, fileInfo, status, _ := core.UserWarehouse.FileExists(fileHash)
+	_, fileInfo, status, _ := backend.UserWarehouse.FileExists(fileHash)
 	if status != warehouse.StatusOK {
 		return false
 	}
@@ -126,7 +126,7 @@ func serveFileFromWarehouse(w http.ResponseWriter, fileHash []byte, offset, limi
 
 	setContentLengthRangeHeader(w, offset, limit, uint64(fileInfo.Size()), ranges)
 
-	status, _, _ = core.UserWarehouse.ReadFile(fileHash, int64(offset), int64(limit), w)
+	status, _, _ = backend.UserWarehouse.ReadFile(fileHash, int64(offset), int64(limit), w)
 
 	// StatusErrorReadFile must be considered success, since parts of the file may have been transferred already and recovery is not possible.
 	return status == warehouse.StatusErrorReadFile || status == warehouse.StatusOK
@@ -148,7 +148,7 @@ Response:   200 with the content
             404 if the file was not found or other error on transfer initiate
             502 if unable to find or connect to the remote peer in time
 */
-func apiFileView(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiFileView(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	var err error
 
@@ -194,7 +194,7 @@ func apiFileView(w http.ResponseWriter, r *http.Request) {
 
 	// Is the file available in the local warehouse? In that case requesting it from the remote is unnecessary.
 	if !localCacheDisable {
-		if serveFileFromWarehouse(w, fileHash, uint64(offset), uint64(limit), ranges) {
+		if serveFileFromWarehouse(api.backend, w, fileHash, uint64(offset), uint64(limit), ranges) {
 			return
 		}
 	}
@@ -203,9 +203,9 @@ func apiFileView(w http.ResponseWriter, r *http.Request) {
 	var peer *core.PeerInfo
 
 	if valid2 {
-		peer, err = PeerConnectNode(nodeID, timeout)
+		peer, err = PeerConnectNode(api.backend, nodeID, timeout)
 	} else if err3 == nil {
-		peer, err = PeerConnectPublicKey(publicKey, timeout)
+		peer, err = PeerConnectPublicKey(api.backend, publicKey, timeout)
 	}
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
@@ -230,19 +230,19 @@ func apiFileView(w http.ResponseWriter, r *http.Request) {
 }
 
 // PeerConnectPublicKey attempts to connect to the peer specified by its public key (= peer ID).
-func PeerConnectPublicKey(publicKey *btcec.PublicKey, timeout time.Duration) (peer *core.PeerInfo, err error) {
+func PeerConnectPublicKey(backend *core.Backend, publicKey *btcec.PublicKey, timeout time.Duration) (peer *core.PeerInfo, err error) {
 	if publicKey == nil {
 		return nil, errors.New("invalid public key")
 	}
 
 	// First look up in the peer list.
-	if peer = core.PeerlistLookup(publicKey); peer != nil {
+	if peer = backend.PeerlistLookup(publicKey); peer != nil {
 		return peer, nil
 	}
 
 	// Try to connect via DHT.
 	nodeID := protocol.PublicKey2NodeID(publicKey)
-	if _, peer, _ = core.FindNode(nodeID, timeout); peer != nil {
+	if _, peer, _ = backend.FindNode(nodeID, timeout); peer != nil {
 		return peer, nil
 	}
 
@@ -251,13 +251,13 @@ func PeerConnectPublicKey(publicKey *btcec.PublicKey, timeout time.Duration) (pe
 }
 
 // PeerConnectNode tries to connect via the node ID
-func PeerConnectNode(nodeID []byte, timeout time.Duration) (peer *core.PeerInfo, err error) {
+func PeerConnectNode(backend *core.Backend, nodeID []byte, timeout time.Duration) (peer *core.PeerInfo, err error) {
 	if len(nodeID) == 256/8 {
 		return nil, errors.New("invalid node ID")
 	}
 
 	// Try to connect via DHT.
-	if _, peer, _ = core.FindNode(nodeID, timeout); peer != nil {
+	if _, peer, _ = backend.FindNode(nodeID, timeout); peer != nil {
 		return peer, nil
 	}
 

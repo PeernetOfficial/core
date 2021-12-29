@@ -107,7 +107,7 @@ func (v *virtualPacketConn) sequenceTerminate() {
 // Do not call the function manually; otherwise the underlying transfer protocol may not have time to send a termination message (and the remote peer would subsequently try to reconnect).
 // Rather, use the underlying transfer protocol's close function.
 func (v *virtualPacketConn) Close(reason int) (err error) {
-	networks.Sequences.InvalidateSequence(v.peer.PublicKey, v.sequenceNumber, true)
+	v.peer.Backend.networks.Sequences.InvalidateSequence(v.peer.PublicKey, v.sequenceNumber, true)
 	return v.Terminate(reason)
 }
 

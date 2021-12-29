@@ -31,6 +31,7 @@ type Connection struct {
 	RoundTripTime time.Duration // Full round-trip time of last reply.
 	Firewall      bool          // Whether the remote peer indicates a potential firewall. This means a Traverse message shall be sent to establish a connection.
 	traversePeer  *PeerInfo     // Temporary peer that may act as proxy for a Traverse message used for the first packet. This is used to establish this Connection to a peer that is behind a NAT or firewall.
+	backend       *Backend
 }
 
 // Connection status
@@ -190,7 +191,7 @@ func (peer *PeerInfo) registerConnection(incoming *Connection) (result *Connecti
 	peer.connectionActive = append(peer.connectionActive, incoming)
 	peer.setConnectionLatest(incoming)
 
-	Filters.NewPeerConnection(peer, incoming)
+	peer.Backend.Filters.NewPeerConnection(peer, incoming)
 
 	return incoming
 }
@@ -343,9 +344,9 @@ func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey *btcec.P
 	packet.Protocol = protocol.ProtocolVersion
 	packet.SetSelfReportedPorts(c.Network.SelfReportedPorts())
 
-	Filters.PacketOut(packet, receiverPublicKey, c)
+	c.backend.Filters.PacketOut(packet, receiverPublicKey, c)
 
-	raw, err := protocol.PacketEncrypt(peerPrivateKey, receiverPublicKey, packet)
+	raw, err := protocol.PacketEncrypt(c.backend.peerPrivateKey, receiverPublicKey, packet)
 	if err != nil {
 		return err
 	}
@@ -366,7 +367,7 @@ func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey *btcec.P
 func (peer *PeerInfo) send(packet *protocol.PacketRaw) (err error) {
 	if peer.isVirtual { // special case for peers that were not contacted before
 		for _, address := range peer.targetAddresses {
-			networks.sendAllNetworks(peer.PublicKey, packet, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, peer.Features&(1<<protocol.FeatureFirewall) > 0, peer.traversePeer, nil)
+			peer.Backend.networks.sendAllNetworks(peer.PublicKey, packet, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, peer.Features&(1<<protocol.FeatureFirewall) > 0, peer.traversePeer, nil)
 		}
 		return
 	}
@@ -443,7 +444,7 @@ func (nets *Networks) sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet
 		if sequenceData != nil {
 			packet.Sequence = nets.Sequences.ArbitrarySequence(receiverPublicKey, sequenceData).SequenceNumber
 		}
-		err = (&Connection{Network: network, Address: remote, PortInternal: receiverPortInternal, traversePeer: traversePeer, Firewall: receiverFirewall}).send(packet, receiverPublicKey, isFirstPacket)
+		err = (&Connection{backend: nets.backend, Network: network, Address: remote, PortInternal: receiverPortInternal, traversePeer: traversePeer, Firewall: receiverFirewall}).send(packet, receiverPublicKey, isFirstPacket)
 		isFirstPacket = false
 
 		if err == nil {

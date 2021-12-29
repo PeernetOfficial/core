@@ -29,33 +29,34 @@ type rootPeer struct {
 	peer      *PeerInfo        // loaded PeerInfo
 	publicKey *btcec.PublicKey // Public key
 	addresses []*net.UDPAddr   // IP:Port addresses
+	backend   *Backend
 }
 
 var rootPeers map[[btcec.PubKeyBytesLenCompressed]byte]*rootPeer
 
 // initSeedList loads the seed list from the config
 // Note: This should be called before any network listening function so that incoming root peers are properly recognized.
-func initSeedList() {
+func (backend *Backend) initSeedList() {
 	rootPeers = make(map[[btcec.PubKeyBytesLenCompressed]byte]*rootPeer)
 	recentContacts = make(map[[btcec.PubKeyBytesLenCompressed]byte]*recentContactInfo)
 
 loopSeedList:
-	for _, seed := range config.SeedList {
-		peer := &rootPeer{}
+	for _, seed := range backend.Config.SeedList {
+		peer := &rootPeer{backend: backend}
 
 		// parse the Public Key
 		publicKeyB, err := hex.DecodeString(seed.PublicKey)
 		if err != nil {
-			Filters.LogError("initSeedList", "public key '%s': %v\n", seed.PublicKey, err.Error())
+			backend.Filters.LogError("initSeedList", "public key '%s': %v\n", seed.PublicKey, err.Error())
 			continue
 		}
 
 		if peer.publicKey, err = btcec.ParsePubKey(publicKeyB, btcec.S256()); err != nil {
-			Filters.LogError("initSeedList", "public key '%s': %v\n", seed.PublicKey, err.Error())
+			backend.Filters.LogError("initSeedList", "public key '%s': %v\n", seed.PublicKey, err.Error())
 			continue
 		}
 
-		if peer.publicKey.IsEqual(peerPublicKey) { // skip if self
+		if peer.publicKey.IsEqual(backend.peerPublicKey) { // skip if self
 			continue
 		}
 
@@ -63,7 +64,7 @@ loopSeedList:
 		for _, addressA := range seed.Address {
 			address, err := parseAddress(addressA)
 			if err != nil {
-				Filters.LogError("initSeedList", "public key '%s' address '%s': %v\n", seed.PublicKey, addressA, err.Error())
+				backend.Filters.LogError("initSeedList", "public key '%s' address '%s': %v\n", seed.PublicKey, addressA, err.Error())
 				continue loopSeedList
 			}
 
@@ -99,22 +100,22 @@ func parseAddress(Address string) (remote *net.UDPAddr, err error) {
 // contact tries to contact the root peer on all networks
 func (peer *rootPeer) contact() {
 	// If already in peer list, no need to contact.
-	if PeerlistLookup(peer.publicKey) != nil {
+	if peer.backend.PeerlistLookup(peer.publicKey) != nil {
 		return
 	}
 
 	for _, address := range peer.addresses {
 		// Port internal is always set to 0 for root peers. It disables NAT detection and will not send out a Traverse message.
-		contactArbitraryPeer(peer.publicKey, address, 0, false)
+		peer.backend.contactArbitraryPeer(peer.publicKey, address, 0, false)
 	}
 }
 
 // bootstrap connects to the initial set of peers.
-func bootstrap() {
+func (backend *Backend) bootstrap() {
 	go resetRecentContacts()
 
 	if len(rootPeers) == 0 {
-		Filters.LogError("bootstrap", "warning: Empty list of root peers. Connectivity relies on local peer discovery and incoming connections.\n")
+		backend.Filters.LogError("bootstrap", "warning: Empty list of root peers. Connectivity relies on local peer discovery and incoming connections.\n")
 		return
 	}
 
@@ -130,7 +131,7 @@ func bootstrap() {
 		for _, peer := range rootPeers {
 			if peer.peer != nil {
 				connectedCount++
-			} else if peer.peer = PeerlistLookup(peer.publicKey); peer.peer != nil {
+			} else if peer.peer = peer.backend.PeerlistLookup(peer.publicKey); peer.peer != nil {
 				connectedCount++
 			}
 		}
@@ -162,7 +163,7 @@ func bootstrap() {
 		}
 	}
 
-	Filters.LogError("bootstrap", "unable to connect to at least 2 root peers, aborting\n")
+	backend.Filters.LogError("bootstrap", "unable to connect to at least 2 root peers, aborting\n")
 }
 
 func (nets *Networks) autoMulticastBroadcast() {
@@ -172,13 +173,13 @@ func (nets *Networks) autoMulticastBroadcast() {
 
 		for _, network := range nets.networks6 {
 			if err := network.MulticastIPv6Send(); err != nil {
-				Filters.LogError("autoMulticastBroadcast", "multicast from network address '%s': %v\n", network.address.IP.String(), err.Error())
+				nets.backend.Filters.LogError("autoMulticastBroadcast", "multicast from network address '%s': %v\n", network.address.IP.String(), err.Error())
 			}
 		}
 
 		for _, network := range nets.networks4 {
 			if err := network.BroadcastIPv4Send(); err != nil {
-				Filters.LogError("autoMulticastBroadcast", "broadcast from network address '%s': %v\n", network.address.IP.String(), err.Error())
+				nets.backend.Filters.LogError("autoMulticastBroadcast", "broadcast from network address '%s': %v\n", network.address.IP.String(), err.Error())
 			}
 		}
 	}
@@ -190,7 +191,7 @@ func (nets *Networks) autoMulticastBroadcast() {
 	for {
 		time.Sleep(time.Second * 10)
 
-		if PeerlistCount() >= 1 {
+		if nets.backend.PeerlistCount() >= 1 {
 			break
 		}
 
@@ -205,18 +206,18 @@ func (nets *Networks) autoMulticastBroadcast() {
 }
 
 // contactArbitraryPeer contacts a new arbitrary peer for the first time.
-func contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, receiverPortInternal uint16, receiverFirewall bool) (contacted bool) {
+func (backend *Backend) contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, receiverPortInternal uint16, receiverFirewall bool) (contacted bool) {
 	findSelf := ShouldSendFindSelf()
-	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets := protocol.EncodeAnnouncement(true, findSelf, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion, userAgent)
+	_, blockchainHeight, blockchainVersion := backend.UserBlockchain.Header()
+	packets := protocol.EncodeAnnouncement(true, findSelf, nil, nil, nil, backend.FeatureSupport(), blockchainHeight, blockchainVersion, backend.userAgent)
 	if len(packets) == 0 {
 		return false
 	}
 	raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packets[0]}
 
-	Filters.MessageOutAnnouncement(publicKey, nil, raw, findSelf, nil, nil, nil)
+	backend.Filters.MessageOutAnnouncement(publicKey, nil, raw, findSelf, nil, nil, nil)
 
-	networks.sendAllNetworks(publicKey, raw, address, receiverPortInternal, receiverFirewall, nil, &bootstrapFindSelf{})
+	backend.networks.sendAllNetworks(publicKey, raw, address, receiverPortInternal, receiverFirewall, nil, &bootstrapFindSelf{})
 
 	return true
 }
@@ -236,12 +237,12 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 	}
 
 	for _, closePeer := range closest {
-		if isReturnedPeerBadQuality(&closePeer) {
+		if peer.Backend.isReturnedPeerBadQuality(&closePeer) {
 			continue
 		}
 
 		// If the peer is already in the peer list, no need to contact it again.
-		if PeerlistLookup(closePeer.PublicKey) != nil {
+		if peer.Backend.PeerlistLookup(closePeer.PublicKey) != nil {
 			continue
 		}
 
@@ -258,7 +259,7 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 			}
 
 			// Initiate contact. Once a response comes back, the peer will be actually added to the peer list.
-			contactArbitraryPeer(closePeer.PublicKey, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, closePeer.Features&(1<<protocol.FeatureFirewall) > 0)
+			peer.Backend.contactArbitraryPeer(closePeer.PublicKey, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, closePeer.Features&(1<<protocol.FeatureFirewall) > 0)
 		}
 	}
 }
@@ -270,7 +271,7 @@ func ShouldSendFindSelf() bool {
 }
 
 // isReturnedPeerBadQuality checks if the returned peer record is bad quality and should be discarded
-func isReturnedPeerBadQuality(record *protocol.PeerRecord) bool {
+func (backend *Backend) isReturnedPeerBadQuality(record *protocol.PeerRecord) bool {
 	isIPv4 := record.IPv4 != nil && !record.IPv4.IsUnspecified()
 	isIPv6 := record.IPv6 != nil && !record.IPv6.IsUnspecified()
 
@@ -286,7 +287,7 @@ func isReturnedPeerBadQuality(record *protocol.PeerRecord) bool {
 	}
 
 	// Must not be self. There is no point that a remote peer would return self
-	if record.PublicKey.IsEqual(peerPublicKey) {
+	if record.PublicKey.IsEqual(backend.peerPublicKey) {
 		//fmt.Printf("IsReturnedPeerBadQuality received self peer\n")
 		return true
 	}

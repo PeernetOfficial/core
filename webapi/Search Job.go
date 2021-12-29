@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/PeernetOfficial/core"
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/google/uuid"
 )
@@ -29,6 +30,8 @@ type SearchFilter struct {
 
 // SearchJob is a collection of search jobs
 type SearchJob struct {
+	backend *core.Backend
+
 	// input settings
 	id        uuid.UUID     // The job id
 	timeout   time.Duration // timeout set for all searches
@@ -79,8 +82,8 @@ const (
 
 // CreateSearchJob creates a new search job and adds it to the lookup list.
 // Timeout and MaxResults must be set and must not be 0.
-func CreateSearchJob(Timeout time.Duration, MaxResults int, Filter SearchFilter) (job *SearchJob) {
-	job = &SearchJob{}
+func CreateSearchJob(Backend *core.Backend, Timeout time.Duration, MaxResults int, Filter SearchFilter) (job *SearchJob) {
+	job = &SearchJob{backend: Backend}
 	job.Status = SearchStatusNotStarted
 	job.id = uuid.New()
 	job.timeout = Timeout

@@ -10,8 +10,6 @@ import (
 	"encoding/hex"
 	"net/http"
 	"strconv"
-
-	"github.com/PeernetOfficial/core"
 )
 
 func apiTest(w http.ResponseWriter, r *http.Request) {
@@ -33,8 +31,8 @@ apiStatus returns the current connectivity status to the network
 Request:    GET /status
 Result:     200 with JSON structure Status
 */
-func apiStatus(w http.ResponseWriter, r *http.Request) {
-	status := apiResponseStatus{Status: 0, CountPeerList: core.PeerlistCount()}
+func (api *WebapiInstance) apiStatus(w http.ResponseWriter, r *http.Request) {
+	status := apiResponseStatus{Status: 0, CountPeerList: api.backend.PeerlistCount()}
 	status.CountNetwork = status.CountPeerList // For now always same as CountPeerList, until native Statistics message to root peers is available.
 
 	// Connected: If at leat 2 peers.
@@ -42,7 +40,7 @@ func apiStatus(w http.ResponseWriter, r *http.Request) {
 	// Instead, the core should keep a count of "active peers".
 	status.IsConnected = status.CountPeerList >= 2
 
-	EncodeJSON(w, r, status)
+	EncodeJSON(api.backend, w, r, status)
 }
 
 type apiResponsePeerSelf struct {
@@ -55,14 +53,14 @@ apiAccountInfo provides information about the current account.
 Request:    GET /account/info
 Result:     200 with JSON structure apiResponsePeerSelf
 */
-func apiAccountInfo(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiAccountInfo(w http.ResponseWriter, r *http.Request) {
 	response := apiResponsePeerSelf{}
-	response.NodeID = hex.EncodeToString(core.SelfNodeID())
+	response.NodeID = hex.EncodeToString(api.backend.SelfNodeID())
 
-	_, publicKey := core.ExportPrivateKey()
+	_, publicKey := api.backend.ExportPrivateKey()
 	response.PeerID = hex.EncodeToString(publicKey.SerializeCompressed())
 
-	EncodeJSON(w, r, response)
+	EncodeJSON(api.backend, w, r, response)
 }
 
 /*
@@ -71,14 +69,14 @@ Request:    GET /account/delete?confirm=[0 or 1]
 Result:     204 if the user choses not to delete the account
             200 if successfully deleted
 */
-func apiAccountDelete(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiAccountDelete(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	if confirm, _ := strconv.ParseBool(r.Form.Get("confirm")); !confirm {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	core.DeleteAccount()
+	api.backend.DeleteAccount()
 
 	w.WriteHeader(http.StatusOK)
 }

@@ -10,14 +10,11 @@ import (
 	"github.com/PeernetOfficial/core/warehouse"
 )
 
-// UserWarehouse is the user's warehouse for storing files that are shared
-var UserWarehouse *warehouse.Warehouse
-
-func initUserWarehouse() {
+func (backend *Backend) initUserWarehouse() {
 	var err error
-	UserWarehouse, err = warehouse.Init(config.WarehouseMain)
+	backend.UserWarehouse, err = warehouse.Init(backend.Config.WarehouseMain)
 
 	if err != nil {
-		Filters.LogError("initUserWarehouse", "error: %s\n", err.Error())
+		backend.Filters.LogError("initUserWarehouse", "error: %s\n", err.Error())
 	}
 }
