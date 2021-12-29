@@ -26,7 +26,7 @@ func (api *WebapiInstance) dispatchSearch(input SearchRequest) (job *SearchJob) 
 
 	go job.localSearch(api, input.Term)
 
-	job.RemoveDefer(job.timeout + time.Minute*10)
+	api.RemoveJobDefer(job, job.timeout+time.Minute*10)
 
 	return job
 }
@@ -55,10 +55,10 @@ resultLoop:
 			}
 		}
 
-		if bytes.Equal(file.NodeID, job.backend.SelfNodeID()) {
+		if bytes.Equal(file.NodeID, api.backend.SelfNodeID()) {
 			// Indicates data from the current user.
 			file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
-		} else if peer := job.backend.NodelistLookup(file.NodeID); peer != nil {
+		} else if peer := api.backend.NodelistLookup(file.NodeID); peer != nil {
 			// add the tags 'Shared By Count' and 'Shared By GeoIP'
 			file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
 			if latitude, longitude, valid := api.Peer2GeoIP(peer); valid {
