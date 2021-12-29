@@ -29,6 +29,10 @@ type WebapiInstance struct {
 	Router          *mux.Router
 	AllowKeyInParam []string // List of paths that accept the API key as &k= parameter
 
+	// search jobs
+	allJobs      map[uuid.UUID]*SearchJob
+	allJobsMutex sync.RWMutex
+
 	// download info
 	downloads      map[uuid.UUID]*downloadInfo
 	downloadsMutex sync.RWMutex
@@ -56,6 +60,7 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 		backend:         Backend,
 		Router:          mux.NewRouter(),
 		AllowKeyInParam: []string{"/file/read", "/file/view"},
+		allJobs:         make(map[uuid.UUID]*SearchJob),
 		downloads:       make(map[uuid.UUID]*downloadInfo),
 	}
 
