@@ -1,5 +1,5 @@
 # Locations of important files and folders
-LogFile:          "data/log.txt"                # Log file. It contains informational and error messages.
+LogFile:          "data/log backend.txt"        # Log file for the backend. It contains informational and error messages.
 BlockchainMain:   "data/blockchain main/"       # Blockchain main stores the end-users blockchain data. It contains meta data of shared files, profile data, and social interactions.
 BlockchainGlobal: "data/blockchain global/"     # Blockchain global caches blockchain data from global users. Empty to disable.
 WarehouseMain:    "data/warehouse main/"        # Warehouse main stores the actual data of files shared by the end-user.
