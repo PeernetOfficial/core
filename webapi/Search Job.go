@@ -31,6 +31,7 @@ type SearchFilter struct {
 // SearchJob is a collection of search jobs
 type SearchJob struct {
 	backend *core.Backend
+	api     *WebapiInstance
 
 	// input settings
 	id        uuid.UUID     // The job id
@@ -82,8 +83,8 @@ const (
 
 // CreateSearchJob creates a new search job and adds it to the lookup list.
 // Timeout and MaxResults must be set and must not be 0.
-func CreateSearchJob(Backend *core.Backend, Timeout time.Duration, MaxResults int, Filter SearchFilter) (job *SearchJob) {
-	job = &SearchJob{backend: Backend}
+func (api *WebapiInstance) CreateSearchJob(Timeout time.Duration, MaxResults int, Filter SearchFilter) (job *SearchJob) {
+	job = &SearchJob{backend: api.backend, api: api}
 	job.Status = SearchStatusNotStarted
 	job.id = uuid.New()
 	job.timeout = Timeout
@@ -96,9 +97,9 @@ func CreateSearchJob(Backend *core.Backend, Timeout time.Duration, MaxResults in
 	job.stats.fileFormat = make(map[uint16]int)
 
 	// add to the list of jobs
-	allJobsMutex.Lock()
-	allJobs[job.id] = job
-	allJobsMutex.Unlock()
+	api.allJobsMutex.Lock()
+	api.allJobs[job.id] = job
+	api.allJobsMutex.Unlock()
 
 	return
 }
@@ -318,16 +319,12 @@ func (job *SearchJob) isFileReceived(id uuid.UUID) (exists bool) {
 }
 
 // ---- job list management ----
-var (
-	allJobs      map[uuid.UUID]*SearchJob = make(map[uuid.UUID]*SearchJob)
-	allJobsMutex sync.RWMutex
-)
 
 // Remove removes the structure from the list. Terminate should be called before. Unless the search is manually removed, it stays forever in the list.
 func (job *SearchJob) Remove() {
-	allJobsMutex.Lock()
-	delete(allJobs, job.id) // delete is safe to call multiple times, so auto-removal and manual one are fine and need no syncing
-	allJobsMutex.Unlock()
+	job.api.allJobsMutex.Lock()
+	delete(job.api.allJobs, job.id) // delete is safe to call multiple times, so auto-removal and manual one are fine and need no syncing
+	job.api.allJobsMutex.Unlock()
 }
 
 // RemoveDefer removes the search job after a given time after all searches are terminated. This can be used for automated time delayed removal. Do not create additional search clients after deferal removing.
@@ -344,9 +341,9 @@ func (job *SearchJob) RemoveDefer(Duration time.Duration) {
 
 // JobLookup looks up a job. Returns nil if not found.
 func JobLookup(id uuid.UUID) (job *SearchJob) {
-	allJobsMutex.RLock()
-	job = allJobs[id]
-	allJobsMutex.RUnlock()
+	job.api.allJobsMutex.RLock()
+	job = job.api.allJobs[id]
+	job.api.allJobsMutex.RUnlock()
 
 	return job
 }

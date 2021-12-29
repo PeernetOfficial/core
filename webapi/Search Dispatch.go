@@ -19,7 +19,7 @@ func (api *WebapiInstance) dispatchSearch(input SearchRequest) (job *SearchJob) 
 	Filter := input.ToSearchFilter()
 
 	// create the search job
-	job = CreateSearchJob(api.backend, Timeout, input.MaxResults, Filter)
+	job = api.CreateSearchJob(Timeout, input.MaxResults, Filter)
 
 	// todo: create actual search clients!
 	job.Status = SearchStatusLive
