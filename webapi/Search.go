@@ -98,9 +98,9 @@ func (api *WebapiInstance) apiSearch(w http.ResponseWriter, r *http.Request) {
 
 	// Terminate previous searches, if their IDs were supplied. This allows terminating the old search immediately without making a separate /search/terminate request.
 	for _, terminate := range input.TerminateID {
-		if job := JobLookup(terminate); job != nil {
+		if job := api.JobLookup(terminate); job != nil {
 			job.Terminate()
-			job.Remove()
+			api.RemoveJob(job)
 		}
 	}
 
@@ -137,7 +137,7 @@ func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Reques
 	}
 
 	// find the job ID
-	job := JobLookup(jobID)
+	job := api.JobLookup(jobID)
 	if job == nil {
 		EncodeJSON(api.backend, w, r, SearchResult{Status: 2})
 		return
@@ -215,7 +215,7 @@ func (api *WebapiInstance) apiSearchResultStream(w http.ResponseWriter, r *http.
 	useLimit := err == nil
 
 	// look up the job
-	job := JobLookup(jobID)
+	job := api.JobLookup(jobID)
 	if job == nil {
 		EncodeJSON(api.backend, w, r, SearchResult{Status: 2})
 		return
@@ -299,7 +299,7 @@ func (api *WebapiInstance) apiSearchTerminate(w http.ResponseWriter, r *http.Req
 	}
 
 	// look up the job
-	job := JobLookup(jobID)
+	job := api.JobLookup(jobID)
 	if job == nil {
 		http.Error(w, "", http.StatusNotFound)
 		return
@@ -307,7 +307,7 @@ func (api *WebapiInstance) apiSearchTerminate(w http.ResponseWriter, r *http.Req
 
 	// terminate and remove it from the list
 	job.Terminate()
-	job.Remove()
+	api.RemoveJob(job)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -327,7 +327,7 @@ func (api *WebapiInstance) apiSearchStatistic(w http.ResponseWriter, r *http.Req
 	}
 
 	// find the job ID
-	job := JobLookup(jobID)
+	job := api.JobLookup(jobID)
 	if job == nil {
 		EncodeJSON(api.backend, w, r, SearchStatistic{Status: 2})
 		return

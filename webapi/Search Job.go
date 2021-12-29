@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PeernetOfficial/core"
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/google/uuid"
 )
@@ -30,9 +29,6 @@ type SearchFilter struct {
 
 // SearchJob is a collection of search jobs
 type SearchJob struct {
-	backend *core.Backend
-	api     *WebapiInstance
-
 	// input settings
 	id        uuid.UUID     // The job id
 	timeout   time.Duration // timeout set for all searches
@@ -84,7 +80,7 @@ const (
 // CreateSearchJob creates a new search job and adds it to the lookup list.
 // Timeout and MaxResults must be set and must not be 0.
 func (api *WebapiInstance) CreateSearchJob(Timeout time.Duration, MaxResults int, Filter SearchFilter) (job *SearchJob) {
-	job = &SearchJob{backend: api.backend, api: api}
+	job = &SearchJob{}
 	job.Status = SearchStatusNotStarted
 	job.id = uuid.New()
 	job.timeout = Timeout
@@ -320,30 +316,30 @@ func (job *SearchJob) isFileReceived(id uuid.UUID) (exists bool) {
 
 // ---- job list management ----
 
-// Remove removes the structure from the list. Terminate should be called before. Unless the search is manually removed, it stays forever in the list.
-func (job *SearchJob) Remove() {
-	job.api.allJobsMutex.Lock()
-	delete(job.api.allJobs, job.id) // delete is safe to call multiple times, so auto-removal and manual one are fine and need no syncing
-	job.api.allJobsMutex.Unlock()
+// RemoveJob removes the job structure from the list. Terminate should be called before. Unless the search is manually removed, it stays forever in the list.
+func (api *WebapiInstance) RemoveJob(job *SearchJob) {
+	api.allJobsMutex.Lock()
+	delete(api.allJobs, job.id) // delete is safe to call multiple times, so auto-removal and manual one are fine and need no syncing
+	api.allJobsMutex.Unlock()
 }
 
 // RemoveDefer removes the search job after a given time after all searches are terminated. This can be used for automated time delayed removal. Do not create additional search clients after deferal removing.
-func (job *SearchJob) RemoveDefer(Duration time.Duration) {
+func (api *WebapiInstance) RemoveJobDefer(job *SearchJob, Duration time.Duration) {
 	go func() {
 		// for _, client := range job.clients {
 		// 	<-client.TerminateSignal
 		// }
 
 		<-time.After(Duration)
-		job.Remove()
+		api.RemoveJob(job)
 	}()
 }
 
 // JobLookup looks up a job. Returns nil if not found.
-func JobLookup(id uuid.UUID) (job *SearchJob) {
-	job.api.allJobsMutex.RLock()
-	job = job.api.allJobs[id]
-	job.api.allJobsMutex.RUnlock()
+func (api *WebapiInstance) JobLookup(id uuid.UUID) (job *SearchJob) {
+	api.allJobsMutex.RLock()
+	job = api.allJobs[id]
+	api.allJobsMutex.RUnlock()
 
 	return job
 }
