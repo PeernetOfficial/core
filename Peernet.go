@@ -7,63 +7,105 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"sync"
+
+	"github.com/PeernetOfficial/core/blockchain"
+	"github.com/PeernetOfficial/core/btcec"
+	"github.com/PeernetOfficial/core/dht"
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/search"
+	"github.com/PeernetOfficial/core/store"
+	"github.com/PeernetOfficial/core/warehouse"
 )
 
-var userAgent = "Peernet Core/0.1" // must be overwritten by the caller
-
-// Init initializes the client. The config must be loaded first!
+// Init initializes the client. If the config file does not exist or is empty, a default one will be created.
 // The User Agent must be provided in the form "Application Name/1.0".
-func Init(UserAgent string) (backend *Backend) {
-	if userAgent = UserAgent; userAgent == "" {
+// The returned status is of type ExitX. Anything other than ExitSuccess indicates a fatal failure.
+func Init(UserAgent string, ConfigFilename string, Filters *Filters) (backend *Backend, status int, err error) {
+	if UserAgent == "" {
 		return
 	}
 
-	backend = &Backend{}
-	currentBackend = backend
+	backend = &Backend{
+		ConfigFilename: ConfigFilename,
+		userAgent:      UserAgent,
+	}
 
-	initFilters()
-	initPeerID()
-	initUserBlockchain()
-	initUserWarehouse()
-	initKademlia()
-	initMessageSequence()
-	initSeedList()
+	if Filters != nil {
+		backend.Filters = *Filters
+	}
+
+	// The configuration and log init are fatal events if they fail.
+	if status, err = LoadConfig(ConfigFilename, &backend.Config); status != ExitSuccess {
+		return nil, status, err
+	}
+
+	if err = backend.initLog(); err != nil {
+		return nil, ExitErrorLogInit, err
+	}
+
+	backend.initFilters()
+	backend.initPeerID()
+	backend.initUserBlockchain()
+	backend.initUserWarehouse()
+	backend.initKademlia()
+	backend.initMessageSequence()
+	backend.initSeedList()
 	initMulticastIPv6()
 	initBroadcastIPv4()
-	initStore()
-	initNetwork()
+	backend.initStore()
+	backend.initNetwork()
+	backend.initBlockchainCache()
 
-	var err error
-
-	backend.GlobalBlockchainCache = initBlockchainCache(config.BlockchainGlobal, config.CacheMaxBlockSize, config.CacheMaxBlockCount, config.LimitTotalRecords)
-
-	if backend.SearchIndex, err = search.InitSearchIndexStore(config.SearchIndex); err != nil {
-		Filters.LogError("Init", "search index '%s' init: %s", config.SearchIndex, err.Error())
+	if backend.SearchIndex, err = search.InitSearchIndexStore(backend.Config.SearchIndex); err != nil {
+		backend.Filters.LogError("Init", "search index '%s' init: %s", backend.Config.SearchIndex, err.Error())
 	} else {
 		backend.userBlockchainUpdateSearchIndex()
 	}
 
-	return backend
+	return backend, ExitSuccess, nil
 }
 
 // Connect starts bootstrapping and local peer discovery.
-func Connect() {
-	go bootstrapKademlia()
-	go bootstrap()
-	go networks.autoMulticastBroadcast()
-	go autoPingAll()
-	go networks.networkChangeMonitor()
-	go networks.startUPnP()
-	go autoBucketRefresh()
+func (backend *Backend) Connect() {
+	go backend.bootstrapKademlia()
+	go backend.bootstrap()
+	go backend.networks.autoMulticastBroadcast()
+	go backend.autoPingAll()
+	go backend.networks.networkChangeMonitor()
+	go backend.networks.startUPnP()
+	go backend.autoBucketRefresh()
 }
 
 // The Backend represents an instance of a Peernet client to be used by a frontend.
 // Global variables and init functions are to be merged.
 type Backend struct {
+	ConfigFilename        string                   // Filename of the configuration file.
+	Config                *Config                  // Config
+	Filters               Filters                  // Filters allow to install hooks.
+	userAgent             string                   // User Agent
 	GlobalBlockchainCache *BlockchainCache         // Caches blockchains of other peers.
 	SearchIndex           *search.SearchIndexStore // Search index of blockchain records.
-}
+	networks              *Networks                // All connected networks.
+	dhtStore              store.Store              // dhtStore contains all key-value data served via DHT
+	UserBlockchain        *blockchain.Blockchain   // UserBlockchain is the user's blockchain and exports functions to directly read and write it
+	UserWarehouse         *warehouse.Warehouse     // UserWarehouse is the user's warehouse for storing files that are shared
+	nodesDHT              *dht.DHT                 // Nodes connected in the DHT.
 
-// This variable is to be replaced later by pointers in structures.
-var currentBackend *Backend
+	// peerID is the current peer's ID. It is a ECDSA (secp256k1) 257-bit public key.
+	peerPrivateKey *btcec.PrivateKey
+	peerPublicKey  *btcec.PublicKey
+
+	// The node ID is the blake3 hash of the public key compressed form.
+	nodeID []byte
+
+	// peerList keeps track of all peers
+	peerList      map[[btcec.PubKeyBytesLenCompressed]byte]*PeerInfo
+	peerlistMutex sync.RWMutex
+
+	// nodeList is a mirror of peerList but using the node ID
+	nodeList map[[protocol.HashSize]byte]*PeerInfo
+
+	// peerMonitor is a list of channels receiving information about new peers
+	peerMonitor []chan<- *PeerInfo
+}

@@ -17,13 +17,11 @@ import (
 const alpha = 5       // Count of nodes to be contacted in parallel for finding a key
 const bucketSize = 20 // Count of nodes per bucket
 
-var nodesDHT *dht.DHT
-
-func initKademlia() {
-	nodesDHT = dht.NewDHT(&dht.Node{ID: nodeID}, 256, bucketSize, alpha)
+func (backend *Backend) initKademlia() {
+	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.nodeID}, 256, bucketSize, alpha)
 
 	// ShouldEvict determines whether node 1 shall be evicted in favor of node 2
-	nodesDHT.ShouldEvict = func(node1, node2 *dht.Node) bool {
+	backend.nodesDHT.ShouldEvict = func(node1, node2 *dht.Node) bool {
 		rttOld := node1.Info.(*PeerInfo).GetRTT()
 		rttNew := node2.Info.(*PeerInfo).GetRTT()
 
@@ -36,33 +34,33 @@ func initKademlia() {
 		}
 
 		// If here, none has a RTT. Keep the closer (by distance) one.
-		return nodesDHT.IsNodeCloser(node1.ID, node2.ID)
+		return backend.nodesDHT.IsNodeCloser(node1.ID, node2.ID)
 	}
 
 	// SendRequestStore sends a store message to the remote node. I.e. asking it to store the given key-value
-	nodesDHT.SendRequestStore = func(node *dht.Node, key []byte, dataSize uint64) {
+	backend.nodesDHT.SendRequestStore = func(node *dht.Node, key []byte, dataSize uint64) {
 		node.Info.(*PeerInfo).sendAnnouncementStore(key, dataSize)
 	}
 
 	// SendRequestFindNode sends an information request to find a particular node. nodes are the nodes to send the request to.
-	nodesDHT.SendRequestFindNode = func(request *dht.InformationRequest) {
+	backend.nodesDHT.SendRequestFindNode = func(request *dht.InformationRequest) {
 		for _, node := range request.Nodes {
 			node.Info.(*PeerInfo).sendAnnouncementFindNode(request)
 		}
 	}
 
 	// SendRequestFindValue sends an information request to find data. nodes are the nodes to send the request to.
-	nodesDHT.SendRequestFindValue = func(request *dht.InformationRequest) {
+	backend.nodesDHT.SendRequestFindValue = func(request *dht.InformationRequest) {
 		for _, node := range request.Nodes {
 			node.Info.(*PeerInfo).sendAnnouncementFindValue(request)
 		}
 	}
 
-	nodesDHT.FilterSearchStatus = Filters.DHTSearchStatus
+	backend.nodesDHT.FilterSearchStatus = backend.Filters.DHTSearchStatus
 }
 
 // autoBucketRefresh refreshes buckets every 5 minutes to meet the alpha nodes per bucket target. Force full refresh every hour.
-func autoBucketRefresh() {
+func (backend *Backend) autoBucketRefresh() {
 	for minute := 5; ; minute += 5 {
 		time.Sleep(time.Minute * 5)
 
@@ -71,28 +69,28 @@ func autoBucketRefresh() {
 			target = 0
 		}
 
-		nodesDHT.RefreshBuckets(target)
+		backend.nodesDHT.RefreshBuckets(target)
 	}
 }
 
 // bootstrapKademlia bootstraps the Kademlia bucket list
-func bootstrapKademlia() {
+func (backend *Backend) bootstrapKademlia() {
 	monitor := make(chan *PeerInfo)
-	registerPeerMonitor(monitor)
+	backend.registerPeerMonitor(monitor)
 
 	// Wait until there are at least 2 peers connected.
 	for {
 		<-monitor
-		if nodesDHT.NumNodes() >= 2 {
+		if backend.nodesDHT.NumNodes() >= 2 {
 			break
 		}
 	}
 
-	unregisterPeerMonitor(monitor)
+	backend.unregisterPeerMonitor(monitor)
 
 	// Refresh every 10 seconds 3 times
 	for n := 0; n < 3; n++ {
-		nodesDHT.RefreshBuckets(alpha)
+		backend.nodesDHT.RefreshBuckets(alpha)
 
 		time.Sleep(time.Second)
 	}
@@ -102,7 +100,7 @@ func bootstrapKademlia() {
 
 func (peer *PeerInfo) sendAnnouncementFindNode(request *dht.InformationRequest) {
 	// If the key is self, send it as FIND_SELF
-	if bytes.Equal(request.Key, nodeID) {
+	if bytes.Equal(request.Key, peer.Backend.nodeID) {
 		peer.sendAnnouncement(false, true, nil, nil, nil, request)
 	} else {
 		peer.sendAnnouncement(false, false, []protocol.KeyHash{{Hash: request.Key}}, nil, nil, request)
@@ -132,46 +130,46 @@ func Data2Hash(data []byte) (hash []byte) {
 }
 
 // GetData returns the requested data. It checks first the local store and then tries via DHT.
-func GetData(hash []byte) (data []byte, senderNodeID []byte, found bool) {
-	if data, found = GetDataLocal(hash); found {
-		return data, nodeID, found
+func (backend *Backend) GetData(hash []byte) (data []byte, senderNodeID []byte, found bool) {
+	if data, found = backend.GetDataLocal(hash); found {
+		return data, backend.nodeID, found
 	}
 
-	return GetDataDHT(hash)
+	return backend.GetDataDHT(hash)
 }
 
 // GetDataLocal returns data from the local warehouse.
-func GetDataLocal(hash []byte) (data []byte, found bool) {
-	return dhtStore.Get(hash)
+func (backend *Backend) GetDataLocal(hash []byte) (data []byte, found bool) {
+	return backend.dhtStore.Get(hash)
 }
 
 // GetDataDHT requests data via DHT
-func GetDataDHT(hash []byte) (data []byte, senderNodeID []byte, found bool) {
-	data, senderNodeID, found, _ = nodesDHT.Get(hash)
+func (backend *Backend) GetDataDHT(hash []byte) (data []byte, senderNodeID []byte, found bool) {
+	data, senderNodeID, found, _ = backend.nodesDHT.Get(hash)
 	return data, senderNodeID, found
 }
 
 // StoreDataLocal stores data into the local warehouse.
-func StoreDataLocal(data []byte) error {
+func (backend *Backend) StoreDataLocal(data []byte) error {
 	key := protocol.HashData(data)
-	return dhtStore.Set(key, data)
+	return backend.dhtStore.Set(key, data)
 }
 
 // StoreDataDHT stores data locally and informs closestCount peers in the DHT about it.
 // Remote peers may choose to keep a record (in case another peers asks) or mirror the full data.
-func StoreDataDHT(data []byte, closestCount int) error {
+func (backend *Backend) StoreDataDHT(data []byte, closestCount int) error {
 	key := protocol.HashData(data)
-	if err := dhtStore.Set(key, data); err != nil {
+	if err := backend.dhtStore.Set(key, data); err != nil {
 		return err
 	}
-	return nodesDHT.Store(key, uint64(len(data)), closestCount)
+	return backend.nodesDHT.Store(key, uint64(len(data)), closestCount)
 }
 
 // ---- NODE FUNCTIONS ----
 
 // IsNodeContact checks if the node is a contact in the local DHT routing table
-func IsNodeContact(nodeID []byte) (node *dht.Node, peer *PeerInfo) {
-	node = nodesDHT.IsNodeContact(nodeID)
+func (backend *Backend) IsNodeContact(nodeID []byte) (node *dht.Node, peer *PeerInfo) {
+	node = backend.nodesDHT.IsNodeContact(nodeID)
 	if node == nil {
 		return nil, nil
 	}
@@ -180,14 +178,14 @@ func IsNodeContact(nodeID []byte) (node *dht.Node, peer *PeerInfo) {
 }
 
 // FindNode finds a node via the DHT
-func FindNode(nodeID []byte, Timeout time.Duration) (node *dht.Node, peer *PeerInfo, err error) {
+func (backend *Backend) FindNode(nodeID []byte, Timeout time.Duration) (node *dht.Node, peer *PeerInfo, err error) {
 	// first check if in mirrored node list
-	if peer = NodelistLookup(nodeID); peer != nil {
+	if peer = backend.NodelistLookup(nodeID); peer != nil {
 		return nil, peer, nil
 	}
 
 	// Search the node via DHT.
-	node, err = nodesDHT.FindNode(nodeID)
+	node, err = backend.nodesDHT.FindNode(nodeID)
 	if node == nil {
 		return nil, nil, err
 	}
@@ -200,6 +198,6 @@ func FindNode(nodeID []byte, Timeout time.Duration) (node *dht.Node, peer *PeerI
 // AsyncSearch creates an async search for the given key in the DHT.
 // Timeout is the total time the search may take, covering all information requests. TimeoutIR is the time an information request may take.
 // Alpha is the number of concurrent requests that will be performed.
-func AsyncSearch(Action int, Key []byte, Timeout, TimeoutIR time.Duration, Alpha int) (client *dht.SearchClient) {
-	return nodesDHT.NewSearch(Action, Key, Timeout, TimeoutIR, Alpha)
+func (backend *Backend) AsyncSearch(Action int, Key []byte, Timeout, TimeoutIR time.Duration, Alpha int) (client *dht.SearchClient) {
+	return backend.nodesDHT.NewSearch(Action, Key, Timeout, TimeoutIR, Alpha)
 }

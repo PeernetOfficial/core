@@ -28,7 +28,7 @@ func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey *btcec.PublicKey, L
 
 	// register the sequence since packets are sent bi-directional
 	virtualConn.sequenceNumber = sequenceNumber
-	networks.Sequences.RegisterSequenceBi(peer.PublicKey, sequenceNumber, virtualConn, blockSequenceTimeout, virtualConn.sequenceTerminate)
+	peer.Backend.networks.Sequences.RegisterSequenceBi(peer.PublicKey, sequenceNumber, virtualConn, blockSequenceTimeout, virtualConn.sequenceTerminate)
 
 	udtConfig := udt.DefaultConfig()
 	udtConfig.MaxPacketSize = protocol.TransferMaxEmbedSize
@@ -48,7 +48,7 @@ func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey *btcec.PublicKey, L
 
 	for _, target := range TargetBlocks {
 		for blockN := target.Offset; blockN < target.Offset+target.Limit; blockN++ {
-			blockData, status, err := UserBlockchain.GetBlockRaw(blockN)
+			blockData, status, err := peer.Backend.UserBlockchain.GetBlockRaw(blockN)
 			if err != nil {
 				protocol.BlockTransferWriteHeader(udtConn, protocol.GetBlockStatusNotAvailable, protocol.BlockRange{Offset: blockN, Limit: 1}, 0)
 				continue
@@ -84,7 +84,7 @@ func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey *btcec.PublicKey,
 	})
 
 	// new sequence
-	sequence := networks.Sequences.NewSequenceBi(peer.PublicKey, &peer.messageSequence, virtualConn, blockSequenceTimeout, virtualConn.sequenceTerminate)
+	sequence := peer.Backend.networks.Sequences.NewSequenceBi(peer.PublicKey, &peer.messageSequence, virtualConn, blockSequenceTimeout, virtualConn.sequenceTerminate)
 	if sequence == nil {
 		return nil, nil, errors.New("cannot acquire sequence")
 	}

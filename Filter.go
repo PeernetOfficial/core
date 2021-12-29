@@ -18,7 +18,7 @@ import (
 
 // Filters contains all functions to install the hook. Use nil for unused.
 // The functions are called sequentially and block execution; if the filter takes a long time it should start a Go routine.
-var Filters struct {
+type Filters struct {
 	// NewPeer is called every time a new peer, that is one that is not currently in the peer list.
 	// Note that peers might be removed from peer lists and reappear quickly, i.e. this function may be called multiple times for the same peers.
 	// The filter must maintain its own map of unique peer IDs if actual uniqueness of new peers is desired.
@@ -64,51 +64,51 @@ var Filters struct {
 	MessageOutPong func(peer *PeerInfo, packet *protocol.PacketRaw)
 }
 
-func initFilters() {
+func (backend *Backend) initFilters() {
 	// Set default filters to blank functions so they can be safely called without constant nil checks.
 	// Only if not already set before init.
 
-	if Filters.NewPeer == nil {
-		Filters.NewPeer = func(peer *PeerInfo, connection *Connection) {}
+	if backend.Filters.NewPeer == nil {
+		backend.Filters.NewPeer = func(peer *PeerInfo, connection *Connection) {}
 	}
-	if Filters.NewPeerConnection == nil {
-		Filters.NewPeerConnection = func(peer *PeerInfo, connection *Connection) {}
+	if backend.Filters.NewPeerConnection == nil {
+		backend.Filters.NewPeerConnection = func(peer *PeerInfo, connection *Connection) {}
 	}
-	if Filters.DHTSearchStatus == nil {
-		Filters.DHTSearchStatus = func(client *dht.SearchClient, function, format string, v ...interface{}) {}
+	if backend.Filters.DHTSearchStatus == nil {
+		backend.Filters.DHTSearchStatus = func(client *dht.SearchClient, function, format string, v ...interface{}) {}
 	}
-	if Filters.LogError == nil {
-		Filters.LogError = DefaultLogError
+	if backend.Filters.LogError == nil {
+		backend.Filters.LogError = DefaultLogError
 	}
-	if Filters.IncomingRequest == nil {
-		Filters.IncomingRequest = func(peer *PeerInfo, Action int, Key []byte, Info interface{}) {}
+	if backend.Filters.IncomingRequest == nil {
+		backend.Filters.IncomingRequest = func(peer *PeerInfo, Action int, Key []byte, Info interface{}) {}
 	}
-	if Filters.PacketIn == nil {
-		Filters.PacketIn = func(packet *protocol.PacketRaw, senderPublicKey *btcec.PublicKey, c *Connection) {}
+	if backend.Filters.PacketIn == nil {
+		backend.Filters.PacketIn = func(packet *protocol.PacketRaw, senderPublicKey *btcec.PublicKey, c *Connection) {}
 	}
-	if Filters.PacketOut == nil {
-		Filters.PacketOut = func(packet *protocol.PacketRaw, receiverPublicKey *btcec.PublicKey, c *Connection) {}
+	if backend.Filters.PacketOut == nil {
+		backend.Filters.PacketOut = func(packet *protocol.PacketRaw, receiverPublicKey *btcec.PublicKey, c *Connection) {}
 	}
-	if Filters.MessageIn == nil {
-		Filters.MessageIn = func(peer *PeerInfo, raw *protocol.MessageRaw, message interface{}) {}
+	if backend.Filters.MessageIn == nil {
+		backend.Filters.MessageIn = func(peer *PeerInfo, raw *protocol.MessageRaw, message interface{}) {}
 	}
-	if Filters.MessageOutAnnouncement == nil {
-		Filters.MessageOutAnnouncement = func(receiverPublicKey *btcec.PublicKey, peer *PeerInfo, packet *protocol.PacketRaw, findSelf bool, findPeer []protocol.KeyHash, findValue []protocol.KeyHash, files []protocol.InfoStore) {
+	if backend.Filters.MessageOutAnnouncement == nil {
+		backend.Filters.MessageOutAnnouncement = func(receiverPublicKey *btcec.PublicKey, peer *PeerInfo, packet *protocol.PacketRaw, findSelf bool, findPeer []protocol.KeyHash, findValue []protocol.KeyHash, files []protocol.InfoStore) {
 		}
 	}
-	if Filters.MessageOutResponse == nil {
-		Filters.MessageOutResponse = func(peer *PeerInfo, packet *protocol.PacketRaw, hash2Peers []protocol.Hash2Peer, filesEmbed []protocol.EmbeddedFileData, hashesNotFound [][]byte) {
+	if backend.Filters.MessageOutResponse == nil {
+		backend.Filters.MessageOutResponse = func(peer *PeerInfo, packet *protocol.PacketRaw, hash2Peers []protocol.Hash2Peer, filesEmbed []protocol.EmbeddedFileData, hashesNotFound [][]byte) {
 		}
 	}
-	if Filters.MessageOutTraverse == nil {
-		Filters.MessageOutTraverse = func(peer *PeerInfo, packet *protocol.PacketRaw, embeddedPacket *protocol.PacketRaw, receiverEnd *btcec.PublicKey) {
+	if backend.Filters.MessageOutTraverse == nil {
+		backend.Filters.MessageOutTraverse = func(peer *PeerInfo, packet *protocol.PacketRaw, embeddedPacket *protocol.PacketRaw, receiverEnd *btcec.PublicKey) {
 		}
 	}
-	if Filters.MessageOutPing == nil {
-		Filters.MessageOutPing = func(peer *PeerInfo, packet *protocol.PacketRaw, connection *Connection) {}
+	if backend.Filters.MessageOutPing == nil {
+		backend.Filters.MessageOutPing = func(peer *PeerInfo, packet *protocol.PacketRaw, connection *Connection) {}
 	}
-	if Filters.MessageOutPong == nil {
-		Filters.MessageOutPong = func(peer *PeerInfo, packet *protocol.PacketRaw) {}
+	if backend.Filters.MessageOutPong == nil {
+		backend.Filters.MessageOutPong = func(peer *PeerInfo, packet *protocol.PacketRaw) {}
 	}
 }
 

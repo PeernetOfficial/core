@@ -106,7 +106,7 @@ func (api *WebapiInstance) apiSearch(w http.ResponseWriter, r *http.Request) {
 
 	job := api.dispatchSearch(input)
 
-	EncodeJSON(w, r, SearchRequestResponse{Status: 0, ID: job.id})
+	EncodeJSON(api.backend, w, r, SearchRequestResponse{Status: 0, ID: job.id})
 }
 
 /*
@@ -124,7 +124,7 @@ Optional parameters:
 			&sort=[sort order]
 Result:     200 with JSON structure SearchResult. Check the field status.
 */
-func apiSearchResult(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	jobID, err := uuid.Parse(r.Form.Get("id"))
 	if err != nil {
@@ -139,7 +139,7 @@ func apiSearchResult(w http.ResponseWriter, r *http.Request) {
 	// find the job ID
 	job := JobLookup(jobID)
 	if job == nil {
-		EncodeJSON(w, r, SearchResult{Status: 2})
+		EncodeJSON(api.backend, w, r, SearchResult{Status: 2})
 		return
 	}
 
@@ -194,7 +194,7 @@ func apiSearchResult(w http.ResponseWriter, r *http.Request) {
 		result.Statistic = job.Statistics()
 	}
 
-	EncodeJSON(w, r, result)
+	EncodeJSON(api.backend, w, r, result)
 }
 
 /*
@@ -204,7 +204,7 @@ Request:    GET /search/result/ws?id=[UUID]&limit=[optional max records]
 Result:     If successful, upgrades to a websocket and sends JSON structure SearchResult messages.
             Limit is optional. Not used if ommitted or 0.
 */
-func apiSearchResultStream(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiSearchResultStream(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	jobID, err := uuid.Parse(r.Form.Get("id"))
 	if err != nil {
@@ -217,7 +217,7 @@ func apiSearchResultStream(w http.ResponseWriter, r *http.Request) {
 	// look up the job
 	job := JobLookup(jobID)
 	if job == nil {
-		EncodeJSON(w, r, SearchResult{Status: 2})
+		EncodeJSON(api.backend, w, r, SearchResult{Status: 2})
 		return
 	}
 
@@ -289,7 +289,7 @@ Response:   204 Empty
             400 Invalid input
             404 ID not found
 */
-func apiSearchTerminate(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiSearchTerminate(w http.ResponseWriter, r *http.Request) {
 
 	r.ParseForm()
 	jobID, err := uuid.Parse(r.Form.Get("id"))
@@ -318,7 +318,7 @@ apiSearchStatistic returns search result statistics. Statistics are always calcu
 Request:    GET /search/result?id=[UUID]
 Result:     200 with JSON structure SearchStatistic. Check the field status (0 = Success, 2 = ID not found).
 */
-func apiSearchStatistic(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiSearchStatistic(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	jobID, err := uuid.Parse(r.Form.Get("id"))
 	if err != nil {
@@ -329,13 +329,13 @@ func apiSearchStatistic(w http.ResponseWriter, r *http.Request) {
 	// find the job ID
 	job := JobLookup(jobID)
 	if job == nil {
-		EncodeJSON(w, r, SearchStatistic{Status: 2})
+		EncodeJSON(api.backend, w, r, SearchStatistic{Status: 2})
 		return
 	}
 
 	stats := job.Statistics()
 
-	EncodeJSON(w, r, SearchStatistic{SearchStatisticData: stats, Status: 0, IsTerminated: job.IsTerminated()})
+	EncodeJSON(api.backend, w, r, SearchStatistic{SearchStatisticData: stats, Status: 0, IsTerminated: job.IsTerminated()})
 }
 
 /*
@@ -372,7 +372,7 @@ func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 
 	result.Status = 1 // No more results to expect
 
-	EncodeJSON(w, r, result)
+	EncodeJSON(api.backend, w, r, result)
 }
 
 func (input *SearchRequest) Parse() (Timeout time.Duration) {

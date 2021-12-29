@@ -11,19 +11,16 @@ import (
 	"github.com/PeernetOfficial/core/store"
 )
 
-// dhtStore contains all key-value data served via DHT
-var dhtStore store.Store
-
 // TODO: Via descriptors, files stored by other peers
 
-func initStore() {
-	dhtStore = store.NewMemoryStore()
+func (backend *Backend) initStore() {
+	backend.dhtStore = store.NewMemoryStore()
 }
 
 // announcementGetData returns data for an announcement
-func announcementGetData(hash []byte) (stored bool, data []byte) {
+func (peer *PeerInfo) announcementGetData(hash []byte) (stored bool, data []byte) {
 	// TODO: Create RetrieveIfSize to prevent files larger than EmbeddedFileSizeMax from being loaded
-	data, found := dhtStore.Get(hash)
+	data, found := peer.Backend.dhtStore.Get(hash)
 	if !found {
 		return false, nil
 	}

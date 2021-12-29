@@ -42,7 +42,7 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, fileSize uint64, offset,
 
 	// register the sequence since packets are sent bi-directional
 	virtualConnection.sequenceNumber = sequenceNumber
-	networks.Sequences.RegisterSequenceBi(peer.PublicKey, sequenceNumber, virtualConnection, transferSequenceTimeout, virtualConnection.sequenceTerminate)
+	peer.Backend.networks.Sequences.RegisterSequenceBi(peer.PublicKey, sequenceNumber, virtualConnection, transferSequenceTimeout, virtualConnection.sequenceTerminate)
 
 	udtConfig := udt.DefaultConfig()
 	udtConfig.MaxPacketSize = protocol.TransferMaxEmbedSize
@@ -60,7 +60,7 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, fileSize uint64, offset,
 	// First send the header (Total File Size, Transfer Size) and then the file data.
 	protocol.FileTransferWriteHeader(udtConn, fileSize, limit)
 
-	_, _, err = UserWarehouse.ReadFile(hash, int64(offset), int64(limit), udtConn)
+	_, _, err = peer.Backend.UserWarehouse.ReadFile(hash, int64(offset), int64(limit), udtConn)
 
 	return err
 }
@@ -74,7 +74,7 @@ func (peer *PeerInfo) FileTransferRequestUDT(hash []byte, offset, limit uint64) 
 	})
 
 	// new sequence
-	sequence := networks.Sequences.NewSequenceBi(peer.PublicKey, &peer.messageSequence, virtualConn, transferSequenceTimeout, virtualConn.sequenceTerminate)
+	sequence := peer.Backend.networks.Sequences.NewSequenceBi(peer.PublicKey, &peer.messageSequence, virtualConn, transferSequenceTimeout, virtualConn.sequenceTerminate)
 	if sequence == nil {
 		return nil, nil, errors.New("cannot acquire sequence")
 	}

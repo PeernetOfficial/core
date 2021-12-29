@@ -43,7 +43,7 @@ func (network *Network) BroadcastIPv4() (err error) {
 	// listen on a special socket
 	network.broadcastSocket, err = reuseport.ListenPacket("udp4", net.JoinHostPort(network.address.IP.String(), strconv.Itoa(ipv4BroadcastPort)))
 	if err != nil {
-		Filters.LogError("BroadcastIPv4", "broadcast socket listen on IP '%s' port '%d': %v\n", network.address.IP.String(), ipv4BroadcastPort, err)
+		network.backend.Filters.LogError("BroadcastIPv4", "broadcast socket listen on IP '%s' port '%d': %v\n", network.address.IP.String(), ipv4BroadcastPort, err)
 		return err
 	}
 
@@ -64,8 +64,8 @@ func (network *Network) BroadcastIPv4Listen() {
 		length, sender, err := network.broadcastSocket.ReadFrom(buffer)
 
 		if err != nil {
-			Filters.LogError("BroadcastIPv4Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
-			time.Sleep(time.Millisecond * 50)                                           // In case of endless errors, prevent ddos of CPU.
+			network.backend.Filters.LogError("BroadcastIPv4Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
+			time.Sleep(time.Millisecond * 50)                                                           // In case of endless errors, prevent ddos of CPU.
 			continue
 		}
 
@@ -92,13 +92,13 @@ func (network *Network) BroadcastIPv4Listen() {
 
 // BroadcastIPv4Send sends out a single broadcast messages to discover peers
 func (network *Network) BroadcastIPv4Send() (err error) {
-	_, blockchainHeight, blockchainVersion := UserBlockchain.Header()
-	packets := protocol.EncodeAnnouncement(true, true, nil, nil, nil, FeatureSupport(), blockchainHeight, blockchainVersion, userAgent)
+	_, blockchainHeight, blockchainVersion := network.backend.UserBlockchain.Header()
+	packets := protocol.EncodeAnnouncement(true, true, nil, nil, nil, network.backend.FeatureSupport(), blockchainHeight, blockchainVersion, network.backend.userAgent)
 	if len(packets) == 0 {
 		return errors.New("error encoding broadcast announcement")
 	}
 
-	raw, err := protocol.PacketEncrypt(peerPrivateKey, ipv4BroadcastPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: packets[0]})
+	raw, err := protocol.PacketEncrypt(network.backend.peerPrivateKey, ipv4BroadcastPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: packets[0]})
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (network *Network) BroadcastIPv4Send() (err error) {
 	for _, ip := range network.broadcastIPv4 {
 		err = network.send(ip, ipv4BroadcastPort, raw)
 		if err != nil {
-			Filters.LogError("BroadcastIPv4Send", "sending UDP packet: %v\n", err)
+			network.backend.Filters.LogError("BroadcastIPv4Send", "sending UDP packet: %v\n", err)
 		}
 	}
 

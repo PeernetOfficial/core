@@ -19,7 +19,7 @@ func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int
 	}
 
 	// Use the peer list to know about active peers. Random order!
-	peerList := core.PeerlistGet()
+	peerList := api.backend.PeerlistGet()
 
 	// Files from peers exceeding the limit. It is used if from all peers the total limit is not reached.
 	var filesSeconday []blockchain.BlockRecordFile

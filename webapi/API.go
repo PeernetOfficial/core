@@ -58,40 +58,40 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 	}
 
 	api.Router.HandleFunc("/test", apiTest).Methods("GET")
-	api.Router.HandleFunc("/status", apiStatus).Methods("GET")
-	api.Router.HandleFunc("/account/info", apiAccountInfo).Methods("GET")
-	api.Router.HandleFunc("/account/delete", apiAccountDelete).Methods("GET")
-	api.Router.HandleFunc("/blockchain/header", apiBlockchainHeaderFunc).Methods("GET")
-	api.Router.HandleFunc("/blockchain/append", apiBlockchainAppend).Methods("POST")
-	api.Router.HandleFunc("/blockchain/read", apiBlockchainRead).Methods("GET")
-	api.Router.HandleFunc("/blockchain/file/add", apiBlockchainFileAdd).Methods("POST")
-	api.Router.HandleFunc("/blockchain/file/list", apiBlockchainFileList).Methods("GET")
-	api.Router.HandleFunc("/blockchain/file/delete", apiBlockchainFileDelete).Methods("POST")
-	api.Router.HandleFunc("/blockchain/file/update", apiBlockchainFileUpdate).Methods("POST")
-	api.Router.HandleFunc("/profile/list", apiProfileList).Methods("GET")
-	api.Router.HandleFunc("/profile/read", apiProfileRead).Methods("GET")
-	api.Router.HandleFunc("/profile/write", apiProfileWrite).Methods("POST")
-	api.Router.HandleFunc("/profile/delete", apiProfileDelete).Methods("POST")
+	api.Router.HandleFunc("/status", api.apiStatus).Methods("GET")
+	api.Router.HandleFunc("/account/info", api.apiAccountInfo).Methods("GET")
+	api.Router.HandleFunc("/account/delete", api.apiAccountDelete).Methods("GET")
+	api.Router.HandleFunc("/blockchain/header", api.apiBlockchainHeaderFunc).Methods("GET")
+	api.Router.HandleFunc("/blockchain/append", api.apiBlockchainAppend).Methods("POST")
+	api.Router.HandleFunc("/blockchain/read", api.apiBlockchainRead).Methods("GET")
+	api.Router.HandleFunc("/blockchain/file/add", api.apiBlockchainFileAdd).Methods("POST")
+	api.Router.HandleFunc("/blockchain/file/list", api.apiBlockchainFileList).Methods("GET")
+	api.Router.HandleFunc("/blockchain/file/delete", api.apiBlockchainFileDelete).Methods("POST")
+	api.Router.HandleFunc("/blockchain/file/update", api.apiBlockchainFileUpdate).Methods("POST")
+	api.Router.HandleFunc("/profile/list", api.apiProfileList).Methods("GET")
+	api.Router.HandleFunc("/profile/read", api.apiProfileRead).Methods("GET")
+	api.Router.HandleFunc("/profile/write", api.apiProfileWrite).Methods("POST")
+	api.Router.HandleFunc("/profile/delete", api.apiProfileDelete).Methods("POST")
 	api.Router.HandleFunc("/search", api.apiSearch).Methods("POST")
-	api.Router.HandleFunc("/search/result", apiSearchResult).Methods("GET")
-	api.Router.HandleFunc("/search/result/ws", apiSearchResultStream).Methods("GET")
-	api.Router.HandleFunc("/search/statistic", apiSearchStatistic).Methods("GET")
-	api.Router.HandleFunc("/search/terminate", apiSearchTerminate).Methods("GET")
+	api.Router.HandleFunc("/search/result", api.apiSearchResult).Methods("GET")
+	api.Router.HandleFunc("/search/result/ws", api.apiSearchResultStream).Methods("GET")
+	api.Router.HandleFunc("/search/statistic", api.apiSearchStatistic).Methods("GET")
+	api.Router.HandleFunc("/search/terminate", api.apiSearchTerminate).Methods("GET")
 	api.Router.HandleFunc("/explore", api.apiExplore).Methods("GET")
-	api.Router.HandleFunc("/file/format", apiFileFormat).Methods("GET")
-	api.Router.HandleFunc("/download/start", apiDownloadStart).Methods("GET")
-	api.Router.HandleFunc("/download/status", apiDownloadStatus).Methods("GET")
-	api.Router.HandleFunc("/download/action", apiDownloadAction).Methods("GET")
-	api.Router.HandleFunc("/warehouse/create", apiWarehouseCreateFile).Methods("POST")
-	api.Router.HandleFunc("/warehouse/create/path", apiWarehouseCreateFilePath).Methods("GET")
-	api.Router.HandleFunc("/warehouse/read", apiWarehouseReadFile).Methods("GET")
-	api.Router.HandleFunc("/warehouse/read/path", apiWarehouseReadFilePath).Methods("GET")
-	api.Router.HandleFunc("/warehouse/delete", apiWarehouseDeleteFile).Methods("GET")
-	api.Router.HandleFunc("/file/read", apiFileRead).Methods("GET")
-	api.Router.HandleFunc("/file/view", apiFileView).Methods("GET")
+	api.Router.HandleFunc("/file/format", api.apiFileFormat).Methods("GET")
+	api.Router.HandleFunc("/download/start", api.apiDownloadStart).Methods("GET")
+	api.Router.HandleFunc("/download/status", api.apiDownloadStatus).Methods("GET")
+	api.Router.HandleFunc("/download/action", api.apiDownloadAction).Methods("GET")
+	api.Router.HandleFunc("/warehouse/create", api.apiWarehouseCreateFile).Methods("POST")
+	api.Router.HandleFunc("/warehouse/create/path", api.apiWarehouseCreateFilePath).Methods("GET")
+	api.Router.HandleFunc("/warehouse/read", api.apiWarehouseReadFile).Methods("GET")
+	api.Router.HandleFunc("/warehouse/read/path", api.apiWarehouseReadFilePath).Methods("GET")
+	api.Router.HandleFunc("/warehouse/delete", api.apiWarehouseDeleteFile).Methods("GET")
+	api.Router.HandleFunc("/file/read", api.apiFileRead).Methods("GET")
+	api.Router.HandleFunc("/file/view", api.apiFileView).Methods("GET")
 
 	for _, listen := range ListenAddresses {
-		go startWebAPI(listen, UseSSL, CertificateFile, CertificateKey, api.Router, "API", TimeoutRead, TimeoutWrite)
+		go startWebAPI(Backend, listen, UseSSL, CertificateFile, CertificateKey, api.Router, "API", TimeoutRead, TimeoutWrite)
 	}
 
 	return api
@@ -99,8 +99,8 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 
 // startWebAPI starts a web-server with given parameters and logs the status. If may block forever and only returns if there is an error.
 // The certificate file and key are only used if SSL is enabled. The read and write timeout may be 0 for no timeout.
-func startWebAPI(WebListen string, UseSSL bool, CertificateFile, CertificateKey string, Handler http.Handler, Info string, ReadTimeout, WriteTimeout time.Duration) {
-	core.Filters.LogError("startWebAPI", "Start API at '%s'\n", WebListen)
+func startWebAPI(Backend *core.Backend, WebListen string, UseSSL bool, CertificateFile, CertificateKey string, Handler http.Handler, Info string, ReadTimeout, WriteTimeout time.Duration) {
+	Backend.Filters.LogError("startWebAPI", "Start API at '%s'\n", WebListen)
 
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12} // for security reasons disable TLS 1.0/1.1
 
@@ -116,23 +116,23 @@ func startWebAPI(WebListen string, UseSSL bool, CertificateFile, CertificateKey 
 	if UseSSL {
 		// HTTPS
 		if err := server.ListenAndServeTLS(CertificateFile, CertificateKey); err != nil {
-			core.Filters.LogError("startWebAPI", "Error listening on '%s': %v\n", WebListen, err)
+			Backend.Filters.LogError("startWebAPI", "Error listening on '%s': %v\n", WebListen, err)
 		}
 	} else {
 		// HTTP
 		if err := server.ListenAndServe(); err != nil {
-			core.Filters.LogError("startWebAPI", "Error listening on '%s': %v\n", WebListen, err)
+			Backend.Filters.LogError("startWebAPI", "Error listening on '%s': %v\n", WebListen, err)
 		}
 	}
 }
 
 // EncodeJSON encodes the data as JSON
-func EncodeJSON(w http.ResponseWriter, r *http.Request, data interface{}) (err error) {
+func EncodeJSON(Backend *core.Backend, w http.ResponseWriter, r *http.Request, data interface{}) (err error) {
 	w.Header().Set("Content-Type", "application/json")
 
 	err = json.NewEncoder(w).Encode(data)
 	if err != nil {
-		core.Filters.LogError("EncodeJSON", "Error writing data for route '%s': %v\n", r.URL.Path, err)
+		Backend.Filters.LogError("EncodeJSON", "Error writing data for route '%s': %v\n", r.URL.Path, err)
 	}
 
 	return err

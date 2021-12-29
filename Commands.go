@@ -38,12 +38,12 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 
 	// FIND_SELF: Requesting peers close to the sender?
 	if msg.Actions&(1<<protocol.ActionFindSelf) > 0 {
-		Filters.IncomingRequest(peer, protocol.ActionFindSelf, peer.NodeID, nil)
+		peer.Backend.Filters.IncomingRequest(peer, protocol.ActionFindSelf, peer.NodeID, nil)
 
 		selfD := protocol.Hash2Peer{ID: protocol.KeyHash{Hash: peer.NodeID}}
 
 		// do not respond the caller's own peer (add to ignore list)
-		for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, peer.NodeID, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
+		for _, node := range peer.Backend.nodesDHT.GetClosestContacts(respondClosesContactsCount, peer.NodeID, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
 			if info := node.Info.(*PeerInfo).peer2Record(connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
 				selfD.Closest = append(selfD.Closest, *info)
 			}
@@ -59,12 +59,12 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 	// FIND_PEER: Find a different peer?
 	if msg.Actions&(1<<protocol.ActionFindPeer) > 0 && len(msg.FindPeerKeys) > 0 {
 		for _, findPeer := range msg.FindPeerKeys {
-			Filters.IncomingRequest(peer, protocol.ActionFindPeer, findPeer.Hash, nil)
+			peer.Backend.Filters.IncomingRequest(peer, protocol.ActionFindPeer, findPeer.Hash, nil)
 
 			details := protocol.Hash2Peer{ID: findPeer}
 
 			// Same as before, put self as ignoredNodes.
-			for _, node := range nodesDHT.GetClosestContacts(respondClosesContactsCount, findPeer.Hash, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
+			for _, node := range peer.Backend.nodesDHT.GetClosestContacts(respondClosesContactsCount, findPeer.Hash, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
 				if info := node.Info.(*PeerInfo).peer2Record(connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
 					details.Closest = append(details.Closest, *info)
 				}
@@ -81,13 +81,13 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 	// Find a value?
 	if msg.Actions&(1<<protocol.ActionFindValue) > 0 {
 		for _, findHash := range msg.FindDataKeys {
-			Filters.IncomingRequest(peer, protocol.ActionFindValue, findHash.Hash, nil)
+			peer.Backend.Filters.IncomingRequest(peer, protocol.ActionFindValue, findHash.Hash, nil)
 
-			stored, data := announcementGetData(findHash.Hash)
+			stored, data := peer.announcementGetData(findHash.Hash)
 			if stored && len(data) > 0 {
 				filesEmbed = append(filesEmbed, protocol.EmbeddedFileData{ID: findHash, Data: data})
 			} else if stored {
-				selfRecord := selfPeerRecord()
+				selfRecord := peer.Backend.selfPeerRecord()
 				hash2Peers = append(hash2Peers, protocol.Hash2Peer{ID: findHash, Storing: []protocol.PeerRecord{selfRecord}})
 			} else {
 				hashesNotFound = append(hashesNotFound, findHash.Hash)
@@ -98,7 +98,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 	// Information about files stored by the sender?
 	if msg.Actions&(1<<protocol.ActionInfoStore) > 0 && len(msg.InfoStoreFiles) > 0 {
 		for n := range msg.InfoStoreFiles {
-			Filters.IncomingRequest(peer, protocol.ActionInfoStore, msg.InfoStoreFiles[n].ID.Hash, &msg.InfoStoreFiles[n])
+			peer.Backend.Filters.IncomingRequest(peer, protocol.ActionInfoStore, msg.InfoStoreFiles[n].ID.Hash, &msg.InfoStoreFiles[n])
 		}
 
 		peer.announcementStore(msg.InfoStoreFiles)
@@ -144,7 +144,7 @@ func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Con
 	if msg.SequenceInfo == nil || msg.SequenceInfo.Data == nil {
 		// If there is no sequence data but there were results returned, it means we received unsolicited response data. It will be rejected.
 		if len(msg.HashesNotFound) > 0 || len(msg.Hash2Peers) > 0 || len(msg.FilesEmbed) > 0 {
-			Filters.LogError("cmdResponse", "unsolicited response data received from %s\n", connection.Address.String())
+			peer.Backend.Filters.LogError("cmdResponse", "unsolicited response data received from %s\n", connection.Address.String())
 		}
 
 		return
@@ -154,8 +154,8 @@ func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Con
 	if _, ok := msg.SequenceInfo.Data.(*bootstrapFindSelf); ok {
 		for _, hash2Peer := range msg.Hash2Peers {
 			// Make sure no garbage is returned. The key must be self and only Closest is expected.
-			if !bytes.Equal(hash2Peer.ID.Hash, nodeID) || len(hash2Peer.Closest) == 0 {
-				Filters.LogError("cmdResponse", "incoming response to bootstrap FIND_SELF contains invalid data from %s\n", connection.Address.String())
+			if !bytes.Equal(hash2Peer.ID.Hash, peer.Backend.nodeID) || len(hash2Peer.Closest) == 0 {
+				peer.Backend.Filters.LogError("cmdResponse", "incoming response to bootstrap FIND_SELF contains invalid data from %s\n", connection.Address.String())
 				return
 			}
 
@@ -176,7 +176,7 @@ func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Con
 		}
 
 		for _, hash2Peer := range msg.Hash2Peers {
-			info.QueueResult(&dht.NodeMessage{SenderID: peer.NodeID, Closest: records2Nodes(hash2Peer.Closest, peer), Storing: records2Nodes(hash2Peer.Storing, peer)})
+			info.QueueResult(&dht.NodeMessage{SenderID: peer.NodeID, Closest: peer.records2Nodes(hash2Peer.Closest), Storing: peer.records2Nodes(hash2Peer.Storing)})
 
 			if hash2Peer.IsLast {
 				info.Done()
@@ -203,7 +203,7 @@ func (peer *PeerInfo) cmdPing(msg *protocol.MessageRaw, connection *Connection) 
 
 	raw := &protocol.PacketRaw{Command: protocol.CommandPong, Sequence: msg.Sequence}
 
-	Filters.MessageOutPong(peer, raw)
+	peer.Backend.Filters.MessageOutPong(peer, raw)
 
 	peer.send(raw)
 }
@@ -231,8 +231,8 @@ func (peer *PeerInfo) cmdLocalDiscovery(msg *protocol.MessageAnnouncement, conne
 }
 
 // SendChatAll sends a text message to all peers
-func SendChatAll(text string) {
-	for _, peer := range PeerlistGet() {
+func (backend *Backend) SendChatAll(text string) {
+	for _, peer := range backend.PeerlistGet() {
 		peer.Chat(text)
 	}
 }
@@ -247,7 +247,7 @@ func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Con
 	switch msg.Control {
 	case protocol.TransferControlRequestStart:
 		// First check if the file available in the warehouse.
-		_, fileInfo, status, _ := UserWarehouse.FileExists(msg.Hash)
+		_, fileInfo, status, _ := peer.Backend.UserWarehouse.FileExists(msg.Hash)
 		if status != warehouse.StatusOK {
 			// File not available.
 			peer.sendTransfer(nil, protocol.TransferControlNotAvailable, msg.TransferProtocol, msg.Hash, 0, 0, msg.Sequence)
@@ -286,10 +286,10 @@ func (peer *PeerInfo) cmdGetBlock(msg *protocol.MessageGetBlock, connection *Con
 	switch msg.Control {
 	case protocol.GetBlockControlRequestStart:
 		// Currently only support the local blockchain.
-		if !msg.BlockchainPublicKey.IsEqual(peerPublicKey) {
+		if !msg.BlockchainPublicKey.IsEqual(peer.Backend.peerPublicKey) {
 			peer.sendGetBlock(nil, protocol.GetBlockControlNotAvailable, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence)
 			return
-		} else if _, height, _ := UserBlockchain.Header(); height == 0 {
+		} else if _, height, _ := peer.Backend.UserBlockchain.Header(); height == 0 {
 			peer.sendGetBlock(nil, protocol.GetBlockControlEmpty, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence)
 			return
 		} else if msg.LimitBlockCount == 0 {

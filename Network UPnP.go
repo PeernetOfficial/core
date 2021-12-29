@@ -33,10 +33,10 @@ func (nets *Networks) startUPnP() {
 		}
 	}
 
-	if config.PortForward > 0 {
-		config.EnableUPnP = false
+	if nets.backend.Config.PortForward > 0 {
+		nets.backend.Config.EnableUPnP = false
 	}
-	if !config.EnableUPnP {
+	if !nets.backend.Config.EnableUPnP {
 		return
 	}
 
@@ -84,7 +84,7 @@ func isPrivateIP(ip net.IP) bool {
 
 // upnpAuto runs a UPnP daemon to forward the port, refresh the forwarding and continuously monitor if the forwarding remains valid.
 func (network *Network) upnpAuto() {
-	if !config.EnableUPnP || !network.upnpIsEligible() {
+	if !network.backend.Config.EnableUPnP || !network.upnpIsEligible() {
 		return
 	}
 
@@ -147,7 +147,7 @@ monitorLoop:
 		}
 
 		// invalid :(
-		Filters.LogError("upnpMonitorPortForward", "port forwarding invalidated for local IP %s (adapter %s) external IP %s port %d\n", network.address.String(), network.iface.Name, network.ipExternal.String(), network.portExternal)
+		network.backend.Filters.LogError("upnpMonitorPortForward", "port forwarding invalidated for local IP %s (adapter %s) external IP %s port %d\n", network.address.String(), network.iface.Name, network.ipExternal.String(), network.portExternal)
 
 		network.portExternal = 0
 		network.ipExternal = net.IP{}

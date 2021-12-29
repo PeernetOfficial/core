@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/PeernetOfficial/core"
 	"github.com/PeernetOfficial/core/warehouse"
 )
 
@@ -26,14 +25,14 @@ apiWarehouseCreateFile creates a file in the warehouse.
 Request:    POST /warehouse/create with raw data to create as new file
 Response:   200 with JSON structure WarehouseResult
 */
-func apiWarehouseCreateFile(w http.ResponseWriter, r *http.Request) {
-	hash, status, err := core.UserWarehouse.CreateFile(r.Body, 0)
+func (api *WebapiInstance) apiWarehouseCreateFile(w http.ResponseWriter, r *http.Request) {
+	hash, status, err := api.backend.UserWarehouse.CreateFile(r.Body, 0)
 
 	if err != nil {
-		core.Filters.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
+		api.backend.Filters.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
 	}
 
-	EncodeJSON(w, r, WarehouseResult{Status: status, Hash: hash})
+	EncodeJSON(api.backend, w, r, WarehouseResult{Status: status, Hash: hash})
 }
 
 /*
@@ -44,7 +43,7 @@ In the future the API should be secured using a random API key and setting the C
 Request:    GET /warehouse/create/path?path=[target path on disk]
 Response:   200 with JSON structure WarehouseResult
 */
-func apiWarehouseCreateFilePath(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiWarehouseCreateFilePath(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	filePath := r.Form.Get("path")
 	if filePath == "" {
@@ -52,13 +51,13 @@ func apiWarehouseCreateFilePath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash, status, err := core.UserWarehouse.CreateFileFromPath(filePath)
+	hash, status, err := api.backend.UserWarehouse.CreateFileFromPath(filePath)
 
 	if err != nil {
-		core.Filters.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
+		api.backend.Filters.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
 	}
 
-	EncodeJSON(w, r, WarehouseResult{Status: status, Hash: hash})
+	EncodeJSON(api.backend, w, r, WarehouseResult{Status: status, Hash: hash})
 }
 
 /*
@@ -70,7 +69,7 @@ Response:   200 with the raw file data
 			404 if file was not found
 			500 in case of internal error opening the file
 */
-func apiWarehouseReadFile(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiWarehouseReadFile(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	hash, valid1 := DecodeBlake3Hash(r.Form.Get("hash"))
 	if !valid1 {
@@ -81,7 +80,7 @@ func apiWarehouseReadFile(w http.ResponseWriter, r *http.Request) {
 	offset, _ := strconv.Atoi(r.Form.Get("offset"))
 	limit, _ := strconv.Atoi(r.Form.Get("limit"))
 
-	status, bytesRead, err := core.UserWarehouse.ReadFile(hash, int64(offset), int64(limit), w)
+	status, bytesRead, err := api.backend.UserWarehouse.ReadFile(hash, int64(offset), int64(limit), w)
 
 	switch status {
 	case warehouse.StatusFileNotFound:
@@ -95,7 +94,7 @@ func apiWarehouseReadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		core.Filters.LogError("warehouse.ReadFile", "status %d read %d error: %v", status, bytesRead, err)
+		api.backend.Filters.LogError("warehouse.ReadFile", "status %d read %d error: %v", status, bytesRead, err)
 	}
 }
 
@@ -105,7 +104,7 @@ apiWarehouseDeleteFile deletes a file in the warehouse.
 Request:    GET /warehouse/delete?hash=[hash]
 Response:   200 with JSON structure WarehouseResult
 */
-func apiWarehouseDeleteFile(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiWarehouseDeleteFile(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	hash, valid1 := DecodeBlake3Hash(r.Form.Get("hash"))
 	if !valid1 {
@@ -113,13 +112,13 @@ func apiWarehouseDeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, err := core.UserWarehouse.DeleteFile(hash)
+	status, err := api.backend.UserWarehouse.DeleteFile(hash)
 
 	if err != nil {
-		core.Filters.LogError("warehouse.DeleteFile", "status %d error: %v", status, err)
+		api.backend.Filters.LogError("warehouse.DeleteFile", "status %d error: %v", status, err)
 	}
 
-	EncodeJSON(w, r, WarehouseResult{Status: status, Hash: hash})
+	EncodeJSON(api.backend, w, r, WarehouseResult{Status: status, Hash: hash})
 }
 
 /*
@@ -130,7 +129,7 @@ Request:    GET /warehouse/read/path?hash=[hash]&path=[target path on disk]
             Optional parameters &offset=[file offset]&limit=[read limit in bytes]
 Response:   200 with JSON structure WarehouseResult
 */
-func apiWarehouseReadFilePath(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiWarehouseReadFilePath(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	hash, valid1 := DecodeBlake3Hash(r.Form.Get("hash"))
 	if !valid1 {
@@ -142,11 +141,11 @@ func apiWarehouseReadFilePath(w http.ResponseWriter, r *http.Request) {
 	offset, _ := strconv.Atoi(r.Form.Get("offset"))
 	limit, _ := strconv.Atoi(r.Form.Get("limit"))
 
-	status, bytesRead, err := core.UserWarehouse.ReadFileToDisk(hash, int64(offset), int64(limit), targetFile)
+	status, bytesRead, err := api.backend.UserWarehouse.ReadFileToDisk(hash, int64(offset), int64(limit), targetFile)
 
 	if err != nil {
-		core.Filters.LogError("warehouse.ReadFileToDisk", "status %d read %d error: %v", status, bytesRead, err)
+		api.backend.Filters.LogError("warehouse.ReadFileToDisk", "status %d read %d error: %v", status, bytesRead, err)
 	}
 
-	EncodeJSON(w, r, WarehouseResult{Status: status, Hash: hash})
+	EncodeJSON(api.backend, w, r, WarehouseResult{Status: status, Hash: hash})
 }

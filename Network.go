@@ -35,6 +35,7 @@ type Network struct {
 	terminateSignal chan interface{} // gets closed on termination signal, can be used in select via "case _ = <- network.terminateSignal:"
 	sync.RWMutex                     // for sychronized closing
 	networkGroup    *Networks        // Pointer to the pool of networks that this is part of
+	backend         *Backend
 }
 
 // Default ports to use. This may be randomized in the future to prevent fingerprinting (and subsequent blocking) by corporate and ISP firewalls.
@@ -115,8 +116,8 @@ func (network *Network) Listen() {
 				return
 			}
 
-			Filters.LogError("Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
-			time.Sleep(time.Millisecond * 50)                              // In case of endless errors, prevent ddos of CPU.
+			network.backend.Filters.LogError("Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
+			time.Sleep(time.Millisecond * 50)                                              // In case of endless errors, prevent ddos of CPU.
 			continue
 		}
 
@@ -126,7 +127,7 @@ func (network *Network) Listen() {
 		}
 
 		// send the packet to a channel which is processed by multiple workers.
-		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverPublicKey: peerPublicKey, unicast: true}
+		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverPublicKey: network.backend.peerPublicKey, unicast: true}
 	}
 }
 
@@ -140,7 +141,7 @@ func (nets *Networks) packetWorker() {
 		}
 
 		// immediately discard message if sender = self
-		if senderPublicKey.IsEqual(peerPublicKey) {
+		if senderPublicKey.IsEqual(nets.backend.peerPublicKey) {
 			continue
 		}
 
@@ -149,12 +150,12 @@ func (nets *Networks) packetWorker() {
 			continue
 		}
 
-		connection := &Connection{Network: packet.network, Address: packet.sender, Status: ConnectionActive}
+		connection := &Connection{backend: nets.backend, Network: packet.network, Address: packet.sender, Status: ConnectionActive}
 
-		Filters.PacketIn(decoded, senderPublicKey, connection)
+		nets.backend.Filters.PacketIn(decoded, senderPublicKey, connection)
 
 		// A peer structure will always be returned, even if the peer won't be added to the peer list.
-		peer, added := PeerlistAdd(senderPublicKey, connection)
+		peer, added := nets.backend.PeerlistAdd(senderPublicKey, connection)
 		if !added {
 			connection = peer.registerConnection(connection)
 		}
@@ -182,7 +183,7 @@ func (nets *Networks) packetWorker() {
 				peer.BlockchainVersion = announce.BlockchainVersion
 				peer.blockchainLastRefresh = time.Now()
 
-				Filters.MessageIn(peer, raw, announce)
+				nets.backend.Filters.MessageIn(peer, raw, announce)
 
 				peer.cmdAnouncement(announce, connection)
 
@@ -218,7 +219,7 @@ func (nets *Networks) packetWorker() {
 				peer.BlockchainVersion = response.BlockchainVersion
 				peer.blockchainLastRefresh = time.Now()
 
-				Filters.MessageIn(peer, raw, response)
+				nets.backend.Filters.MessageIn(peer, raw, response)
 
 				peer.cmdResponse(response, connection)
 
@@ -239,7 +240,7 @@ func (nets *Networks) packetWorker() {
 				peer.BlockchainVersion = announce.BlockchainVersion
 				peer.blockchainLastRefresh = time.Now()
 
-				Filters.MessageIn(peer, raw, announce)
+				nets.backend.Filters.MessageIn(peer, raw, announce)
 
 				peer.cmdLocalDiscovery(announce, connection)
 
@@ -249,7 +250,7 @@ func (nets *Networks) packetWorker() {
 			}
 
 		case protocol.CommandPing: // Ping
-			Filters.MessageIn(peer, raw, nil)
+			nets.backend.Filters.MessageIn(peer, raw, nil)
 			peer.cmdPing(raw, connection)
 
 		case protocol.CommandPong: // Ping
@@ -263,20 +264,20 @@ func (nets *Networks) packetWorker() {
 			}
 			raw.SequenceInfo = sequenceInfo
 
-			Filters.MessageIn(peer, raw, nil)
+			nets.backend.Filters.MessageIn(peer, raw, nil)
 
 			peer.cmdPong(raw, connection)
 
 		case protocol.CommandChat: // Chat [debug]
-			Filters.MessageIn(peer, raw, nil)
+			nets.backend.Filters.MessageIn(peer, raw, nil)
 			peer.cmdChat(raw, connection)
 
 		case protocol.CommandTraverse:
 			if traverse, _ := protocol.DecodeTraverse(raw); traverse != nil {
-				Filters.MessageIn(peer, raw, traverse)
-				if traverse.TargetPeer.IsEqual(peerPublicKey) && traverse.AuthorizedRelayPeer.IsEqual(peer.PublicKey) {
+				nets.backend.Filters.MessageIn(peer, raw, traverse)
+				if traverse.TargetPeer.IsEqual(nets.backend.peerPublicKey) && traverse.AuthorizedRelayPeer.IsEqual(peer.PublicKey) {
 					peer.cmdTraverseReceive(traverse)
-				} else if traverse.AuthorizedRelayPeer.IsEqual(peerPublicKey) {
+				} else if traverse.AuthorizedRelayPeer.IsEqual(nets.backend.peerPublicKey) {
 					peer.cmdTraverseForward(traverse)
 				}
 			}
@@ -314,7 +315,7 @@ func (nets *Networks) packetWorker() {
 			}
 
 		default: // Unknown command
-			Filters.MessageIn(peer, raw, nil)
+			nets.backend.Filters.MessageIn(peer, raw, nil)
 
 		}
 
@@ -322,12 +323,12 @@ func (nets *Networks) packetWorker() {
 }
 
 // GetNetworks returns the list of connected networks
-func GetNetworks(networkType int) (networksConnected []*Network) {
+func (backend *Backend) GetNetworks(networkType int) (networksConnected []*Network) {
 	switch networkType {
 	case 4:
-		return networks.networks4
+		return backend.networks.networks4
 	case 6:
-		return networks.networks6
+		return backend.networks.networks6
 	}
 	return nil
 }
@@ -383,22 +384,22 @@ func (network *Network) SelfReportedPorts() (portI, portE uint16) {
 	// This external port will be then passed onto other peers who will use it to connect.
 	portE = network.portExternal
 
-	if config.PortForward > 0 {
-		portE = config.PortForward
+	if network.backend.Config.PortForward > 0 {
+		portE = network.backend.Config.PortForward
 	}
 
 	return portI, portE
 }
 
 // FeatureSupport returns supported features by this peer
-func FeatureSupport() (feature byte) {
-	if networks.countListen4 > 0 {
+func (backend *Backend) FeatureSupport() (feature byte) {
+	if backend.networks.countListen4 > 0 {
 		feature |= 1 << protocol.FeatureIPv4Listen
 	}
-	if networks.countListen6 > 0 {
+	if backend.networks.countListen6 > 0 {
 		feature |= 1 << protocol.FeatureIPv6Listen
 	}
-	if networks.localFirewall {
+	if backend.networks.localFirewall {
 		feature |= 1 << protocol.FeatureFirewall
 	}
 	return feature

@@ -203,7 +203,7 @@ It will primarily use the file extension for detection. If unavailable, it uses 
 Request:    GET /file/format?path=[file path on disk]
 Result:     200 with JSON structure apiResponseFileFormat
 */
-func apiFileFormat(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiFileFormat(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	filePath := r.Form.Get("path")
 	if filePath == "" {
@@ -213,9 +213,9 @@ func apiFileFormat(w http.ResponseWriter, r *http.Request) {
 
 	fileType, fileFormat, err := FileDetectType(filePath)
 	if err != nil {
-		EncodeJSON(w, r, apiResponseFileFormat{Status: 1})
+		EncodeJSON(api.backend, w, r, apiResponseFileFormat{Status: 1})
 		return
 	}
 
-	EncodeJSON(w, r, apiResponseFileFormat{Status: 0, FileType: fileType, FileFormat: fileFormat})
+	EncodeJSON(api.backend, w, r, apiResponseFileFormat{Status: 0, FileType: fileType, FileFormat: fileFormat})
 }

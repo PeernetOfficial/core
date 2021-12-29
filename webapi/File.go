@@ -132,7 +132,7 @@ Request:    POST /blockchain/file/add with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
 			400 if invalid input
 */
-func apiBlockchainFileAdd(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.Request) {
 	var input apiBlockAddFiles
 	if err := DecodeJSON(w, r, &input); err != nil {
 		return
@@ -154,8 +154,8 @@ func apiBlockchainFileAdd(w http.ResponseWriter, r *http.Request) {
 			if _, err := warehouse.ValidateHash(file.Hash); err != nil {
 				http.Error(w, "", http.StatusBadRequest)
 				return
-			} else if _, fileInfo, status, _ := core.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
-				EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
+			} else if _, fileInfo, status, _ := api.backend.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
+				EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
 				return
 			} else {
 				file.Size = uint64(fileInfo.Size())
@@ -168,17 +168,17 @@ func apiBlockchainFileAdd(w http.ResponseWriter, r *http.Request) {
 		blockRecord := blockRecordFileFromAPI(file)
 
 		// Set the merkle tree info as appropriate.
-		if !setFileMerkleInfo(&blockRecord) {
-			EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
+		if !setFileMerkleInfo(api.backend, &blockRecord) {
+			EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
 			return
 		}
 
 		filesAdd = append(filesAdd, blockRecord)
 	}
 
-	newHeight, newVersion, status := core.UserBlockchain.AddFiles(filesAdd)
+	newHeight, newVersion, status := api.backend.UserBlockchain.AddFiles(filesAdd)
 
-	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
+	EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 /*
@@ -187,8 +187,8 @@ apiBlockchainFileList lists all files stored on the blockchain.
 Request:    GET /blockchain/file/list
 Response:   200 with JSON structure apiBlockAddFiles
 */
-func apiBlockchainFileList(w http.ResponseWriter, r *http.Request) {
-	files, status := core.UserBlockchain.ListFiles()
+func (api *WebapiInstance) apiBlockchainFileList(w http.ResponseWriter, r *http.Request) {
+	files, status := api.backend.UserBlockchain.ListFiles()
 
 	var result apiBlockAddFiles
 
@@ -198,7 +198,7 @@ func apiBlockchainFileList(w http.ResponseWriter, r *http.Request) {
 
 	result.Status = status
 
-	EncodeJSON(w, r, result)
+	EncodeJSON(api.backend, w, r, result)
 }
 
 /*
@@ -208,7 +208,7 @@ It will automatically delete the file in the Warehouse if there are no other ref
 Request:    POST /blockchain/file/delete with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
 */
-func apiBlockchainFileDelete(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiBlockchainFileDelete(w http.ResponseWriter, r *http.Request) {
 	var input apiBlockAddFiles
 	if err := DecodeJSON(w, r, &input); err != nil {
 		return
@@ -220,18 +220,18 @@ func apiBlockchainFileDelete(w http.ResponseWriter, r *http.Request) {
 		deleteIDs = append(deleteIDs, input.Files[n].ID)
 	}
 
-	newHeight, newVersion, deletedFiles, status := core.UserBlockchain.DeleteFiles(deleteIDs)
+	newHeight, newVersion, deletedFiles, status := api.backend.UserBlockchain.DeleteFiles(deleteIDs)
 
 	// If successfully deleted from the blockchain, delete from the Warehouse in case there are no other references.
 	if status == blockchain.StatusOK {
 		for n := range deletedFiles {
-			if files, status := core.UserBlockchain.FileExists(deletedFiles[n].Hash); status == blockchain.StatusOK && len(files) == 0 {
-				core.UserWarehouse.DeleteFile(deletedFiles[n].Hash)
+			if files, status := api.backend.UserBlockchain.FileExists(deletedFiles[n].Hash); status == blockchain.StatusOK && len(files) == 0 {
+				api.backend.UserWarehouse.DeleteFile(deletedFiles[n].Hash)
 			}
 		}
 	}
 
-	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
+	EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 /*
@@ -241,7 +241,7 @@ Request:    POST /blockchain/file/update with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
 			400 if invalid input
 */
-func apiBlockchainFileUpdate(w http.ResponseWriter, r *http.Request) {
+func (api *WebapiInstance) apiBlockchainFileUpdate(w http.ResponseWriter, r *http.Request) {
 	var input apiBlockAddFiles
 	if err := DecodeJSON(w, r, &input); err != nil {
 		return
@@ -263,8 +263,8 @@ func apiBlockchainFileUpdate(w http.ResponseWriter, r *http.Request) {
 			if _, err := warehouse.ValidateHash(file.Hash); err != nil {
 				http.Error(w, "", http.StatusBadRequest)
 				return
-			} else if _, fileInfo, status, _ := core.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
-				EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
+			} else if _, fileInfo, status, _ := api.backend.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
+				EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
 				return
 			} else {
 				file.Size = uint64(fileInfo.Size())
@@ -277,17 +277,17 @@ func apiBlockchainFileUpdate(w http.ResponseWriter, r *http.Request) {
 		blockRecord := blockRecordFileFromAPI(file)
 
 		// Set the merkle tree info as appropriate.
-		if !setFileMerkleInfo(&blockRecord) {
-			EncodeJSON(w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
+		if !setFileMerkleInfo(api.backend, &blockRecord) {
+			EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
 			return
 		}
 
 		filesAdd = append(filesAdd, blockRecord)
 	}
 
-	newHeight, newVersion, status := core.UserBlockchain.ReplaceFiles(filesAdd)
+	newHeight, newVersion, status := api.backend.UserBlockchain.ReplaceFiles(filesAdd)
 
-	EncodeJSON(w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
+	EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 // ---- metadata functions ----
@@ -318,14 +318,14 @@ func (file *apiFile) IsVirtualFolder() bool {
 }
 
 // setFileMerkleInfo sets the merkle fields in the BlockRecordFile
-func setFileMerkleInfo(file *blockchain.BlockRecordFile) (valid bool) {
+func setFileMerkleInfo(backend *core.Backend, file *blockchain.BlockRecordFile) (valid bool) {
 	if file.Size <= merkle.MinimumFragmentSize {
 		// If smaller or equal than the minimum fragment size, the merkle tree is not used.
 		file.MerkleRootHash = file.Hash
 		file.FragmentSize = merkle.MinimumFragmentSize
 	} else {
 		// Get the information from the Warehouse .merkle companion file.
-		tree, status, _ := core.UserWarehouse.ReadMerkleTree(file.Hash, true)
+		tree, status, _ := backend.UserWarehouse.ReadMerkleTree(file.Hash, true)
 		if status != warehouse.StatusOK {
 			return false
 		}

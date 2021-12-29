@@ -24,7 +24,7 @@ const connectionInvalidate = 22
 const connectionRemove = 2 * 60
 
 // autoPingAll sends out regular ping messages to all connections of all peers. This allows to detect invalid connections and eventually drop them.
-func autoPingAll() {
+func (backend *Backend) autoPingAll() {
 	for {
 		time.Sleep(time.Second)
 		thresholdInvalidate1 := time.Now().Add(-connectionInvalidate * time.Second)
@@ -33,7 +33,7 @@ func autoPingAll() {
 		thresholdPingOut2 := time.Now().Add(-pingTime * time.Second * 4)
 		thresholdBlockchainRefresh := time.Now().Add(-thresholdBlockchainRefresh)
 
-		for _, peer := range PeerlistGet() {
+		for _, peer := range backend.PeerlistGet() {
 			// first handle active connections
 			for _, connection := range peer.GetConnections(true) {
 				thresholdPing := thresholdPingOut1
