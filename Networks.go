@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"os"
 	"sync"
 
 	"github.com/PeernetOfficial/core/protocol"
@@ -60,5 +61,23 @@ func (backend *Backend) initMessageSequence() {
 	// Windows: If the user runs as non-admin, it can be assumed that the Windows Firewall creates a rule to drop unsolicited incoming packets.
 	// Changing the Windows Firewall (via netsh or otherwise) requires elevated admin rights.
 	// This flag will be passed on to other peers to indicate that uncontacted peers shall use the Traverse message for establishing connections.
+	backend.firewallDetectIndicatorFile()
 	backend.networks.localFirewall = backend.Config.LocalFirewall
+}
+
+const firewallIndicatorFile = "firewallnotset"
+
+// Detects the file "firewallnotset". It may be set by an Peernet client installer to indicate the presence of a local firewall.
+func (backend *Backend) firewallDetectIndicatorFile() {
+	if _, err := os.Stat(firewallIndicatorFile); err == nil {
+		// If the config firewall flag isn't set, set it.
+		if !backend.Config.LocalFirewall {
+			backend.Config.LocalFirewall = true
+
+			backend.SaveConfig()
+		}
+
+		// the indicator is one-time only, remove
+		os.Remove(firewallIndicatorFile)
+	}
 }
