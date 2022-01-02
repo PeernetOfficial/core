@@ -22,7 +22,7 @@ type BlockchainCache struct {
 	LimitTotalRecords   uint64 // Max count of blocks and header in total to keep across all blockchains. 0 = unlimited. Max Records * Max Block Size = Size Limit.
 	ReadOnly            bool   // Whether the cache is read only.
 
-	store    *blockchain.MultiStore
+	Store    *blockchain.MultiStore
 	peerLock *locker.Locker
 
 	backend *Backend
@@ -42,7 +42,7 @@ func (backend *Backend) initBlockchainCache() {
 	}
 
 	var err error
-	backend.GlobalBlockchainCache.store, err = blockchain.InitMultiStore(backend.Config.BlockchainGlobal)
+	backend.GlobalBlockchainCache.Store, err = blockchain.InitMultiStore(backend.Config.BlockchainGlobal)
 	if err != nil {
 		backend.Filters.LogError("initBlockchainCache", "initializing database '%s': %s", backend.Config.BlockchainGlobal, err.Error())
 		return
@@ -50,9 +50,13 @@ func (backend *Backend) initBlockchainCache() {
 
 	backend.GlobalBlockchainCache.peerLock = locker.Initialize()
 
-	if backend.Config.LimitTotalRecords > 0 && backend.GlobalBlockchainCache.store.Database.Count() >= backend.Config.LimitTotalRecords {
+	// Set the blockchain cache to read-only if the record limit is reached.
+	if backend.Config.LimitTotalRecords > 0 && backend.GlobalBlockchainCache.Store.Database.Count() >= backend.Config.LimitTotalRecords {
 		backend.GlobalBlockchainCache.ReadOnly = true
 	}
+
+	backend.GlobalBlockchainCache.Store.FilterStatisticUpdate = backend.Filters.GlobalBlockchainCacheStatistic
+	backend.GlobalBlockchainCache.Store.FilterBlockchainDelete = backend.Filters.GlobalBlockchainCacheDelete
 }
 
 // SeenBlockchainVersion shall be called with information about another peer's blockchain.
@@ -63,8 +67,6 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 
 	// intermediate function to download and process blocks
 	downloadAndProcessBlocks := func(peer *PeerInfo, header *blockchain.MultiBlockchainHeader, offset, limit uint64) {
-		oldCount := len(header.ListBlocks)
-
 		if limit > cache.MaxBlockCount {
 			limit = cache.MaxBlockCount
 		}
@@ -73,20 +75,16 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 			if availability != protocol.GetBlockStatusAvailable {
 				return
 			}
-			cache.store.WriteBlock(peer.PublicKey, peer.BlockchainVersion, targetBlock.Offset, data)
-			header.ListBlocks = append(header.ListBlocks, targetBlock.Offset)
 
-			cache.backend.SearchIndex.IndexNewBlock(peer.PublicKey, peer.BlockchainVersion, targetBlock.Offset, data)
+			if decoded, _ := cache.Store.IngestBlock(header, targetBlock.Offset, data, true); decoded != nil {
+				// index it for search
+				cache.backend.SearchIndex.IndexNewBlockDecoded(peer.PublicKey, peer.BlockchainVersion, targetBlock.Offset, decoded.RecordsDecoded)
+			}
 		})
-
-		// only update the blockchain header if it changed
-		if oldCount != len(header.ListBlocks) {
-			cache.store.WriteBlockchainHeader(peer.PublicKey, header)
-		}
 	}
 
 	// get the old header
-	header, status, err := cache.store.AssessBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight)
+	header, status, err := cache.Store.AssessBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight)
 	if err != nil {
 		return
 	}
@@ -96,12 +94,12 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 		return
 
 	case blockchain.MultiStatusInvalidRemote:
-		cache.store.DeleteBlockchain(peer.PublicKey, header)
+		cache.Store.DeleteBlockchain(header)
 
 		cache.backend.SearchIndex.UnindexBlockchain(peer.PublicKey)
 
 	case blockchain.MultiStatusHeaderNA:
-		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
+		if header, err = cache.Store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
 			return
 		}
 
@@ -109,11 +107,11 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 
 	case blockchain.MultiStatusNewVersion:
 		// delete existing data first, then create it new
-		cache.store.DeleteBlockchain(peer.PublicKey, header)
+		cache.Store.DeleteBlockchain(header)
 
 		cache.backend.SearchIndex.UnindexBlockchain(peer.PublicKey)
 
-		if header, err = cache.store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
+		if header, err = cache.Store.NewBlockchainHeader(peer.PublicKey, peer.BlockchainVersion, peer.BlockchainHeight); err != nil {
 			return
 		}
 
@@ -130,7 +128,8 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 	}
 
 	if cache.LimitTotalRecords > 0 {
-		cache.ReadOnly = cache.store.Database.Count() >= cache.LimitTotalRecords
+		// Bug: This code is currently never reached if ReadOnly is true.
+		cache.ReadOnly = cache.Store.Database.Count() >= cache.LimitTotalRecords
 	}
 }
 
@@ -177,7 +176,7 @@ func (cache *BlockchainCache) ReadBlock(PublicKey *btcec.PublicKey, Version, Blo
 		}
 	} else {
 		// read from the cache
-		if raw, found = cache.store.ReadBlock(PublicKey, Version, BlockNumber); !found {
+		if raw, found = cache.Store.ReadBlock(PublicKey, Version, BlockNumber); !found {
 			return nil, nil, false, nil
 		}
 	}

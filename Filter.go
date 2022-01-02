@@ -11,6 +11,7 @@ package core
 import (
 	"log"
 
+	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
@@ -62,6 +63,12 @@ type Filters struct {
 
 	// MessageOutPong is a high-level filter for outgoing pongs.
 	MessageOutPong func(peer *PeerInfo, packet *protocol.PacketRaw)
+
+	// Called when the statistics change of a single blockchain in the cache. Must be set on init.
+	GlobalBlockchainCacheStatistic func(multi *blockchain.MultiStore, header *blockchain.MultiBlockchainHeader, statsOld blockchain.BlockchainStats)
+
+	// Called after a blockchain is deleted from the blockchain cache. The header reflects the status before deletion. Must be set on init.
+	GlobalBlockchainCacheDelete func(multi *blockchain.MultiStore, header *blockchain.MultiBlockchainHeader)
 }
 
 func (backend *Backend) initFilters() {
