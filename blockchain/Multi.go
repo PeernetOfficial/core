@@ -36,6 +36,10 @@ const (
 type MultiStore struct {
 	path     string      // Path of the blockchain on disk. Depends on key-value store whether a filename or folder.
 	Database store.Store // The database storing the blockchain.
+
+	// callbacks
+	FilterStatisticUpdate  func(multi *MultiStore, header *MultiBlockchainHeader, statsOld BlockchainStats)
+	FilterBlockchainDelete func(multi *MultiStore, header *MultiBlockchainHeader)
 }
 
 func InitMultiStore(path string) (multi *MultiStore, err error) {
@@ -58,40 +62,52 @@ Offset  Size   Info
 16      8      Count of blocks
 24      8      Date first block added
 32      8      Date last block added
-40      8 * n  List of block numbers that are stored
+40      8      Stats: Count of file records  (from available blocks)
+48      8      Stats: Size of all files combined (from available blocks)
+56      8 * n  List of block numbers that are stored
+
+Note: The statistics fields only count available stored blocks.
 
 */
 
+const multiBlockchainHeaderSize = 56
+
 // This is a header for a single blockchain stored in a multi store.
 type MultiBlockchainHeader struct {
-	Height              uint64    // Height is exchanged as uint32 in the protocol, but stored as uint64.
-	Version             uint64    // Version is always uint64.
-	DateFirstBlockAdded time.Time // Date the first block was added
-	DateLastBlockAdded  time.Time // Date the last block was added
-	ListBlocks          []uint64  // List of block numbers that are stored
+	PublicKey           *btcec.PublicKey // Public Key of the blockchain
+	Height              uint64           // Height is exchanged as uint32 in the protocol, but stored as uint64.
+	Version             uint64           // Version is always uint64.
+	DateFirstBlockAdded time.Time        // Date the first block was added
+	DateLastBlockAdded  time.Time        // Date the last block was added
+	ListBlocks          []uint64         // List of block numbers that are stored
+	Stats               BlockchainStats  // Statistics about the blockchain (only about stored blocks)
 }
 
-// Reads a blockchains header if available.
-func (multi *MultiStore) ReadBlockchainHeader(publicKey *btcec.PublicKey) (header *MultiBlockchainHeader, found bool, err error) {
-	buffer, found := multi.Database.Get(publicKey.SerializeCompressed())
-	if !found {
-		return nil, false, nil
-	} else if len(buffer) < 40 {
-		return nil, false, errors.New("header length too small")
+// Keep statistics about blocks stored for a blockchain
+type BlockchainStats struct {
+	CountFileRecords uint64 // Count of file records in stored blocks
+	SizeAllFiles     uint64 // Size of all files combined in stored blocks
+}
+
+func decodeBlockchainHeader(publicKey *btcec.PublicKey, buffer []byte) (header *MultiBlockchainHeader, err error) {
+	if len(buffer) < multiBlockchainHeaderSize {
+		return nil, errors.New("header length too small")
 	}
 
-	header = &MultiBlockchainHeader{}
+	header = &MultiBlockchainHeader{PublicKey: publicKey}
 	header.Version = binary.LittleEndian.Uint64(buffer[0:8])
 	header.Height = binary.LittleEndian.Uint64(buffer[8:16])
 	countBlocks := binary.LittleEndian.Uint64(buffer[16:24])
 	header.DateFirstBlockAdded = time.Unix(int64(binary.LittleEndian.Uint64(buffer[24:32])), 0)
 	header.DateLastBlockAdded = time.Unix(int64(binary.LittleEndian.Uint64(buffer[32:40])), 0)
+	header.Stats.CountFileRecords = binary.LittleEndian.Uint64(buffer[40:48])
+	header.Stats.SizeAllFiles = binary.LittleEndian.Uint64(buffer[48:56])
 
-	if uint64(len(buffer)) < 40+8*countBlocks {
-		return nil, false, errors.New("header length too small")
+	if uint64(len(buffer)) < multiBlockchainHeaderSize+8*countBlocks {
+		return nil, errors.New("header length too small")
 	}
 
-	index := 40
+	index := multiBlockchainHeaderSize
 
 	for n := uint64(0); n < countBlocks; n++ {
 		blockN := binary.LittleEndian.Uint64(buffer[index : index+8])
@@ -99,27 +115,40 @@ func (multi *MultiStore) ReadBlockchainHeader(publicKey *btcec.PublicKey) (heade
 		index += 8
 	}
 
-	return header, true, nil
+	return header, nil
+}
+
+// Reads a blockchains header if available.
+func (multi *MultiStore) ReadBlockchainHeader(publicKey *btcec.PublicKey) (header *MultiBlockchainHeader, found bool, err error) {
+	buffer, found := multi.Database.Get(publicKey.SerializeCompressed())
+	if !found {
+		return nil, false, nil
+	}
+
+	header, err = decodeBlockchainHeader(publicKey, buffer)
+	return header, err == nil, err
 }
 
 // WriteBlockchainHeader writes a blockchain header. If one exists, it will be overwritten.
-func (multi *MultiStore) WriteBlockchainHeader(publicKey *btcec.PublicKey, header *MultiBlockchainHeader) (err error) {
-	raw := make([]byte, 40+8*len(header.ListBlocks))
+func (multi *MultiStore) WriteBlockchainHeader(header *MultiBlockchainHeader) (err error) {
+	raw := make([]byte, multiBlockchainHeaderSize+8*len(header.ListBlocks))
 
 	binary.LittleEndian.PutUint64(raw[0:8], header.Version)
 	binary.LittleEndian.PutUint64(raw[8:16], header.Height)
 	binary.LittleEndian.PutUint64(raw[16:24], uint64(len(header.ListBlocks)))
 	binary.LittleEndian.PutUint64(raw[24:32], uint64(header.DateFirstBlockAdded.UTC().Unix()))
 	binary.LittleEndian.PutUint64(raw[32:40], uint64(header.DateLastBlockAdded.UTC().Unix()))
+	binary.LittleEndian.PutUint64(raw[40:48], header.Stats.CountFileRecords)
+	binary.LittleEndian.PutUint64(raw[48:56], header.Stats.SizeAllFiles)
 
-	index := 40
+	index := multiBlockchainHeaderSize
 
 	for _, blockN := range header.ListBlocks {
 		binary.LittleEndian.PutUint64(raw[index:index+8], blockN)
 		index += 8
 	}
 
-	return multi.Database.Set(publicKey.SerializeCompressed(), raw)
+	return multi.Database.Set(header.PublicKey.SerializeCompressed(), raw)
 }
 
 func lookupKeyForBlock(publicKey *btcec.PublicKey, version, blockNumber uint64) (key []byte) {
@@ -138,7 +167,7 @@ func (multi *MultiStore) ReadBlock(publicKey *btcec.PublicKey, version, blockNum
 	return multi.Database.Get(lookupKeyForBlock(publicKey, version, blockNumber))
 }
 
-// WriteBlock writes a raw block. It does not update the blockchains header.
+// WriteBlock writes a raw block. It does not update the blockchain header.
 func (multi *MultiStore) WriteBlock(publicKey *btcec.PublicKey, version, blockNumber uint64, raw []byte) (err error) {
 	return multi.Database.Set(lookupKeyForBlock(publicKey, version, blockNumber), raw)
 }
@@ -170,25 +199,94 @@ func (multi *MultiStore) AssessBlockchainHeader(publicKey *btcec.PublicKey, vers
 	return header, MultiStatusNewBlocks, nil
 }
 
-// Deletes a blockchain
-func (multi *MultiStore) DeleteBlockchain(publicKey *btcec.PublicKey, header *MultiBlockchainHeader) {
+// Deletes an entire blockchain from the store. It will delete each block individually and then the header.
+func (multi *MultiStore) DeleteBlockchain(header *MultiBlockchainHeader) {
 	// first delete all blocks
 	for _, blockN := range header.ListBlocks {
-		multi.Database.Delete(lookupKeyForBlock(publicKey, header.Version, blockN))
+		multi.Database.Delete(lookupKeyForBlock(header.PublicKey, header.Version, blockN))
 	}
 
 	// delete the header
-	multi.Database.Delete(publicKey.SerializeCompressed())
+	multi.Database.Delete(header.PublicKey.SerializeCompressed())
+
+	if multi.FilterBlockchainDelete != nil {
+		multi.FilterBlockchainDelete(multi, header)
+	}
 }
 
 func (multi *MultiStore) NewBlockchainHeader(publicKey *btcec.PublicKey, version, height uint64) (header *MultiBlockchainHeader, err error) {
 	timeN := time.Now().UTC()
 	header = &MultiBlockchainHeader{
+		PublicKey:           publicKey,
 		Height:              height,
 		Version:             version,
 		DateFirstBlockAdded: timeN,
 		DateLastBlockAdded:  timeN,
 	}
 
-	return header, multi.WriteBlockchainHeader(publicKey, header)
+	return header, multi.WriteBlockchainHeader(header)
+}
+
+// Updates the statistics fields of the blockchain header based on the new decoded block records.
+// It does not write the blockchain header; multi.WriteBlockchainHeader must called to store the changes.
+// The caller must make sure not to call this function on records already processed.
+func (multi *MultiStore) UpdateBlockchainStatistics(header *MultiBlockchainHeader, recordsDecoded []interface{}) {
+	updatedStats := false
+	statsOld := header.Stats
+
+	for _, decodedR := range recordsDecoded {
+		if file, ok := decodedR.(BlockRecordFile); ok {
+			header.Stats.SizeAllFiles += file.Size
+			header.Stats.CountFileRecords++
+
+			updatedStats = true
+		}
+	}
+
+	if updatedStats && multi.FilterStatisticUpdate != nil {
+		multi.FilterStatisticUpdate(multi, header, statsOld)
+	}
+}
+
+// Iterates over all blockchains stored in the cache
+func (multi *MultiStore) IterateBlockchains(callback func(header *MultiBlockchainHeader)) {
+	multi.Database.Iterate(func(key, value []byte) {
+		if len(key) == 33 {
+			// Length 33 indicates key = Public key compressed, value = Header
+			if blockchainPublicKey, err := btcec.ParsePubKey(key, btcec.S256()); err == nil {
+				if header, err := decodeBlockchainHeader(blockchainPublicKey, value); err == nil {
+					callback(header)
+				}
+			}
+		}
+	})
+}
+
+// IngestBlock ingests a new block into the store. It fails if a block is already stored for the given blockchain and block number.
+// It will update the blockchain header including the statistics.
+func (multi *MultiStore) IngestBlock(header *MultiBlockchainHeader, blockNumber uint64, raw []byte, failIfInvalid bool) (decoded *BlockDecoded, err error) {
+	// check if already exists
+	if _, found := multi.ReadBlock(header.PublicKey, header.Version, blockNumber); found {
+		return nil, errors.New("already exists")
+	}
+
+	// decode it
+	decoded, status, err := DecodeBlockRaw(raw)
+	if failIfInvalid && err != nil {
+		return nil, err
+	}
+
+	// store the transferred block in the cache
+	multi.WriteBlock(header.PublicKey, header.Version, blockNumber, raw)
+	header.ListBlocks = append(header.ListBlocks, blockNumber)
+
+	// update blockchain header stats if records were decoded
+	if status == StatusOK {
+		multi.UpdateBlockchainStatistics(header, decoded.RecordsDecoded)
+	}
+
+	// update the blockchain header
+	multi.WriteBlockchainHeader(header)
+
+	return decoded, nil
 }
