@@ -57,7 +57,7 @@ func InitSearchIndexStore(DatabaseDirectory string) (searchIndex *SearchIndexSto
 }
 
 func (index *SearchIndexStore) IndexNewBlock(publicKey *btcec.PublicKey, blockchainVersion, blockNumber uint64, raw []byte) {
-	if index.Database == nil {
+	if index == nil {
 		return
 	}
 
@@ -67,7 +67,16 @@ func (index *SearchIndexStore) IndexNewBlock(publicKey *btcec.PublicKey, blockch
 		return
 	}
 
-	for _, decodedR := range decoded.RecordsDecoded {
+	index.IndexNewBlockDecoded(publicKey, blockchainVersion, blockNumber, decoded.RecordsDecoded)
+}
+
+// Indexes a new decoded block. Currently it only indexes file records.
+func (index *SearchIndexStore) IndexNewBlockDecoded(publicKey *btcec.PublicKey, blockchainVersion, blockNumber uint64, recordsDecoded []interface{}) {
+	if index == nil {
+		return
+	}
+
+	for _, decodedR := range recordsDecoded {
 		if file, ok := decodedR.(blockchain.BlockRecordFile); ok {
 			var filename, folder, description string
 			for _, tag := range file.Tags {
@@ -94,7 +103,7 @@ func (index *SearchIndexStore) IndexNewBlock(publicKey *btcec.PublicKey, blockch
 
 // UnindexBlockchain deletes all index for a given blockchain. This is intentionally not done on a version/block level, because it could easily lead to orphans.
 func (index *SearchIndexStore) UnindexBlockchain(publicKey *btcec.PublicKey) {
-	if index.Database == nil {
+	if index == nil {
 		return
 	}
 
@@ -123,7 +132,7 @@ func (index *SearchIndexStore) UnindexBlockchain(publicKey *btcec.PublicKey) {
 
 // IndexHash indexes a new hash
 func (index *SearchIndexStore) IndexHash(publicKey *btcec.PublicKey, blockchainVersion, blockNumber uint64, fileID uuid.UUID, hash []byte) (err error) {
-	if index.Database == nil {
+	if index == nil {
 		return
 	}
 
@@ -152,7 +161,7 @@ func (index *SearchIndexStore) IndexHash(publicKey *btcec.PublicKey, blockchainV
 
 // UnindexHash deletes a index record. If there are no more files associated with the hash, the entire hash record is deleted.
 func (index *SearchIndexStore) UnindexHash(fileID uuid.UUID, hash []byte) (err error) {
-	if index.Database == nil {
+	if index == nil {
 		return
 	}
 
@@ -187,7 +196,7 @@ func (index *SearchIndexStore) UnindexHash(fileID uuid.UUID, hash []byte) (err e
 
 // LookupHash returns all index records stored for the hash.
 func (index *SearchIndexStore) LookupHash(selector SearchSelector, resultMap map[uuid.UUID]*SearchIndexRecord) (err error) {
-	if index.Database == nil {
+	if index == nil {
 		return
 	}
 
@@ -218,6 +227,7 @@ func (index *SearchIndexStore) LookupHash(selector SearchSelector, resultMap map
 // ---- index and reverse index code ----
 
 /*
+Index records are records looked up based on a hash (the search term) to uniquely identify a single file.
 Structure for each index record:
 
 Offset   Size    Info

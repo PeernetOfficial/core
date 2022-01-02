@@ -11,6 +11,10 @@ import (
 )
 
 func (index *SearchIndexStore) Search(term string) (results []SearchIndexRecord) {
+	if index == nil { // Search index may not be available.
+		return nil
+	}
+
 	termS, isExact, _ := sanitizeInputTerm(term)
 
 	if len(termS) < wordMinLength {
