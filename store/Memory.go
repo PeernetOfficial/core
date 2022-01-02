@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// MemoryStore is a simple in-memory key/value store for testing purposes.
+// MemoryStore is a simple in-memory key-value store for testing purposes.
 type MemoryStore struct {
 	mutex     *sync.Mutex
 	data      map[string][]byte
@@ -39,7 +39,7 @@ func (ms *MemoryStore) ExpireKeys() {
 	}
 }
 
-// Set stores the key/value pair.
+// Set stores the key-value pair.
 func (ms *MemoryStore) Set(key []byte, data []byte) error {
 	ms.mutex.Lock()
 	ms.data[string(key)] = data
@@ -47,7 +47,7 @@ func (ms *MemoryStore) Set(key []byte, data []byte) error {
 	return nil
 }
 
-// StoreExpire stores the key/value pair and deletes it after the expiration time.
+// StoreExpire stores the key-value pair and deletes it after the expiration time.
 func (ms *MemoryStore) StoreExpire(key []byte, data []byte, expiration time.Time) error {
 	ms.mutex.Lock()
 	ms.expireMap[string(key)] = expiration
@@ -64,7 +64,7 @@ func (ms *MemoryStore) Get(key []byte) (data []byte, found bool) {
 	return data, found
 }
 
-// Delete deletes a key/value pair.
+// Delete deletes a key-value pair.
 func (ms *MemoryStore) Delete(key []byte) {
 	ms.mutex.Lock()
 	delete(ms.expireMap, string(key))
@@ -77,4 +77,18 @@ func (ms *MemoryStore) Count() uint64 {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
 	return uint64(len(ms.data))
+}
+
+// Iterate iterates over all records.
+func (ms *MemoryStore) Iterate(callback func(key, value []byte)) {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+
+	for key, value := range ms.data {
+		ms.mutex.Unlock() // allow access to the map while calling the callback
+
+		callback([]byte(key), value)
+
+		ms.mutex.Lock()
+	}
 }
