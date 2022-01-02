@@ -16,7 +16,7 @@ import (
 	"github.com/akrylysov/pogreb"
 )
 
-// PogrebStore is a key/value store using Pogreb.
+// PogrebStore is a key-value store using Pogreb.
 // Expiration is currently not supported.
 type PogrebStore struct {
 	mutex    *sync.Mutex
@@ -45,12 +45,12 @@ func (store *PogrebStore) ExpireKeys() {
 	// Not yet implemented
 }
 
-// Store stores the key/value pair.
+// Store stores the key-value pair.
 func (store *PogrebStore) Set(key []byte, data []byte) error {
 	return store.db.Put(key, data)
 }
 
-// StoreExpire stores the key/value pair and deletes it after the expiration time.
+// StoreExpire stores the key-value pair and deletes it after the expiration time.
 func (store *PogrebStore) StoreExpire(key []byte, data []byte, expiration time.Time) error {
 	// Not yet implemented
 	return errors.New("not yet implemented")
@@ -65,7 +65,7 @@ func (store *PogrebStore) Get(key []byte) (data []byte, found bool) {
 	return value, true
 }
 
-// Delete deletes a key/value pair.
+// Delete deletes a key-value pair.
 func (store *PogrebStore) Delete(key []byte) {
 	store.db.Delete(key)
 }
@@ -73,4 +73,17 @@ func (store *PogrebStore) Delete(key []byte) {
 // Count returns the count of records stored.
 func (store *PogrebStore) Count() uint64 {
 	return uint64(store.db.Count())
+}
+
+// Iterate iterates over all records.
+func (store *PogrebStore) Iterate(callback func(key, value []byte)) {
+	iterator := store.db.Items()
+	for {
+		key, value, err := iterator.Next()
+		if err != nil {
+			break
+		}
+
+		callback(key, value)
+	}
 }
