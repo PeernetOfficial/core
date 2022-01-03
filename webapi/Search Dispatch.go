@@ -32,7 +32,7 @@ func (api *WebapiInstance) dispatchSearch(input SearchRequest) (job *SearchJob) 
 }
 
 func (job *SearchJob) localSearch(api *WebapiInstance, term string) {
-	if api.backend.SearchIndex == nil || api.backend.GlobalBlockchainCache == nil {
+	if api.backend.SearchIndex == nil {
 		job.Status = SearchStatusNoIndex
 		return
 	}
@@ -43,7 +43,7 @@ func (job *SearchJob) localSearch(api *WebapiInstance, term string) {
 
 resultLoop:
 	for _, result := range results {
-		file, _, found, err := api.backend.GlobalBlockchainCache.ReadFile(result.PublicKey, result.BlockchainVersion, result.BlockNumber, result.FileID)
+		file, _, found, err := api.backend.ReadFile(result.PublicKey, result.BlockchainVersion, result.BlockNumber, result.FileID)
 		if err != nil || !found {
 			continue
 		}
