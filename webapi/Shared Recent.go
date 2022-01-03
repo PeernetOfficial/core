@@ -34,7 +34,7 @@ func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int
 		// decode blocks from top down
 	blockLoop:
 		for blockN := peer.BlockchainHeight - 1; blockN > 0; blockN-- {
-			blockDecoded, _, found, _ := backend.GlobalBlockchainCache.ReadBlock(peer.PublicKey, peer.BlockchainVersion, blockN)
+			blockDecoded, _, found, _ := backend.ReadBlock(peer.PublicKey, peer.BlockchainVersion, blockN)
 			if !found {
 				continue
 			}

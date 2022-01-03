@@ -8,10 +8,8 @@ package core
 
 import (
 	"github.com/PeernetOfficial/core/blockchain"
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/enfipy/locker"
-	"github.com/google/uuid"
 )
 
 // The blockchain cache stores blockchains.
@@ -143,49 +141,4 @@ func (peer *PeerInfo) remoteBlockchainUpdate() {
 
 	// TODO: This entire function should be instead a non-blocking message via a buffer channel.
 	go peer.Backend.GlobalBlockchainCache.SeenBlockchainVersion(peer)
-}
-
-func (cache *BlockchainCache) ReadFile(PublicKey *btcec.PublicKey, Version, BlockNumber uint64, FileID uuid.UUID) (file blockchain.BlockRecordFile, raw []byte, found bool, err error) {
-	blockDecoded, raw, found, err := cache.ReadBlock(PublicKey, Version, BlockNumber)
-	if !found {
-		return file, raw, found, err
-	}
-
-	for _, decodedR := range blockDecoded.RecordsDecoded {
-		if file, ok := decodedR.(blockchain.BlockRecordFile); ok && file.ID == FileID {
-			return file, raw, true, nil
-		}
-	}
-
-	return file, raw, false, nil
-}
-
-// ReadBlock reads a block and decodes the records.
-func (cache *BlockchainCache) ReadBlock(PublicKey *btcec.PublicKey, Version, BlockNumber uint64) (decoded *blockchain.BlockDecoded, raw []byte, found bool, err error) {
-	// requesting a block from the user's blockchain?
-	if PublicKey.IsEqual(cache.backend.peerPublicKey) {
-		_, _, version := cache.backend.UserBlockchain.Header()
-		if Version != version {
-			return nil, nil, false, nil
-		}
-
-		var status int
-		raw, status, err = cache.backend.UserBlockchain.GetBlockRaw(BlockNumber)
-		if err != nil || status != blockchain.StatusOK {
-			return nil, raw, false, err
-		}
-	} else {
-		// read from the cache
-		if raw, found = cache.Store.ReadBlock(PublicKey, Version, BlockNumber); !found {
-			return nil, nil, false, nil
-		}
-	}
-
-	// decode the entire block
-	blockDecoded, status, err := blockchain.DecodeBlockRaw(raw)
-	if err != nil || status != blockchain.StatusOK {
-		return nil, raw, false, err
-	}
-
-	return blockDecoded, raw, true, nil
 }
