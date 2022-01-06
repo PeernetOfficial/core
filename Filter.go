@@ -9,12 +9,15 @@ Filters allow the caller to intercept events. The filter functions must not modi
 package core
 
 import (
+	"io"
 	"log"
+	"sync"
 
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
+	"github.com/google/uuid"
 )
 
 // Filters contains all functions to install the hook. Use nil for unused.
@@ -122,4 +125,46 @@ func (backend *Backend) initFilters() {
 // DefaultLogError is the default error logging function
 func DefaultLogError(function, format string, v ...interface{}) {
 	log.Printf("["+function+"] "+format, v...)
+}
+
+// MultiWriter code that allows to subscribe/unsubscribe.
+type multiWriter struct {
+	writers map[uuid.UUID]io.Writer
+	sync.Mutex
+}
+
+// Creates a new writer that duplicates its writes to all the subscribed writers.
+// Each write is written to each subscribed writer, one at a time. If any writer returns an error, the entire write operation continues.
+func newMultiWriter() *multiWriter {
+	return &multiWriter{writers: make(map[uuid.UUID]io.Writer)}
+}
+
+// Subscribe a new writer to the list of writers
+func (m *multiWriter) Subscribe(writer io.Writer) (id uuid.UUID) {
+	m.Lock()
+	defer m.Unlock()
+
+	id = uuid.New()
+	m.writers[id] = writer
+
+	return id
+}
+
+// Unsubscribe a writer from the list of writers
+func (m *multiWriter) Unsubscribe(id uuid.UUID) {
+	m.Lock()
+	defer m.Unlock()
+
+	delete(m.writers, id)
+}
+
+// Write a slice of byte to each of the subscribed writers. It will not return any errors.
+func (m *multiWriter) Write(p []byte) (n int, err error) {
+	m.Lock()
+	defer m.Unlock()
+
+	for _, w := range m.writers {
+		w.Write(p)
+	}
+	return len(p), nil
 }
