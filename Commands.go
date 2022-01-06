@@ -8,6 +8,7 @@ package core
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/PeernetOfficial/core/dht"
@@ -214,7 +215,7 @@ func (peer *PeerInfo) cmdPong(msg *protocol.MessageRaw, connection *Connection) 
 
 // cmdChat handles a chat message [debug]
 func (peer *PeerInfo) cmdChat(msg *protocol.MessageRaw, connection *Connection) {
-	fmt.Printf("Chat from '%s': %s\n", connection.Address.String(), string(msg.PacketRaw.Payload))
+	fmt.Fprintf(peer.Backend.Stdout, "Chat from %s '%s': %s\n", hex.EncodeToString(peer.PublicKey.SerializeCompressed()), connection.Address.String(), string(msg.PacketRaw.Payload))
 }
 
 // cmdLocalDiscovery handles an incoming announcement via local discovery

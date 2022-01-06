@@ -29,6 +29,7 @@ func Init(UserAgent string, ConfigFilename string, Filters *Filters) (backend *B
 	backend = &Backend{
 		ConfigFilename: ConfigFilename,
 		userAgent:      UserAgent,
+		Stdout:         newMultiWriter(),
 	}
 
 	if Filters != nil {
@@ -108,4 +109,7 @@ type Backend struct {
 
 	// peerMonitor is a list of channels receiving information about new peers
 	peerMonitor []chan<- *PeerInfo
+
+	// Stdout bundles any output for the end-user. Writers may subscribe/unsubscribe.
+	Stdout *multiWriter
 }
