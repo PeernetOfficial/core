@@ -15,6 +15,6 @@ func (backend *Backend) initUserWarehouse() {
 	backend.UserWarehouse, err = warehouse.Init(backend.Config.WarehouseMain)
 
 	if err != nil {
-		backend.Filters.LogError("initUserWarehouse", "error: %s\n", err.Error())
+		backend.LogError("initUserWarehouse", "error: %s\n", err.Error())
 	}
 }

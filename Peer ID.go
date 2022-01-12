@@ -37,7 +37,7 @@ func (backend *Backend) initPeerID() {
 			return
 		}
 
-		backend.Filters.LogError("initPeerID", "private key in config is corrupted! Error: %s\n", err.Error())
+		backend.LogError("initPeerID", "private key in config is corrupted! Error: %s\n", err.Error())
 		os.Exit(ExitPrivateKeyCorrupt)
 	}
 
@@ -45,7 +45,7 @@ func (backend *Backend) initPeerID() {
 	var err error
 	backend.peerPrivateKey, backend.peerPublicKey, err = Secp256k1NewPrivateKey()
 	if err != nil {
-		backend.Filters.LogError("initPeerID", "generating public-private key pairs: %s\n", err.Error())
+		backend.LogError("initPeerID", "generating public-private key pairs: %s\n", err.Error())
 		os.Exit(ExitPrivateKeyCreate)
 	}
 	backend.nodeID = protocol.PublicKey2NodeID(backend.peerPublicKey)

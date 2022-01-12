@@ -42,7 +42,7 @@ func (backend *Backend) initBlockchainCache() {
 	var err error
 	backend.GlobalBlockchainCache.Store, err = blockchain.InitMultiStore(backend.Config.BlockchainGlobal)
 	if err != nil {
-		backend.Filters.LogError("initBlockchainCache", "initializing database '%s': %s", backend.Config.BlockchainGlobal, err.Error())
+		backend.LogError("initBlockchainCache", "initializing database '%s': %s", backend.Config.BlockchainGlobal, err.Error())
 		return
 	}
 

@@ -47,12 +47,12 @@ loopSeedList:
 		// parse the Public Key
 		publicKeyB, err := hex.DecodeString(seed.PublicKey)
 		if err != nil {
-			backend.Filters.LogError("initSeedList", "public key '%s': %v\n", seed.PublicKey, err.Error())
+			backend.LogError("initSeedList", "public key '%s': %v\n", seed.PublicKey, err.Error())
 			continue
 		}
 
 		if peer.publicKey, err = btcec.ParsePubKey(publicKeyB, btcec.S256()); err != nil {
-			backend.Filters.LogError("initSeedList", "public key '%s': %v\n", seed.PublicKey, err.Error())
+			backend.LogError("initSeedList", "public key '%s': %v\n", seed.PublicKey, err.Error())
 			continue
 		}
 
@@ -64,7 +64,7 @@ loopSeedList:
 		for _, addressA := range seed.Address {
 			address, err := parseAddress(addressA)
 			if err != nil {
-				backend.Filters.LogError("initSeedList", "public key '%s' address '%s': %v\n", seed.PublicKey, addressA, err.Error())
+				backend.LogError("initSeedList", "public key '%s' address '%s': %v\n", seed.PublicKey, addressA, err.Error())
 				continue loopSeedList
 			}
 
@@ -115,7 +115,7 @@ func (backend *Backend) bootstrap() {
 	go resetRecentContacts()
 
 	if len(rootPeers) == 0 {
-		backend.Filters.LogError("bootstrap", "warning: Empty list of root peers. Connectivity relies on local peer discovery and incoming connections.\n")
+		backend.LogError("bootstrap", "warning: Empty list of root peers. Connectivity relies on local peer discovery and incoming connections.\n")
 		return
 	}
 
@@ -163,7 +163,7 @@ func (backend *Backend) bootstrap() {
 		}
 	}
 
-	backend.Filters.LogError("bootstrap", "unable to connect to at least 2 root peers, aborting\n")
+	backend.LogError("bootstrap", "unable to connect to at least 2 root peers, aborting\n")
 }
 
 func (nets *Networks) autoMulticastBroadcast() {
@@ -173,13 +173,13 @@ func (nets *Networks) autoMulticastBroadcast() {
 
 		for _, network := range nets.networks6 {
 			if err := network.MulticastIPv6Send(); err != nil {
-				nets.backend.Filters.LogError("autoMulticastBroadcast", "multicast from network address '%s': %v\n", network.address.IP.String(), err.Error())
+				nets.backend.LogError("autoMulticastBroadcast", "multicast from network address '%s': %v\n", network.address.IP.String(), err.Error())
 			}
 		}
 
 		for _, network := range nets.networks4 {
 			if err := network.BroadcastIPv4Send(); err != nil {
-				nets.backend.Filters.LogError("autoMulticastBroadcast", "broadcast from network address '%s': %v\n", network.address.IP.String(), err.Error())
+				nets.backend.LogError("autoMulticastBroadcast", "broadcast from network address '%s': %v\n", network.address.IP.String(), err.Error())
 			}
 		}
 	}
