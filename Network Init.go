@@ -50,14 +50,14 @@ func (backend *Backend) initNetwork() {
 				host = listenA
 				portA = "0"
 			} else if err != nil {
-				backend.Filters.LogError("initNetwork", "invalid input listen address '%s': %s\n", listenA, err.Error())
+				backend.LogError("initNetwork", "invalid input listen address '%s': %s\n", listenA, err.Error())
 				continue
 			}
 
 			portI, _ := strconv.Atoi(portA)
 
 			if _, err := backend.networks.PrepareListen(host, portI); err != nil {
-				backend.Filters.LogError("initNetwork", "listen on '%s': %s\n", listenA, err.Error())
+				backend.LogError("initNetwork", "listen on '%s': %s\n", listenA, err.Error())
 				continue
 			}
 		}
@@ -67,10 +67,10 @@ func (backend *Backend) initNetwork() {
 
 	// Listen on all IPv4 and IPv6 addresses
 	//if _, err := networks.PrepareListen("0.0.0.0", 0); err != nil {
-	//	Filters.LogError("initNetwork", "listen on all IPv4 addresses (0.0.0.0): %s\n", err.Error())
+	//	LogError("initNetwork", "listen on all IPv4 addresses (0.0.0.0): %s\n", err.Error())
 	//}
 	//if _, err := networks.PrepareListen("::", 0); err != nil {
-	//	Filters.LogError("initNetwork", "listen on all IPv6 addresses (::): %s\n", err.Error())
+	//	LogError("initNetwork", "listen on all IPv6 addresses (::): %s\n", err.Error())
 	//}
 
 	// Listen on each network adapter on each IP. This guarantees the highest deliverability, even though it brings on additional challenges such as:
@@ -79,14 +79,14 @@ func (backend *Backend) initNetwork() {
 	// * Network adapters and IPs might change. Simplest case is if someone changes Wifi network.
 	interfaceList, err := net.Interfaces()
 	if err != nil {
-		backend.Filters.LogError("initNetwork", "enumerating network adapters failed: %s\n", err.Error())
+		backend.LogError("initNetwork", "enumerating network adapters failed: %s\n", err.Error())
 		return
 	}
 
 	for _, iface := range interfaceList {
 		addresses, err := iface.Addrs()
 		if err != nil {
-			backend.Filters.LogError("initNetwork", "enumerating IPs for network adapter '%s': %s\n", iface.Name, err.Error())
+			backend.LogError("initNetwork", "enumerating IPs for network adapter '%s': %s\n", iface.Name, err.Error())
 			continue
 		}
 
@@ -116,13 +116,13 @@ func (nets *Networks) InterfaceStart(iface net.Interface, addresses []net.Addr) 
 				continue
 			}
 
-			nets.backend.Filters.LogError("networks.InterfaceStart", "listening on network adapter '%s' IPv4 '%s': %s\n", iface.Name, net1.IP.String(), err.Error())
+			nets.backend.LogError("networks.InterfaceStart", "listening on network adapter '%s' IPv4 '%s': %s\n", iface.Name, net1.IP.String(), err.Error())
 			continue
 		}
 
 		nets.ipListen.Add(networkNew.address)
 
-		nets.backend.Filters.LogError("networks.InterfaceStart", "listen on network '%s' UDP %s\n", iface.Name, networkNew.address.String())
+		nets.backend.LogError("networks.InterfaceStart", "listen on network '%s' UDP %s\n", iface.Name, networkNew.address.String())
 
 		networksNew = append(networksNew, networkNew)
 	}

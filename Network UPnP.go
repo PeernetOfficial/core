@@ -143,7 +143,7 @@ monitorLoop:
 		}
 
 		// invalid :(
-		network.backend.Filters.LogError("upnpMonitorPortForward", "port forwarding invalidated for local IP %s (adapter %s) external IP %s port %d\n", network.address.String(), network.iface.Name, network.ipExternal.String(), network.portExternal)
+		network.backend.LogError("upnpMonitorPortForward", "port forwarding invalidated for local IP %s (adapter %s) external IP %s port %d\n", network.address.String(), network.iface.Name, network.ipExternal.String(), network.portExternal)
 
 		network.portExternal = 0
 		network.ipExternal = net.IP{}

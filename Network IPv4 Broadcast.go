@@ -43,7 +43,7 @@ func (network *Network) BroadcastIPv4() (err error) {
 	// listen on a special socket
 	network.broadcastSocket, err = reuseport.ListenPacket("udp4", net.JoinHostPort(network.address.IP.String(), strconv.Itoa(ipv4BroadcastPort)))
 	if err != nil {
-		network.backend.Filters.LogError("BroadcastIPv4", "broadcast socket listen on IP '%s' port '%d': %v\n", network.address.IP.String(), ipv4BroadcastPort, err)
+		network.backend.LogError("BroadcastIPv4", "broadcast socket listen on IP '%s' port '%d': %v\n", network.address.IP.String(), ipv4BroadcastPort, err)
 		return err
 	}
 
@@ -64,8 +64,8 @@ func (network *Network) BroadcastIPv4Listen() {
 		length, sender, err := network.broadcastSocket.ReadFrom(buffer)
 
 		if err != nil {
-			network.backend.Filters.LogError("BroadcastIPv4Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
-			time.Sleep(time.Millisecond * 50)                                                           // In case of endless errors, prevent ddos of CPU.
+			network.backend.LogError("BroadcastIPv4Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
+			time.Sleep(time.Millisecond * 50)                                                   // In case of endless errors, prevent ddos of CPU.
 			continue
 		}
 
@@ -107,7 +107,7 @@ func (network *Network) BroadcastIPv4Send() (err error) {
 	for _, ip := range network.broadcastIPv4 {
 		err = network.send(ip, ipv4BroadcastPort, raw)
 		if err != nil {
-			network.backend.Filters.LogError("BroadcastIPv4Send", "sending UDP packet: %v\n", err)
+			network.backend.LogError("BroadcastIPv4Send", "sending UDP packet: %v\n", err)
 		}
 	}
 

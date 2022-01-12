@@ -21,7 +21,7 @@ func (backend *Backend) initUserBlockchain() {
 	backend.UserBlockchain, err = blockchain.Init(backend.peerPrivateKey, backend.Config.BlockchainMain)
 
 	if err != nil {
-		backend.Filters.LogError("initUserBlockchain", "error: %s\n", err.Error())
+		backend.LogError("initUserBlockchain", "error: %s\n", err.Error())
 		os.Exit(ExitBlockchainCorrupt)
 	}
 }

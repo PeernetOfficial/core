@@ -29,7 +29,7 @@ func (api *WebapiInstance) apiWarehouseCreateFile(w http.ResponseWriter, r *http
 	hash, status, err := api.backend.UserWarehouse.CreateFile(r.Body, 0)
 
 	if err != nil {
-		api.backend.Filters.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
+		api.backend.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
 	}
 
 	EncodeJSON(api.backend, w, r, WarehouseResult{Status: status, Hash: hash})
@@ -54,7 +54,7 @@ func (api *WebapiInstance) apiWarehouseCreateFilePath(w http.ResponseWriter, r *
 	hash, status, err := api.backend.UserWarehouse.CreateFileFromPath(filePath)
 
 	if err != nil {
-		api.backend.Filters.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
+		api.backend.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
 	}
 
 	EncodeJSON(api.backend, w, r, WarehouseResult{Status: status, Hash: hash})
@@ -94,7 +94,7 @@ func (api *WebapiInstance) apiWarehouseReadFile(w http.ResponseWriter, r *http.R
 	}
 
 	if err != nil {
-		api.backend.Filters.LogError("warehouse.ReadFile", "status %d read %d error: %v", status, bytesRead, err)
+		api.backend.LogError("warehouse.ReadFile", "status %d read %d error: %v", status, bytesRead, err)
 	}
 }
 
@@ -115,7 +115,7 @@ func (api *WebapiInstance) apiWarehouseDeleteFile(w http.ResponseWriter, r *http
 	status, err := api.backend.UserWarehouse.DeleteFile(hash)
 
 	if err != nil {
-		api.backend.Filters.LogError("warehouse.DeleteFile", "status %d error: %v", status, err)
+		api.backend.LogError("warehouse.DeleteFile", "status %d error: %v", status, err)
 	}
 
 	EncodeJSON(api.backend, w, r, WarehouseResult{Status: status, Hash: hash})
@@ -144,7 +144,7 @@ func (api *WebapiInstance) apiWarehouseReadFilePath(w http.ResponseWriter, r *ht
 	status, bytesRead, err := api.backend.UserWarehouse.ReadFileToDisk(hash, int64(offset), int64(limit), targetFile)
 
 	if err != nil {
-		api.backend.Filters.LogError("warehouse.ReadFileToDisk", "status %d read %d error: %v", status, bytesRead, err)
+		api.backend.LogError("warehouse.ReadFileToDisk", "status %d read %d error: %v", status, bytesRead, err)
 	}
 
 	EncodeJSON(api.backend, w, r, WarehouseResult{Status: status, Hash: hash})

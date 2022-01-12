@@ -116,8 +116,8 @@ func (network *Network) Listen() {
 				return
 			}
 
-			network.backend.Filters.LogError("Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
-			time.Sleep(time.Millisecond * 50)                                              // In case of endless errors, prevent ddos of CPU.
+			network.backend.LogError("Listen", "receiving UDP message: %v\n", err) // Only log for debug purposes.
+			time.Sleep(time.Millisecond * 50)                                      // In case of endless errors, prevent ddos of CPU.
 			continue
 		}
 
@@ -136,7 +136,7 @@ func (nets *Networks) packetWorker() {
 	for packet := range nets.rawPacketsIncoming {
 		decoded, senderPublicKey, err := protocol.PacketDecrypt(packet.raw, packet.receiverPublicKey)
 		if err != nil {
-			//Filters.LogError("packetWorker", "decrypting packet from '%s': %s\n", packet.sender.String(), err.Error())  // Only log for debug purposes.
+			//LogError("packetWorker", "decrypting packet from '%s': %s\n", packet.sender.String(), err.Error())  // Only log for debug purposes.
 			continue
 		}
 
@@ -198,7 +198,7 @@ func (nets *Networks) packetWorker() {
 				isLast := response.IsLast()
 				sequenceInfo, valid, rtt := nets.Sequences.ValidateSequence(raw.SenderPublicKey, raw.Sequence, isLast, !isLast)
 				if !valid {
-					//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
+					//LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 					continue
 				} else if rtt > 0 {
 					connection.RoundTripTime = rtt
@@ -257,7 +257,7 @@ func (nets *Networks) packetWorker() {
 			// Validate sequence number which prevents unsolicited responses.
 			sequenceInfo, valid, rtt := nets.Sequences.ValidateSequence(raw.SenderPublicKey, raw.Sequence, true, false)
 			if !valid {
-				//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
+				//LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 				continue
 			} else if rtt > 0 {
 				connection.RoundTripTime = rtt
@@ -288,7 +288,7 @@ func (nets *Networks) packetWorker() {
 				isLast := msg.IsLast()
 				sequenceInfo, valid, rtt := nets.Sequences.ValidateSequenceBi(raw.SenderPublicKey, raw.Sequence, isLast)
 				if msg.Control != protocol.TransferControlRequestStart && !valid {
-					//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
+					//LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 					continue
 				} else if rtt > 0 {
 					connection.RoundTripTime = rtt
@@ -304,7 +304,7 @@ func (nets *Networks) packetWorker() {
 				isLast := msg.IsLast()
 				sequenceInfo, valid, rtt := nets.Sequences.ValidateSequenceBi(raw.SenderPublicKey, raw.Sequence, isLast)
 				if msg.Control != protocol.GetBlockControlRequestStart && !valid {
-					//Filters.LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
+					//LogError("packetWorker", "message with invalid sequence %d command %d from %s\n", raw.Sequence, raw.Command, raw.connection.Address.String()) // Only log for debug purposes.
 					continue
 				} else if rtt > 0 {
 					connection.RoundTripTime = rtt

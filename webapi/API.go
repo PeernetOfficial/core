@@ -111,7 +111,7 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 // startWebAPI starts a web-server with given parameters and logs the status. If may block forever and only returns if there is an error.
 // The certificate file and key are only used if SSL is enabled. The read and write timeout may be 0 for no timeout.
 func startWebAPI(Backend *core.Backend, WebListen string, UseSSL bool, CertificateFile, CertificateKey string, Handler http.Handler, Info string, ReadTimeout, WriteTimeout time.Duration) {
-	Backend.Filters.LogError("startWebAPI", "Start API at '%s'\n", WebListen)
+	Backend.LogError("startWebAPI", "Start API at '%s'\n", WebListen)
 
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12} // for security reasons disable TLS 1.0/1.1
 
@@ -127,12 +127,12 @@ func startWebAPI(Backend *core.Backend, WebListen string, UseSSL bool, Certifica
 	if UseSSL {
 		// HTTPS
 		if err := server.ListenAndServeTLS(CertificateFile, CertificateKey); err != nil {
-			Backend.Filters.LogError("startWebAPI", "Error listening on '%s': %v\n", WebListen, err)
+			Backend.LogError("startWebAPI", "Error listening on '%s': %v\n", WebListen, err)
 		}
 	} else {
 		// HTTP
 		if err := server.ListenAndServe(); err != nil {
-			Backend.Filters.LogError("startWebAPI", "Error listening on '%s': %v\n", WebListen, err)
+			Backend.LogError("startWebAPI", "Error listening on '%s': %v\n", WebListen, err)
 		}
 	}
 }
@@ -143,7 +143,7 @@ func EncodeJSON(Backend *core.Backend, w http.ResponseWriter, r *http.Request, d
 
 	err = json.NewEncoder(w).Encode(data)
 	if err != nil {
-		Backend.Filters.LogError("EncodeJSON", "Error writing data for route '%s': %v\n", r.URL.Path, err)
+		Backend.LogError("EncodeJSON", "Error writing data for route '%s': %v\n", r.URL.Path, err)
 	}
 
 	return err

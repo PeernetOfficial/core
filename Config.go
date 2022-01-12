@@ -8,6 +8,7 @@ package core
 
 import (
 	_ "embed" // Required for embedding default Config file
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -28,6 +29,9 @@ type Config struct {
 	WarehouseMain    string `yaml:"WarehouseMain"`    // Warehouse main stores the actual data of files shared by the end-user.
 	SearchIndex      string `yaml:"SearchIndex"`      // Local search index of blockchain records. Empty to disable.
 	GeoIPDatabase    string `yaml:"GeoIPDatabase"`    // GeoLite2 City database to provide GeoIP information.
+
+	// Target for the log messages: 0 = Log file,  1 = Stdout, 2 = Log file + Stdout, 3 = None
+	LogTarget int `yaml:"LogTarget"`
 
 	// Listen settings
 	Listen        []string `yaml:"Listen"`        // IP:Port combinations
@@ -102,7 +106,7 @@ func SaveConfig(Filename string, Config interface{}) (err error) {
 // SaveConfig stores the current runtime config to file. Any foreign settings not present in the Config structure will be deleted.
 func (backend *Backend) SaveConfig() {
 	if err := SaveConfig(backend.ConfigFilename, *backend.Config); err != nil {
-		backend.Filters.LogError("SaveConfig", "writing config '%s': %v\n", backend.ConfigFilename, err.Error())
+		backend.LogError("SaveConfig", "writing config '%s': %v\n", backend.ConfigFilename, err.Error())
 	}
 }
 
@@ -138,4 +142,24 @@ func (backend *Backend) initLog() (err error) {
 	log.Printf("---- Peernet Command-Line Client " + Version + " ----\n")
 
 	return nil
+}
+
+// Logs an error message.
+func (backend *Backend) LogError(function, format string, v ...interface{}) {
+	switch backend.Config.LogTarget {
+	case 0:
+		log.Printf("["+function+"] "+format, v...)
+
+	case 1:
+		fmt.Fprintf(backend.Stdout, "["+function+"] "+format, v...)
+
+	case 2:
+		log.Printf("["+function+"] "+format, v...)
+
+		fmt.Fprintf(backend.Stdout, "["+function+"] "+format, v...)
+
+	case 3: // None
+	}
+
+	backend.Filters.LogError(function, format, v)
 }

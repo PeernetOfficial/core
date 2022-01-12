@@ -10,7 +10,6 @@ package core
 
 import (
 	"io"
-	"log"
 	"sync"
 
 	"github.com/PeernetOfficial/core/blockchain"
@@ -31,7 +30,7 @@ type Filters struct {
 	// NewPeerConnection is called for each new established connection to a peer. Note that connections might be dropped and reconnected at anytime.
 	NewPeerConnection func(peer *PeerInfo, connection *Connection)
 
-	// LogError is called for any error. If this function is overwritten by the caller, the caller must write errors into the log file if desired, or call DefaultLogError.
+	// LogError is called for any error.
 	LogError func(function, format string, v ...interface{})
 
 	// DHTSearchStatus is called with updates of searches in the DHT. It allows to see the live progress of searches.
@@ -88,7 +87,7 @@ func (backend *Backend) initFilters() {
 		backend.Filters.DHTSearchStatus = func(client *dht.SearchClient, function, format string, v ...interface{}) {}
 	}
 	if backend.Filters.LogError == nil {
-		backend.Filters.LogError = DefaultLogError
+		backend.Filters.LogError = func(function, format string, v ...interface{}) {}
 	}
 	if backend.Filters.IncomingRequest == nil {
 		backend.Filters.IncomingRequest = func(peer *PeerInfo, Action int, Key []byte, Info interface{}) {}
@@ -120,11 +119,6 @@ func (backend *Backend) initFilters() {
 	if backend.Filters.MessageOutPong == nil {
 		backend.Filters.MessageOutPong = func(peer *PeerInfo, packet *protocol.PacketRaw) {}
 	}
-}
-
-// DefaultLogError is the default error logging function
-func DefaultLogError(function, format string, v ...interface{}) {
-	log.Printf("["+function+"] "+format, v...)
 }
 
 // MultiWriter code that allows to subscribe/unsubscribe.
