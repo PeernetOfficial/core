@@ -83,26 +83,33 @@ func (backend *Backend) SelfUserAgent() string {
 
 // PeerInfo stores information about a single remote peer
 type PeerInfo struct {
+	sync.RWMutex                           // Mutex for access to list of connections.
+	// statistics
+	StatsPacketSent     uint64 // Count of packets sent
+	StatsPacketReceived uint64 // Count of packets received
+	BlockchainHeight      uint64           // Blockchain height
+	BlockchainVersion     uint64           // Blockchain version
+
+	messageSequence       uint32           // Sequence number. Increased with every message.
+
+	Features              uint8            // Feature bit array. 0 = IPv4_LISTEN, 1 = IPv6_LISTEN, 1 = FIREWALL
+
 	PublicKey             *btcec.PublicKey // Public key
 	NodeID                []byte           // Node ID in Kademlia network = blake3(Public Key).
 	connectionActive      []*Connection    // List of active established connections to the peer.
 	connectionInactive    []*Connection    // List of former connections that are no longer valid. They may be removed after a while.
 	connectionLatest      *Connection      // Latest valid connection.
-	sync.RWMutex                           // Mutex for access to list of connections.
-	messageSequence       uint32           // Sequence number. Increased with every message.
+	
+
 	IsRootPeer            bool             // Whether the peer is a trusted root peer.
 	UserAgent             string           // User Agent reported by remote peer. Empty if no Announcement/Response message was yet received.
-	Features              uint8            // Feature bit array. 0 = IPv4_LISTEN, 1 = IPv6_LISTEN, 1 = FIREWALL
+
 	isVirtual             bool             // Whether it is a virtual peer for establishing a connection.
 	targetAddresses       []*peerAddress   // Virtual peer: Addresses to send any replies.
 	traversePeer          *PeerInfo        // Virtual peer: Same field as in connection.
-	BlockchainHeight      uint64           // Blockchain height
-	BlockchainVersion     uint64           // Blockchain version
+
 	blockchainLastRefresh time.Time        // Last refresh of the blockchain info.
 
-	// statistics
-	StatsPacketSent     uint64 // Count of packets sent
-	StatsPacketReceived uint64 // Count of packets received
 
 	Backend *Backend
 }
