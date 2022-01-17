@@ -458,3 +458,42 @@ func (nets *Networks) sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet
 
 	return nil
 }
+
+// send sends a raw packet to the peer. Only uses active connections.
+func (peer *PeerInfo) sendLite(raw []byte) (err error) {
+	if peer.isVirtual { // special case for peers that were not contacted before
+		return errors.New("cannot send lite packet to virtual peer")
+	} else if len(peer.connectionActive) == 0 {
+		return errors.New("no valid connection to peer")
+	} else if atomic.LoadUint64(&peer.StatsPacketSent) == 0 && atomic.LoadUint64(&peer.StatsPacketReceived) == 0 {
+		return errors.New("uncontacted peer") // A valid connection must have been established.
+	}
+
+	// always count as one sent packet even if sent via broadcast
+	atomic.AddUint64(&peer.StatsPacketSent, 1)
+
+	// Send out the wire. Use connectionLatest if available.
+	cLatest := peer.connectionLatest
+	if cLatest != nil {
+		if err := cLatest.Network.send(cLatest.Address.IP, cLatest.Address.Port, raw); err == nil {
+			return nil
+		} else if IsNetworkErrorFatal(err) {
+			// Invalid connection, immediately invalidate. Fallback to broadcast to all other active ones.
+			// Windows: A common error when the network adapter is disabled is "wsasendto: The requested address is not valid in its context".
+			peer.invalidateActiveConnection(cLatest)
+		}
+	}
+
+	// If no latest connection available, broadcast on all other available connections.
+	for _, c := range peer.GetConnections(true) {
+		if c == cLatest {
+			continue
+		}
+
+		if err := c.Network.send(c.Address.IP, c.Address.Port, raw); err != nil && IsNetworkErrorFatal(err) {
+			peer.invalidateActiveConnection(c)
+		}
+	}
+
+	return nil // on broadcast no error is known and returned
+}

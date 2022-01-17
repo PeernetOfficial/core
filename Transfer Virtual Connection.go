@@ -11,6 +11,8 @@ package core
 
 import (
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 // virtualPacketConn is a virtual connection.
@@ -18,10 +20,13 @@ type virtualPacketConn struct {
 	peer *PeerInfo
 
 	// function to send data to the remote peer
-	sendData func(data []byte, sequenceNumber uint32)
+	sendData func(data []byte, sequenceNumber uint32, transferID uuid.UUID)
 
 	// Sequence number from the first outgoing or incoming packet.
 	sequenceNumber uint32
+
+	// Transfer ID represents a session ID valid only for the duration of the transfer.
+	transferID uuid.UUID
 
 	// data channel
 	incomingData chan []byte
@@ -35,7 +40,7 @@ type virtualPacketConn struct {
 }
 
 // newVirtualPacketConn creates a new virtual connection (both incomign and outgoing).
-func newVirtualPacketConn(peer *PeerInfo, sendData func(data []byte, sequenceNumber uint32)) (v *virtualPacketConn) {
+func newVirtualPacketConn(peer *PeerInfo, sendData func(data []byte, sequenceNumber uint32, transferID uuid.UUID)) (v *virtualPacketConn) {
 	v = &virtualPacketConn{
 		peer:              peer,
 		sendData:          sendData,
@@ -54,7 +59,7 @@ func (v *virtualPacketConn) writeForward() {
 	for {
 		select {
 		case data := <-v.outgoingData:
-			v.sendData(data, v.sequenceNumber)
+			v.sendData(data, v.sequenceNumber, v.transferID)
 
 		case <-v.terminationSignal:
 			return

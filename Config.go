@@ -34,8 +34,9 @@ type Config struct {
 	LogTarget int `yaml:"LogTarget"`
 
 	// Listen settings
-	Listen        []string `yaml:"Listen"`        // IP:Port combinations
-	ListenWorkers int      `yaml:"ListenWorkers"` // Count of workers to process incoming raw packets. Default 2.
+	Listen            []string `yaml:"Listen"`            // IP:Port combinations
+	ListenWorkers     int      `yaml:"ListenWorkers"`     // Count of workers to process incoming raw packets. Default 2.
+	ListenWorkersLite int      `yaml:"ListenWorkersLite"` // Count of workers to process incoming lite packets. Default 2.
 
 	// User specific settings
 	PrivateKey string `yaml:"PrivateKey"` // The Private Key, hex encoded so it can be copied manually

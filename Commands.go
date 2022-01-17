@@ -14,6 +14,7 @@ import (
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/warehouse"
+	"github.com/google/uuid"
 )
 
 // respondClosesContactsCount is the number of closest contact to respond.
@@ -251,7 +252,7 @@ func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Con
 		_, fileInfo, status, _ := peer.Backend.UserWarehouse.FileExists(msg.Hash)
 		if status != warehouse.StatusOK {
 			// File not available.
-			peer.sendTransfer(nil, protocol.TransferControlNotAvailable, msg.TransferProtocol, msg.Hash, 0, 0, msg.Sequence)
+			peer.sendTransfer(nil, protocol.TransferControlNotAvailable, msg.TransferProtocol, msg.Hash, 0, 0, msg.Sequence, uuid.UUID{}, false)
 			return
 		} else if msg.Limit > 0 && fileInfo.Size() < int64(msg.Offset)+int64(msg.Limit) {
 			// If the read limit is out of bounds, this request is considered invalid and silently discarded.
@@ -259,7 +260,7 @@ func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Con
 		}
 
 		// Create a local UDT client to connect to the remote UDT server and serve the file!
-		go peer.startFileTransferUDT(msg.Hash, uint64(fileInfo.Size()), msg.Offset, msg.Limit, msg.Sequence)
+		go peer.startFileTransferUDT(msg.Hash, uint64(fileInfo.Size()), msg.Offset, msg.Limit, msg.Sequence, msg.TransferID, msg.TransferProtocol)
 
 	case protocol.TransferControlActive:
 		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
@@ -288,18 +289,18 @@ func (peer *PeerInfo) cmdGetBlock(msg *protocol.MessageGetBlock, connection *Con
 	case protocol.GetBlockControlRequestStart:
 		// Currently only support the local blockchain.
 		if !msg.BlockchainPublicKey.IsEqual(peer.Backend.peerPublicKey) {
-			peer.sendGetBlock(nil, protocol.GetBlockControlNotAvailable, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence)
+			peer.sendGetBlock(nil, protocol.GetBlockControlNotAvailable, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence, uuid.UUID{}, false)
 			return
 		} else if _, height, _ := peer.Backend.UserBlockchain.Header(); height == 0 {
-			peer.sendGetBlock(nil, protocol.GetBlockControlEmpty, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence)
+			peer.sendGetBlock(nil, protocol.GetBlockControlEmpty, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence, uuid.UUID{}, false)
 			return
 		} else if msg.LimitBlockCount == 0 {
-			peer.sendGetBlock(nil, protocol.GetBlockControlTerminate, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence)
+			peer.sendGetBlock(nil, protocol.GetBlockControlTerminate, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence, uuid.UUID{}, false)
 			return
 		}
 
 		// Create a local UDT client to connect to the remote UDT server and serve the blocks!
-		go peer.startBlockTransfer(msg.BlockchainPublicKey, msg.LimitBlockCount, msg.MaxBlockSize, msg.TargetBlocks, msg.Sequence)
+		go peer.startBlockTransfer(msg.BlockchainPublicKey, msg.LimitBlockCount, msg.MaxBlockSize, msg.TargetBlocks, msg.Sequence, msg.TransferID)
 
 	case protocol.GetBlockControlActive:
 		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {

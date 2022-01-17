@@ -38,8 +38,14 @@ func (backend *Backend) initNetwork() {
 	if backend.Config.ListenWorkers == 0 {
 		backend.Config.ListenWorkers = 2
 	}
+	if backend.Config.ListenWorkersLite == 0 {
+		backend.Config.ListenWorkersLite = 2
+	}
 	for n := 0; n < backend.Config.ListenWorkers; n++ {
 		go backend.networks.packetWorker()
+	}
+	for n := 0; n < backend.Config.ListenWorkersLite; n++ {
+		go backend.networks.packetWorkerLite()
 	}
 
 	// check if user specified where to listen

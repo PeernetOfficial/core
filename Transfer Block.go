@@ -15,23 +15,32 @@ import (
 	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/udt"
+	"github.com/google/uuid"
 )
 
 // blockSequenceTimeout is the timeout for a follow-up message to appear, otherwise the transfer will be terminated.
 var blockSequenceTimeout = time.Second * 10
 
+// Whether to use the lite protocol for transfer of data.
+const blockTransferLite = true
+
 // startBlockTransfer starts the transfer of blocks. Currently it only serves the user's blockchain.
-func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey *btcec.PublicKey, LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange, sequenceNumber uint32) (err error) {
-	virtualConn := newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32) {
-		peer.sendGetBlock(data, protocol.GetBlockControlActive, BlockchainPublicKey, 0, 0, nil, sequenceNumber)
+func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey *btcec.PublicKey, LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange, sequenceNumber uint32, transferID uuid.UUID) (err error) {
+	virtualConn := newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32, transferID uuid.UUID) {
+		peer.sendGetBlock(data, protocol.GetBlockControlActive, BlockchainPublicKey, 0, 0, nil, sequenceNumber, transferID, blockTransferLite)
 	})
+
+	// use the transfer ID indicated by the remote peer
+	// 17.01.2021: Due to using lite IDs, the sequence termination function in RegisterSequenceBi is no longer used, as data packets are only sent via lite packets.
+	virtualConn.transferID = transferID
+	peer.Backend.networks.LiteRouter.RegisterLiteID(transferID, virtualConn, blockSequenceTimeout, virtualConn.sequenceTerminate)
 
 	// register the sequence since packets are sent bi-directional
 	virtualConn.sequenceNumber = sequenceNumber
-	peer.Backend.networks.Sequences.RegisterSequenceBi(peer.PublicKey, sequenceNumber, virtualConn, blockSequenceTimeout, virtualConn.sequenceTerminate)
+	peer.Backend.networks.Sequences.RegisterSequenceBi(peer.PublicKey, sequenceNumber, virtualConn, blockSequenceTimeout, nil)
 
 	udtConfig := udt.DefaultConfig()
-	udtConfig.MaxPacketSize = protocol.TransferMaxEmbedSize
+	udtConfig.MaxPacketSize = protocol.TransferMaxEmbedSizeLite
 	udtConfig.MaxFlowWinSize = maxFlowWinSize
 
 	// start UDT sender
@@ -79,26 +88,30 @@ func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey *btcec.PublicKey, L
 // BlockTransferRequest requests blocks from the peer.
 // The caller must call udtConn.Close() when done. Do not use any of the closing functions of virtualConn.
 func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey *btcec.PublicKey, LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange) (udtConn net.Conn, virtualConn *virtualPacketConn, err error) {
-	virtualConn = newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32) {
-		peer.sendGetBlock(data, protocol.GetBlockControlActive, BlockchainPublicKey, 0, 0, nil, sequenceNumber)
+	virtualConn = newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32, transferID uuid.UUID) {
+		peer.sendGetBlock(data, protocol.GetBlockControlActive, BlockchainPublicKey, 0, 0, nil, sequenceNumber, transferID, blockTransferLite)
 	})
 
+	// new lite ID
+	liteID := peer.Backend.networks.LiteRouter.NewLiteID(virtualConn, blockSequenceTimeout, virtualConn.sequenceTerminate)
+	virtualConn.transferID = liteID.ID
+
 	// new sequence
-	sequence := peer.Backend.networks.Sequences.NewSequenceBi(peer.PublicKey, &peer.messageSequence, virtualConn, blockSequenceTimeout, virtualConn.sequenceTerminate)
+	sequence := peer.Backend.networks.Sequences.NewSequenceBi(peer.PublicKey, &peer.messageSequence, virtualConn, blockSequenceTimeout, nil)
 	if sequence == nil {
 		return nil, nil, errors.New("cannot acquire sequence")
 	}
 	virtualConn.sequenceNumber = sequence.SequenceNumber
 
 	udtConfig := udt.DefaultConfig()
-	udtConfig.MaxPacketSize = protocol.TransferMaxEmbedSize
+	udtConfig.MaxPacketSize = protocol.TransferMaxEmbedSizeLite
 	udtConfig.MaxFlowWinSize = maxFlowWinSize
 
 	// start UDT receiver
 	udtListener := udt.ListenUDT(udtConfig, virtualConn, virtualConn.incomingData, virtualConn.outgoingData, virtualConn.terminationSignal)
 
 	// request block transfer
-	err = peer.sendGetBlock(nil, protocol.GetBlockControlRequestStart, BlockchainPublicKey, LimitBlockCount, MaxBlockSize, TargetBlocks, virtualConn.sequenceNumber)
+	err = peer.sendGetBlock(nil, protocol.GetBlockControlRequestStart, BlockchainPublicKey, LimitBlockCount, MaxBlockSize, TargetBlocks, virtualConn.sequenceNumber, virtualConn.transferID, false)
 	if err != nil {
 		udtListener.Close()
 		return nil, nil, err

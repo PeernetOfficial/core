@@ -12,11 +12,10 @@ Offset  Size   Info
 Control = 0: Request Start
 34      8      Offset to start reading in the file
 42      8      Limit of bytes to read at the offset
+50      16     Transfer ID. This will identify lite packets.
 
-Offset + limit must not exceed the file size.
-
-Control = 3: Active
-34      ?      Embedded protocol data
+Offset + limit must not exceed the file size. Actual data transfer should be sent via lite packets.
+The regular Peernet packets would be too CPU expensive and slow due to public key signing.
 
 */
 
@@ -27,18 +26,20 @@ import (
 	"errors"
 
 	"github.com/PeernetOfficial/core/btcec"
+	"github.com/google/uuid"
 )
 
 // MessageTransfer is the decoded transfer message.
 // It is sent to initiate a file transfer, and to send data as part of a file transfer. The actual file data is encapsulated via UDT.
 type MessageTransfer struct {
-	*MessageRaw             // Underlying raw message.
-	Control          uint8  // Control. See TransferControlX.
-	TransferProtocol uint8  // Embedded transfer protocol: 0 = UDT
-	Hash             []byte // Hash of the file to transfer.
-	Offset           uint64 // Offset to start reading at. Only TransferControlRequestStart.
-	Limit            uint64 // Limit (count of bytes) to read starting at the offset. Only TransferControlRequestStart.
-	Data             []byte // Embedded protocol data. Only TransferControlActive.
+	*MessageRaw                // Underlying raw message.
+	Control          uint8     // Control. See TransferControlX.
+	TransferProtocol uint8     // Embedded transfer protocol: 0 = UDT
+	Hash             []byte    // Hash of the file to transfer.
+	Offset           uint64    // Offset to start reading at. Only TransferControlRequestStart.
+	Limit            uint64    // Limit (count of bytes) to read starting at the offset. Only TransferControlRequestStart.
+	TransferID       uuid.UUID // Transfer ID to identify lite packets.
+	Data             []byte    // Embedded protocol data. Only TransferControlActive.
 }
 
 const (
@@ -48,7 +49,9 @@ const (
 	TransferControlTerminate    = 3 // Terminate
 )
 
-const TransferProtocolUDT = 0 // Indicates that UDT is used as embedded transfer protocol.
+const (
+	TransferProtocolUDT = 0 // UDT via lite packets. No encryption.
+)
 
 const transferPayloadHeaderSize = 34
 
@@ -76,9 +79,11 @@ func DecodeTransfer(msg *MessageRaw) (result *MessageTransfer, err error) {
 
 		result.Offset = binary.LittleEndian.Uint64(msg.Payload[34 : 34+8])
 		result.Limit = binary.LittleEndian.Uint64(msg.Payload[42 : 42+8])
+		copy(result.TransferID[:], msg.Payload[50:50+16])
 
 	case TransferControlActive:
-		result.Data = msg.Payload[34:]
+		// Data should be transferred via lite packets for performance reasons, but it is allowed to be encapsulated in Peernet packets.
+		result.Data = msg.Payload[transferPayloadHeaderSize:]
 
 	}
 
@@ -90,8 +95,11 @@ func DecodeTransfer(msg *MessageRaw) (result *MessageTransfer, err error) {
 // The caller may send bigger payloads but may risk that data packets are simply dropped and never arrive. A MTU negotiation or detection could pimp that.
 const TransferMaxEmbedSize = internetSafeMTU - PacketLengthMin - transferPayloadHeaderSize
 
+// Same as TransferMaxEmbedSize but for encoding via lite packets.
+const TransferMaxEmbedSizeLite = internetSafeMTU - PacketLiteSizeMin
+
 // EncodeTransfer encodes a transfer message. The embedded packet size must be smaller than TransferMaxEmbedSize.
-func EncodeTransfer(senderPrivateKey *btcec.PrivateKey, data []byte, control, transferProtocol uint8, hash []byte, offset, limit uint64) (packetRaw []byte, err error) {
+func EncodeTransfer(senderPrivateKey *btcec.PrivateKey, data []byte, control, transferProtocol uint8, hash []byte, offset, limit uint64, transferID uuid.UUID) (packetRaw []byte, err error) {
 	if control == TransferControlRequestStart && len(data) != 0 {
 		return nil, errors.New("transfer encode: payload not allowed in start")
 	} else if isPacketSizeExceed(transferPayloadHeaderSize, len(data)) {
@@ -100,7 +108,7 @@ func EncodeTransfer(senderPrivateKey *btcec.PrivateKey, data []byte, control, tr
 
 	packetSize := transferPayloadHeaderSize
 	if control == TransferControlRequestStart {
-		packetSize += 16
+		packetSize += 32
 	} else if control == TransferControlActive {
 		packetSize += len(data)
 	}
@@ -114,6 +122,7 @@ func EncodeTransfer(senderPrivateKey *btcec.PrivateKey, data []byte, control, tr
 	if control == TransferControlRequestStart {
 		binary.LittleEndian.PutUint64(raw[34:34+8], offset)
 		binary.LittleEndian.PutUint64(raw[42:42+8], limit)
+		copy(raw[50:50+16], transferID[:])
 	} else if control == TransferControlActive {
 		copy(raw[34:34+len(data)], data)
 	}
