@@ -11,8 +11,9 @@ Offset  Size    Info
 Control = 0: Request Blocks
 34      8       Limit total count of blocks to transfer. The transfer will be terminated if the limit is reached.
 42      8       Limit of bytes per block to transfer max. Blocks exceeding this limit will not be transferred.
-50      2       Count of block ranges
-52      16 * ?  List of block ranges
+50      16      Transfer ID. This will identify lite packets.
+66      2       Count of block ranges
+68      16 * ?  List of block ranges
 
 Block range:
 0       8       Block number
@@ -41,6 +42,7 @@ import (
 	"io"
 
 	"github.com/PeernetOfficial/core/btcec"
+	"github.com/google/uuid"
 )
 
 const (
@@ -57,6 +59,9 @@ const (
 	GetBlockStatusSizeExceed   = 2
 )
 
+// Min size of header for Get Block control 0 message.
+const getBlockRequestHeaderSize = 68
+
 // MessageGetBlock is the decoded Get Block message.
 type MessageGetBlock struct {
 	*MessageRaw                          // Underlying raw message.
@@ -64,6 +69,7 @@ type MessageGetBlock struct {
 	BlockchainPublicKey *btcec.PublicKey // Peer ID of blockchain to transfer.
 
 	// fields valid only for GetBlockControlRequestStart
+	TransferID      uuid.UUID    // Transfer ID to identify lite packets.
 	LimitBlockCount uint64       // Limit total count of blocks to transfer
 	MaxBlockSize    uint64       // Limit of bytes per block to transfer max. Blocks exceeding this limit will not be transferred.
 	TargetBlocks    []BlockRange // Target list of block ranges to transfer.
@@ -96,21 +102,22 @@ func DecodeGetBlock(msg *MessageRaw) (result *MessageGetBlock, err error) {
 	}
 
 	if result.Control == GetBlockControlRequestStart {
-		if len(msg.Payload) < 52 {
+		if len(msg.Payload) < getBlockRequestHeaderSize {
 			return nil, errors.New("get block: invalid minimum length")
 		}
 
 		result.LimitBlockCount = binary.LittleEndian.Uint64(msg.Payload[34 : 34+8])
 		result.MaxBlockSize = binary.LittleEndian.Uint64(msg.Payload[42 : 42+8])
+		copy(result.TransferID[:], msg.Payload[50:50+16])
 
-		countBlockRanges := int(binary.LittleEndian.Uint16(msg.Payload[50:52]))
+		countBlockRanges := int(binary.LittleEndian.Uint16(msg.Payload[66 : 66+2]))
 		if countBlockRanges == 0 {
 			return nil, errors.New("get block: empty block range")
-		} else if len(msg.Payload) < 52+16*countBlockRanges {
+		} else if len(msg.Payload) < getBlockRequestHeaderSize+16*countBlockRanges {
 			return nil, errors.New("get block: cound block ranges exceeds length")
 		}
 
-		index := 52
+		index := getBlockRequestHeaderSize
 
 		for n := 0; n < countBlockRanges; n++ {
 			var target BlockRange
@@ -128,18 +135,18 @@ func DecodeGetBlock(msg *MessageRaw) (result *MessageGetBlock, err error) {
 }
 
 // EncodeGetBlock encodes a Get Block message. The embedded packet size must be smaller than TransferMaxEmbedSize.
-func EncodeGetBlock(senderPrivateKey *btcec.PrivateKey, data []byte, control uint8, blockchainPublicKey *btcec.PublicKey, limitBlockCount, maxBlockSize uint64, targetBlocks []BlockRange) (packetRaw []byte, err error) {
+func EncodeGetBlock(senderPrivateKey *btcec.PrivateKey, data []byte, control uint8, blockchainPublicKey *btcec.PublicKey, limitBlockCount, maxBlockSize uint64, targetBlocks []BlockRange, transferID uuid.UUID) (packetRaw []byte, err error) {
 	if control == GetBlockControlRequestStart && len(data) != 0 {
 		return nil, errors.New("get block encode: payload not allowed in start")
 	} else if isPacketSizeExceed(transferPayloadHeaderSize, len(data)) {
 		return nil, errors.New("get block encode: embedded packet too big")
-	} else if control == GetBlockControlRequestStart && isPacketSizeExceed(52, len(targetBlocks)*16) {
+	} else if control == GetBlockControlRequestStart && isPacketSizeExceed(getBlockRequestHeaderSize, len(targetBlocks)*16) {
 		return nil, errors.New("get block encode: too many target block ranges")
 	}
 
 	packetSize := transferPayloadHeaderSize
 	if control == GetBlockControlRequestStart {
-		packetSize = 52 + len(targetBlocks)*16
+		packetSize = getBlockRequestHeaderSize + len(targetBlocks)*16
 	} else if control == GetBlockControlActive {
 		packetSize += len(data)
 	}
@@ -153,9 +160,10 @@ func EncodeGetBlock(senderPrivateKey *btcec.PrivateKey, data []byte, control uin
 	if control == GetBlockControlRequestStart {
 		binary.LittleEndian.PutUint64(raw[34:34+8], limitBlockCount)
 		binary.LittleEndian.PutUint64(raw[42:42+8], maxBlockSize)
-		binary.LittleEndian.PutUint16(raw[50:50+2], uint16(len(targetBlocks)))
+		copy(raw[50:50+16], transferID[:])
+		binary.LittleEndian.PutUint16(raw[66:66+2], uint16(len(targetBlocks)))
 
-		index := 52
+		index := getBlockRequestHeaderSize
 		for _, target := range targetBlocks {
 			binary.LittleEndian.PutUint64(raw[index:index+8], target.Offset)
 			binary.LittleEndian.PutUint64(raw[index+8:index+16], target.Limit)

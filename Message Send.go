@@ -11,6 +11,7 @@ import (
 
 	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
+	"github.com/google/uuid"
 )
 
 // pingConnection sends a ping to the target peer via the specified connection
@@ -107,8 +108,17 @@ func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd *btce
 }
 
 // sendTransfer sends a transfer message
-func (peer *PeerInfo) sendTransfer(data []byte, control, transferProtocol uint8, hash []byte, offset, limit uint64, sequenceNumber uint32) (err error) {
-	packetRaw, err := protocol.EncodeTransfer(peer.Backend.peerPrivateKey, data, control, transferProtocol, hash, offset, limit)
+func (peer *PeerInfo) sendTransfer(data []byte, control, transferProtocol uint8, hash []byte, offset, limit uint64, sequenceNumber uint32, transferID uuid.UUID, isLite bool) (err error) {
+	// Send optionally as lite packet. This bypasses the signing overhead of regular Peernet packets which is CPU intensive and a bottleneck.
+	if control == protocol.TransferControlActive && isLite {
+		raw, err := protocol.PacketLiteEncode(transferID, data)
+		if err != nil {
+			return err
+		}
+		return peer.sendLite(raw)
+	}
+
+	packetRaw, err := protocol.EncodeTransfer(peer.Backend.peerPrivateKey, data, control, transferProtocol, hash, offset, limit, transferID)
 	if err != nil {
 		return err
 	}
@@ -121,8 +131,17 @@ func (peer *PeerInfo) sendTransfer(data []byte, control, transferProtocol uint8,
 }
 
 // sendGetBlock sends a get block message
-func (peer *PeerInfo) sendGetBlock(data []byte, control uint8, blockchainPublicKey *btcec.PublicKey, limitBlockCount, maxBlockSize uint64, targetBlocks []protocol.BlockRange, sequenceNumber uint32) (err error) {
-	packetRaw, err := protocol.EncodeGetBlock(peer.Backend.peerPrivateKey, data, control, blockchainPublicKey, limitBlockCount, maxBlockSize, targetBlocks)
+func (peer *PeerInfo) sendGetBlock(data []byte, control uint8, blockchainPublicKey *btcec.PublicKey, limitBlockCount, maxBlockSize uint64, targetBlocks []protocol.BlockRange, sequenceNumber uint32, transferID uuid.UUID, isLite bool) (err error) {
+	// Send optionally as lite packet. This bypasses the signing overhead of regular Peernet packets which is CPU intensive and a bottleneck.
+	if control == protocol.GetBlockControlActive && isLite {
+		raw, err := protocol.PacketLiteEncode(transferID, data)
+		if err != nil {
+			return err
+		}
+		return peer.sendLite(raw)
+	}
+
+	packetRaw, err := protocol.EncodeGetBlock(peer.Backend.peerPrivateKey, data, control, blockchainPublicKey, limitBlockCount, maxBlockSize, targetBlocks, transferID)
 	if err != nil {
 		return err
 	}

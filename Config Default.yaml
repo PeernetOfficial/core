@@ -13,6 +13,9 @@ Listen: []
 # Count of workers to process incoming raw packets. Default 2.
 ListenWorkers: 0
 
+# Count of workers to process incoming lite packets. Default 2.
+ListenWorkersLite: 0
+
 # AutoUpdateSeedList enables auto update of the seed list.
 AutoUpdateSeedList: true
 

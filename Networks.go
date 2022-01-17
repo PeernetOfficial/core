@@ -26,10 +26,14 @@ type Networks struct {
 	countListen4, countListen6 int64
 
 	// channel for processing incoming decoded packets by workers, across all networks
-	rawPacketsIncoming chan networkWire
+	rawPacketsIncoming  chan networkWire
+	litePacketsIncoming chan networkWire
 
 	// Sequences keeps track of all message sequence number, regardless of the network connection.
 	Sequences *protocol.SequenceManager
+
+	// Keep track of valid IDs for lite packets.
+	LiteRouter *protocol.LiteRouter
 
 	// ipListen keeps a simple list of IPs listened to. This allows quickly identifying if an IP matches with a listened one.
 	ipListen *ipList
@@ -51,9 +55,11 @@ const ReplyTimeout = 20
 func (backend *Backend) initMessageSequence() {
 	backend.networks = &Networks{backend: backend}
 
-	backend.networks.rawPacketsIncoming = make(chan networkWire, 1000) // buffer up to 1000 UDP packets before they get buffered by the OS network stack and eventually dropped
+	backend.networks.rawPacketsIncoming = make(chan networkWire, 1000)  // buffer up to 1000 UDP packets before they get buffered by the OS network stack and eventually dropped
+	backend.networks.litePacketsIncoming = make(chan networkWire, 1000) // buffer up to 1000 UDP packets before they get buffered by the OS network stack and eventually dropped
 
 	backend.networks.Sequences = protocol.NewSequenceManager(ReplyTimeout)
+	backend.networks.LiteRouter = protocol.NewLiteRouter()
 
 	backend.networks.ipListen = NewIPList()
 

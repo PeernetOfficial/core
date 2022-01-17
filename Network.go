@@ -121,6 +121,14 @@ func (network *Network) Listen() {
 			continue
 		}
 
+		// handle lite packets before regular ones
+		if isLite, err := network.networkGroup.LiteRouter.IsPacketLite(buffer[:length]); isLite && err != nil {
+			continue
+		} else if isLite {
+			network.networkGroup.litePacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverPublicKey: network.backend.peerPublicKey, unicast: true}
+			continue
+		}
+
 		if length < protocol.PacketLengthMin {
 			// Discard packets that do not meet the minimum length.
 			continue
@@ -403,4 +411,24 @@ func (backend *Backend) FeatureSupport() (feature byte) {
 		feature |= 1 << protocol.FeatureFirewall
 	}
 	return feature
+}
+
+// Handles incoming lite packets. It will decrypt them as needed.
+func (nets *Networks) packetWorkerLite() {
+	for wire := range nets.litePacketsIncoming {
+		packet, err := nets.LiteRouter.PacketLiteDecode(wire.raw)
+		if err != nil {
+			continue
+		}
+
+		// Handle the received data. Note this is called in the same Go routine.
+		// The underlying data receiver must not stall.
+		if v, ok := packet.Session.Data.(*virtualPacketConn); ok {
+			// update stats TODO
+			//atomic.AddUint64(&packet.Session.Data.(*virtualPacketConn).peer.StatsPacketReceived, 1)
+			//connection.LastPacketIn = time.Now()
+
+			v.receiveData(packet.Payload)
+		}
+	}
 }
