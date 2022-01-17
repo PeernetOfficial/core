@@ -29,8 +29,6 @@ type udtSocketRecv struct {
 	recvPktHistory     []time.Duration  // list of recently received packets.
 	recvPktPairHistory []time.Duration  // probing packet window.
 	ackLinkInfoSent    time.Time        // when link info was sent in ACK packet last time
-	resendNAKTimer     <-chan time.Time // Timer for resending outgoing NAK
-	resendNAKTicker    time.Ticker      // Ticker for resending outgoing NAK
 	resendACKTimer     <-chan time.Time // Timer for resending outgoing ACK
 	resendACKTicker    time.Ticker      // Ticker for resending outgoing ACK
 }
@@ -45,10 +43,14 @@ func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
 		recvPktPend:    createPacketHeap(),
 		recvLossList:   createPacketIDHeap(),
 		ackHistory:     createHistoryHeap(),
-		resendNAKTimer: make(chan time.Time),
 		resendACKTimer: make(chan time.Time),
 	}
 	go sr.goReceiveEvent()
+
+	// set the timer for constantly resending ACKs for the highest sequence ID and NAKs for missing packets
+	sr.resendACKTicker = *time.NewTicker(s.Config.SynTime)
+	sr.resendACKTimer = sr.resendACKTicker.C
+
 	return sr
 }
 
@@ -79,24 +81,14 @@ func (s *udtSocketRecv) goReceiveEvent() {
 				s.ingestError(sp)
 			}
 		case <-sockClosed: // socket is closed, leave now
-			s.resendNAKTicker.Stop()
 			s.resendACKTicker.Stop()
 			return
-		case <-s.resendNAKTimer:
-			if first, valid := s.recvLossList.FirstSequence(); valid {
-				s.sendNAK(first, 1)
-			} else {
-				// the trigger should not be activated if there is no loss list, but in case it happens, deactivate it
-				s.resendNAKTimer = make(chan time.Time)
-				s.resendNAKTicker.Stop()
-			}
-		case <-s.resendACKTimer:
+		case <-s.resendACKTimer: // handles both resending ACKs and NAKs
 			if s.recvAck2.IsLess(s.sentAck) {
 				s.sendACK(s.sentAck)
-			} else {
-				// the trigger should not be activated if there is no unacknowledged ACK list, but in case it happens, deactivate it
-				s.resendACKTimer = make(chan time.Time)
-				s.resendACKTicker.Stop()
+			}
+			if first, valid := s.recvLossList.FirstSequence(); valid {
+				s.sendNAK(first, 1)
 			}
 		}
 	}
@@ -126,12 +118,6 @@ func (s *udtSocketRecv) ingestAck2(p *packet.Ack2Packet, now time.Time) {
 
 	s.socket.applyRTT(uint(now.Sub(ackHistEntry.sendTime) / time.Microsecond))
 
-	if s.ackHistory.Count() == 0 {
-		// deactivate ACK timer, nothing expected for now
-		s.resendACKTimer = make(chan time.Time)
-		s.resendACKTicker.Stop()
-	}
-
 	//s.rto = 4 * s.rtt + s.rttVar
 }
 
@@ -152,8 +138,6 @@ func (s *udtSocketRecv) ingestMsgDropReq(p *packet.MsgDropReqPacket, now time.Ti
 	}
 	if s.recvLossList.Count() == 0 {
 		s.lastSequence = s.nextSequenceExpect.Add(-1)
-		s.resendNAKTimer = make(chan time.Time)
-		s.resendNAKTicker.Stop()
 	}
 
 	// try to push any pending packets out, now that we have dropped any blocking packets
@@ -209,18 +193,10 @@ func (s *udtSocketRecv) ingestData(p *packet.DataPacket, now time.Time) {
 		s.sendNAK(s.nextSequenceExpect.Seq, uint32(seqDiff))
 		s.nextSequenceExpect = p.Seq.Add(1)
 
-		// set the timer for constantly resending NAKs for the lowest sequence ID
-		s.resendNAKTicker = *time.NewTicker(s.socket.Config.SynTime)
-		s.resendNAKTimer = s.resendNAKTicker.C
-
 	} else if seqDiff < 0 {
 		// If the sequence number is less than LRSN, remove it from the receiver's loss list.
 		if !s.recvLossList.Remove(p.Seq.Seq) {
 			return // already previously received packet -- ignore
-		} else if s.recvLossList.Count() == 0 {
-			// if loss list is empty, the NAK timer can be stopped
-			s.resendNAKTimer = make(chan time.Time)
-			s.resendNAKTicker.Stop()
 		}
 	} else {
 		s.nextSequenceExpect = p.Seq.Add(1)
@@ -506,8 +482,4 @@ func (s *udtSocketRecv) ackEvent() {
 
 	s.sendACK(ack)
 	s.unackPktCount = 0
-
-	// set the timer for constantly resending ACKs for the highest sequence ID
-	s.resendACKTicker = *time.NewTicker(s.socket.Config.SynTime)
-	s.resendACKTimer = s.resendACKTicker.C
 }
