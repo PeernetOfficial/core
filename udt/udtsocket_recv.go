@@ -35,21 +35,21 @@ type udtSocketRecv struct {
 
 func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
 	sr := &udtSocketRecv{
-		socket:         s,
-		sockClosed:     s.sockClosed,
-		recvEvent:      s.recvEvent,
-		messageIn:      s.messageIn,
-		sendPacket:     s.sendPacket,
-		recvPktPend:    createPacketHeap(),
-		recvLossList:   createPacketIDHeap(),
-		ackHistory:     createHistoryHeap(),
-		resendACKTimer: make(chan time.Time),
+		socket:       s,
+		sockClosed:   s.sockClosed,
+		recvEvent:    s.recvEvent,
+		messageIn:    s.messageIn,
+		sendPacket:   s.sendPacket,
+		recvPktPend:  createPacketHeap(),
+		recvLossList: createPacketIDHeap(),
+		ackHistory:   createHistoryHeap(),
 	}
-	go sr.goReceiveEvent()
 
 	// set the timer for constantly resending ACKs for the highest sequence ID and NAKs for missing packets
 	sr.resendACKTicker = *time.NewTicker(s.Config.SynTime)
 	sr.resendACKTimer = sr.resendACKTicker.C
+
+	go sr.goReceiveEvent()
 
 	return sr
 }
@@ -62,6 +62,8 @@ func (s *udtSocketRecv) configureHandshake(p *packet.HandshakePacket) {
 }
 
 func (s *udtSocketRecv) goReceiveEvent() {
+	defer s.resendACKTicker.Stop()
+
 	recvEvent := s.recvEvent
 	sockClosed := s.sockClosed
 	for {
@@ -81,7 +83,6 @@ func (s *udtSocketRecv) goReceiveEvent() {
 				s.ingestError(sp)
 			}
 		case <-sockClosed: // socket is closed, leave now
-			s.resendACKTicker.Stop()
 			return
 		case <-s.resendACKTimer: // handles both resending ACKs and NAKs
 			if s.recvAck2.IsLess(s.sentAck) {
