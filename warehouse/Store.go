@@ -139,10 +139,15 @@ func (wh *Warehouse) CreateFileFromPath(file string) (hash []byte, status int, e
 // Offset is the position in the file to start reading. Limit (0 = not used) defines how many bytes to read starting at the offset.
 // Return status codes: StatusInvalidHash, StatusFileNotFound, StatusErrorOpenFile, StatusErrorSeekFile, StatusErrorReadFile, StatusOK
 func (wh *Warehouse) ReadFile(hash []byte, offset, limit int64, writer io.Writer) (status int, bytesRead int64, err error) {
-	path, _, status, err := wh.FileExists(hash)
-	if status != StatusOK { // file does not exist or invalid hash
-		return status, 0, err
+	// validate the hash and build the path
+	// 17.01.2022: This code previously used wh.FileExists which is not performant when used frequently. It is faster to instead catch the file-not-exist error on os.Open.
+	hashA, err := ValidateHash(hash)
+	if err != nil {
+		return StatusInvalidHash, 0, err
 	}
+
+	a, b := buildPath(wh.Directory, hashA)
+	path := filepath.Join(a, b)
 
 	// read the file from disk
 	var reader io.ReadSeeker
@@ -150,7 +155,10 @@ func (wh *Warehouse) ReadFile(hash []byte, offset, limit int64, writer io.Writer
 retryOpenFile:
 
 	file, err := os.Open(path)
-	if err != nil {
+	if err != nil && os.IsNotExist(err) {
+		// Catch the error file not exist here.
+		return StatusFileNotFound, 0, err
+	} else if err != nil {
 		// There may be a race condition when the file is being written: "The process cannot access the file because it is being used by another process."
 		// Wait up to 3 times for 400ms.
 		if strings.Contains(err.Error(), "cannot access the file because it is being used by another process") && retryCount < 3 {
