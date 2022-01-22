@@ -672,8 +672,8 @@ func absdiff(a uint, b uint) uint {
 
 func (s *udtSocket) applyRTT(rtt uint) {
 	s.rttProt.Lock()
-	s.rttVar = (s.rttVar*3 + absdiff(s.rtt, rtt)) / 4 //>> 2
-	s.rtt = (s.rtt*7 + rtt) / 8                       //>> 3
+	s.rttVar = (s.rttVar*3 + absdiff(s.rtt, rtt)) /// 4 //>> 2
+	s.rtt = (s.rtt*7 + rtt)                       /// 8                       //>> 3
 	s.rttProt.Unlock()
 }
 
@@ -689,10 +689,10 @@ func (s *udtSocket) getRTT() (rtt, rttVar uint) {
 func (s *udtSocket) applyReceiveRates(deliveryRate uint, bandwidth uint) {
 	s.receiveRateProt.Lock()
 	if deliveryRate > 0 {
-		s.deliveryRate = (s.deliveryRate*7 + deliveryRate) / 8 //>> 3
+		s.deliveryRate = (s.deliveryRate*7 + deliveryRate) /// 8 //>> 3
 	}
 	if bandwidth > 0 {
-		s.bandwidth = (s.bandwidth*7 + bandwidth) / 8 //>> 3
+		s.bandwidth = (s.bandwidth*7 + bandwidth) /// 8 //>> 3
 	}
 	s.receiveRateProt.Unlock()
 }
