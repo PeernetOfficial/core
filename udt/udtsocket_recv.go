@@ -33,6 +33,8 @@ type udtSocketRecv struct {
 	resendACKTicker    time.Ticker      // Ticker for resending outgoing ACK
 }
 
+var acksent = 20
+
 func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
 	sr := &udtSocketRecv{
 		socket:       s,
@@ -72,6 +74,8 @@ func (s *udtSocketRecv) goReceiveEvent() {
 			if !ok {
 				return
 			}
+			// Metrics purposes
+			PrintTypeOfPacket(evt.pkt, "received")
 			switch sp := evt.pkt.(type) {
 			case *packet.Ack2Packet:
 				s.ingestAck2(sp, evt.now)
@@ -118,6 +122,8 @@ func (s *udtSocketRecv) ingestAck2(p *packet.Ack2Packet, now time.Time) {
 	s.recvAck2 = ackHistEntry.lastPacket
 
 	s.socket.applyRTT(uint(now.Sub(ackHistEntry.sendTime) / time.Microsecond))
+
+	//fmt.Println(uint(now.Sub(ackHistEntry.sendTime) / time.Microsecond))
 
 	//s.rto = 4 * s.rtt + s.rttVar
 }
@@ -237,7 +243,14 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 	}
 
 	s.lastSequence = pieces[len(pieces)-1].Seq
+
+	// Testing with less ACK
+	//if acksent%10 == 0 {
 	s.ackEvent()
+	//}
+	//fmt.Println(acksent)
+	//acksent++
+	//s.ackEvent()
 
 	// reassemble the data by appending it from all the pieces
 	var msg []byte
@@ -467,14 +480,18 @@ func (s *udtSocketRecv) ackEvent() {
 	// Acknowledge the packet if the threshold is reached. This used to be a parameter s.ackInterval supposed to be set by congestion control, but never was.
 	// Before, there was both the (unused) ACK interval s.ackInterval and s.ackTimerEvent which fired at SynTime, which was way too often and basically a ddos.
 	// It makes more sense to just send the ACK x split of the congestion window.
-	s.unackPktCount++
+	//s.unackPktCount++
 	// DEBUG: Always send ack for now. Turns out the remote congestion window changes without the local one?
 	//if s.unackPktCount < s.socket.cong.GetCongestionWindowSize()/4 {
-	// return
+	//	return
 	//}
 
 	// The ack number is excluding.
 	ack := s.lastSequence.Add(1)
+
+	if ack == s.recvAck2 {
+		return
+	}
 
 	// Only send out the ACK if it represents new information to the remote, i.e. bigger than the last reported number.
 	if ack.IsLessEqual(s.sentAck) {
