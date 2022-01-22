@@ -212,3 +212,8 @@ func (s *udtSocketCc) GetMSS() uint {
 func (s *udtSocketCc) SetACKPeriod(ack time.Duration) {
 	s.socket.recv.ackPeriod.set(ack)
 }
+
+// SetACKInterval sets the number of packets sent to the peer before sending an ACK
+func (s *udtSocketCc) SetACKInterval(ack uint) {
+	s.socket.recv.ackInterval.set(uint32(ack))
+}

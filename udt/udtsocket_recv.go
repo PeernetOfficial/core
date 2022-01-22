@@ -25,6 +25,7 @@ type udtSocketRecv struct {
 	recvLastArrival    time.Time        // time of the most recent data packet arrival
 	recvLastProbe      time.Time        // time of the most recent data packet probe packet
 	ackPeriod          atomicDuration   // (set by congestion control) delay between sending ACKs
+	ackInterval        atomicUint32     // (set by congestion control) number of data packets to send before sending an ACK
 	unackPktCount      uint             // number of packets we've received that we haven't sent an ACK for
 	recvPktHistory     []time.Duration  // list of recently received packets.
 	recvPktPairHistory []time.Duration  // probing packet window.
@@ -33,7 +34,7 @@ type udtSocketRecv struct {
 	resendACKTicker    time.Ticker      // Ticker for resending outgoing ACK
 }
 
-var acksent = 20
+var acksent = 0
 
 func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
 	sr := &udtSocketRecv{
@@ -245,12 +246,22 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 	s.lastSequence = pieces[len(pieces)-1].Seq
 
 	// Testing with less ACK
-	//if acksent%10 == 0 {
-	s.ackEvent()
+	//if acksent%3 == 0 {
+	s.unackPktCount++
+	//ackInterval := uint(s.ackPeriod.get())
+	//if (ackInterval > 0) && (ackInterval <= s.unackPktCount) {
+	//	// ACK timer expired or ACK interval is reached
+	//	s.ackEvent()
 	//}
-	//fmt.Println(acksent)
-	//acksent++
-	//s.ackEvent()
+
+	//if acksent < 200 {
+	//	s.ackEvent()
+	//} else if acksent%20 == 0 {
+	//	s.ackEvent()
+	//}
+	// fmt.Println(acksent)
+	acksent++
+	s.ackEvent()
 
 	// reassemble the data by appending it from all the pieces
 	var msg []byte

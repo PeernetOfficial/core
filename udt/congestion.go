@@ -37,6 +37,9 @@ type CongestionControlParms interface {
 
 	// SetACKPerid sets the time between ACKs sent to the peer
 	SetACKPeriod(time.Duration)
+
+	// SetACKInterval sets the number of packets sent to the peer before sending an ACK
+	SetACKInterval(uint)
 }
 
 // CongestionControl controls how timing is handled and UDT connections tuned
