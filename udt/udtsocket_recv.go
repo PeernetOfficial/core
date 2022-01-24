@@ -222,6 +222,10 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 	var pieces []*packet.DataPacket
 	var success bool
 
+	// Metrics to check the number of data packets attempted to be
+	// Processed
+	IncrementDataPacketsAttemptedProcess()
+
 	if s.socket.isDatagram {
 		pieces, success = s.reassemblePacketPiecesDatagram(p)
 	} else {
@@ -229,6 +233,9 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 	}
 
 	if !success {
+		// Metrics to check the number of data packets attempted to be
+		// Processed. But not fully processed yet
+		IncrementDataPacketsNotFullyProcessed()
 		// we need to wait for more packets, store and return
 		if isNew {
 			s.recvPktPend.Add(sendPacketEntry{pkt: p})

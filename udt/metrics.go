@@ -7,35 +7,37 @@ import (
 
 // Performance metrics
 var (
-	PktSent            uint64  // number of sent data packets, including retransmissions
-	PktSendHandShake   uint64  // number of Handshake packets sent
-	PktRecvHandShake   uint64  // number of Handshake packets received
-	PktSendKeepAlive   uint64  // number of Keep-alive packets sent
-	PktRecvKeepAlive   uint64  // number of Keep-alive packets received
-	PktRecv            uint64  // number of received packets
-	PktSentCongestion  uint64  // number of Congestion Packets sent
-	PktRecvCongestion  uint64  // number of Congestion Packets received
-	PktSentShutdown    uint64  // number of Shutdown Packets sent
-	PktRecvShutdown    uint64  // number of Shutdown Packets received
-	PktSendMessageDrop uint64  // number of Message Drop Packets sent
-	PktRecvMessageDrop uint64  // number of Message Drop Packets received
-	PktSendError       uint64  // number of Error Packets sent
-	PktRecvError       uint64  // number of Error Packets received
-	PktSendUserDefined uint64  // number of User Defined Packets sent
-	PktRecvUserDefined uint64  // number of User Defined Packets received
-	PktSndLoss         uint    // number of lost packets (sender side)
-	PktRcvLoss         uint    // number of lost packets (receiver side)
-	PktRetrans         uint    // number of retransmitted packets
-	PktSentACK         uint    // number of sent ACK packets
-	PktSentACK2        uint    // number of sent ACK2 packets
-	PktRecvACK2        uint    // number of received ACK2 packets
-	PktRecvACK         uint    // number of received ACK packets
-	PktSentNAK         uint    // number of sent NAK packets
-	PktRecvNAK         uint    // number of received NAK packets
-	PktSentOther       uint    // number of sent Other packets
-	PktRecvOther       uint    // number of received Other packets
-	MbpsSendRate       float64 // sending rate in Mb/s
-	MbpsRecvRate       float64 // receiving rate in Mb/s
+	PktSent                      uint64  // number of sent data packets, including retransmissions
+	PktSendHandShake             uint64  // number of Handshake packets sent
+	PktRecvHandShake             uint64  // number of Handshake packets received
+	PktSendKeepAlive             uint64  // number of Keep-alive packets sent
+	PktRecvKeepAlive             uint64  // number of Keep-alive packets received
+	PktRecv                      uint64  // number of received packets
+	PktSentCongestion            uint64  // number of Congestion Packets sent
+	PktRecvCongestion            uint64  // number of Congestion Packets received
+	PktSentShutdown              uint64  // number of Shutdown Packets sent
+	PktRecvShutdown              uint64  // number of Shutdown Packets received
+	PktSendMessageDrop           uint64  // number of Message Drop Packets sent
+	PktRecvMessageDrop           uint64  // number of Message Drop Packets received
+	PktSendError                 uint64  // number of Error Packets sent
+	PktRecvError                 uint64  // number of Error Packets received
+	PktSendUserDefined           uint64  // number of User Defined Packets sent
+	PktRecvUserDefined           uint64  // number of User Defined Packets received
+	PktSndLoss                   uint    // number of lost packets (sender side)
+	PktRcvLoss                   uint    // number of lost packets (receiver side)
+	PktRetrans                   uint    // number of retransmitted packets
+	PktSentACK                   uint    // number of sent ACK packets
+	PktSentACK2                  uint    // number of sent ACK2 packets
+	PktRecvACK2                  uint    // number of received ACK2 packets
+	PktRecvACK                   uint    // number of received ACK packets
+	PktSentNAK                   uint    // number of sent NAK packets
+	PktRecvNAK                   uint    // number of received NAK packets
+	PktSentOther                 uint    // number of sent Other packets
+	PktRecvOther                 uint    // number of received Other packets
+	MbpsSendRate                 float64 // sending rate in Mb/s
+	MbpsRecvRate                 float64 // receiving rate in Mb/s
+	DataPacketsAttemptedProcess  int     // Tracking how many data packets are attempted to get processed
+	DataPacketsNotFullyProcessed int     // Tracking how many data packets are not fully processed
 )
 
 // PrintTypeOfPacket This is for metrics purposes
@@ -161,6 +163,14 @@ func PrintTypeOfPacket(p packet.Packet, Type string) {
 	}
 }
 
+func IncrementDataPacketsAttemptedProcess() {
+	DataPacketsAttemptedProcess++
+}
+
+func IncrementDataPacketsNotFullyProcessed() {
+	DataPacketsNotFullyProcessed++
+}
+
 // PrintMetrics Prints metrics collected
 func PrintMetrics() {
 	fmt.Printf("Total HandShake Packets Sent:%d \n", PktSendHandShake)
@@ -198,6 +208,9 @@ func PrintMetrics() {
 
 	fmt.Printf("Total Other Packets Sent:%d \n", PktSentOther)
 	fmt.Printf("Total Other Packets Received:%d \n", PktRecvOther)
+
+	fmt.Printf("Total Number Of Data packets attempted to get Processed:%d \n", DataPacketsAttemptedProcess)
+	fmt.Printf("Total Number Of Data packets not fully processed:%d \n", DataPacketsNotFullyProcessed)
 }
 
 func ResetMetrics() {
