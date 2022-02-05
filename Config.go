@@ -104,8 +104,36 @@ func SaveConfig(Filename string, Config interface{}) (err error) {
 	return ioutil.WriteFile(Filename, data, 0666)
 }
 
+// SaveConfigs stores the multiple configurations into a single file. They are essentially merged.
+// It is the callers responsibility to make sure no field collision ensue.
+func SaveConfigs(Filename string, Configs ...interface{}) (err error) {
+	var dataOut []byte
+
+	for n, config := range Configs {
+		if n > 0 {
+			dataOut = append(dataOut, []byte("\n\n")...)
+		}
+
+		data, err := yaml.Marshal(config)
+		if err != nil {
+			return err
+		}
+
+		dataOut = append(dataOut, data...)
+	}
+
+	return ioutil.WriteFile(Filename, dataOut, 0666)
+}
+
 // SaveConfig stores the current runtime config to file. Any foreign settings not present in the Config structure will be deleted.
 func (backend *Backend) SaveConfig() {
+	if backend.ConfigClient != nil {
+		if err := SaveConfigs(backend.ConfigFilename, *backend.Config, backend.ConfigClient); err != nil {
+			backend.LogError("SaveConfig", "writing config '%s': %v\n", backend.ConfigFilename, err.Error())
+		}
+		return
+	}
+
 	if err := SaveConfig(backend.ConfigFilename, *backend.Config); err != nil {
 		backend.LogError("SaveConfig", "writing config '%s': %v\n", backend.ConfigFilename, err.Error())
 	}

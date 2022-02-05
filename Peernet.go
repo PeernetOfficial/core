@@ -21,7 +21,7 @@ import (
 // Init initializes the client. If the config file does not exist or is empty, a default one will be created.
 // The User Agent must be provided in the form "Application Name/1.0".
 // The returned status is of type ExitX. Anything other than ExitSuccess indicates a fatal failure.
-func Init(UserAgent string, ConfigFilename string, Filters *Filters) (backend *Backend, status int, err error) {
+func Init(UserAgent string, ConfigFilename string, Filters *Filters, ConfigOut interface{}) (backend *Backend, status int, err error) {
 	if UserAgent == "" {
 		return
 	}
@@ -39,6 +39,12 @@ func Init(UserAgent string, ConfigFilename string, Filters *Filters) (backend *B
 	// The configuration and log init are fatal events if they fail.
 	if status, err = LoadConfig(ConfigFilename, &backend.Config); status != ExitSuccess {
 		return nil, status, err
+	}
+	if ConfigOut != nil {
+		if status, err = LoadConfig(ConfigFilename, ConfigOut); status != ExitSuccess {
+			return nil, status, err
+		}
+		backend.ConfigClient = ConfigOut
 	}
 
 	if err = backend.initLog(); err != nil {
@@ -82,7 +88,8 @@ func (backend *Backend) Connect() {
 // Global variables and init functions are to be merged.
 type Backend struct {
 	ConfigFilename        string                   // Filename of the configuration file.
-	Config                *Config                  // Config
+	Config                *Config                  // Core configuration
+	ConfigClient          interface{}              // Custom configuration from the client
 	Filters               Filters                  // Filters allow to install hooks.
 	userAgent             string                   // User Agent
 	GlobalBlockchainCache *BlockchainCache         // Caches blockchains of other peers.
