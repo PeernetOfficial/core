@@ -28,6 +28,7 @@ type Config struct {
 	BlockchainGlobal string `yaml:"BlockchainGlobal"` // Blockchain global caches blockchain data from global users. Empty to disable.
 	WarehouseMain    string `yaml:"WarehouseMain"`    // Warehouse main stores the actual data of files shared by the end-user.
 	SearchIndex      string `yaml:"SearchIndex"`      // Local search index of blockchain records. Empty to disable.
+	BlackList        string `yaml: "Blacklist"`       // Blacklist records of nodes. Empty to disable.
 	GeoIPDatabase    string `yaml:"GeoIPDatabase"`    // GeoLite2 City database to provide GeoIP information.
 
 	// Target for the log messages: 0 = Log file,  1 = Stdout, 2 = Log file + Stdout, 3 = None

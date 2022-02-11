@@ -70,6 +70,10 @@ func Init(UserAgent string, ConfigFilename string, Filters *Filters, ConfigOut i
 		backend.userBlockchainUpdateSearchIndex()
 	}
 
+	if backend.Blacklist, err = InitBlackListStoreDB(backend.Config.BlackList); err != nil {
+		backend.LogError("Init", "blacklist '%s' init: %s", backend.Config.BlackList, err.Error())
+	}
+
 	return backend, ExitSuccess, nil
 }
 
@@ -94,6 +98,7 @@ type Backend struct {
 	userAgent             string                   // User Agent
 	GlobalBlockchainCache *BlockchainCache         // Caches blockchains of other peers.
 	SearchIndex           *search.SearchIndexStore // Search index of blockchain records.
+	Blacklist             *BlackListNodeDB         // Blacklist nodes records
 	networks              *Networks                // All connected networks.
 	dhtStore              store.Store              // dhtStore contains all key-value data served via DHT
 	UserBlockchain        *blockchain.Blockchain   // UserBlockchain is the user's blockchain and exports functions to directly read and write it

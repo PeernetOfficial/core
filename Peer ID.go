@@ -115,6 +115,12 @@ type peerAddress struct {
 
 // PeerlistAdd adds a new peer to the peer list. It does not validate the peer info. If the peer is already added, it does nothing. Connections must be live.
 func (backend *Backend) PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*Connection) (peer *PeerInfo, added bool) {
+
+	// Adds node to the peer list
+	if backend.CheckNodeBlackList(PublicKey.SerializeCompressed()) {
+		return nil, false
+	}
+
 	if len(connections) == 0 {
 		return nil, false
 	}
@@ -130,7 +136,7 @@ func (backend *Backend) PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*
 
 	peer = &PeerInfo{Backend: backend, PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], NodeID: protocol.PublicKey2NodeID(PublicKey), messageSequence: rand.Uint32()}
 	_, peer.IsRootPeer = rootPeers[publicKeyCompressed]
-
+	
 	backend.peerList[publicKeyCompressed] = peer
 
 	// also add to mirrored nodeList

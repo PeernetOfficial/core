@@ -4,6 +4,7 @@ BlockchainMain:   "data/blockchain main/"       # Blockchain main stores the end
 BlockchainGlobal: "data/blockchain global/"     # Blockchain global caches blockchain data from global users. Empty to disable.
 WarehouseMain:    "data/warehouse main/"        # Warehouse main stores the actual data of files shared by the end-user.
 SearchIndex:      "data/search index/"          # Local search index of blockchain records. Empty to disable.
+blacklist:        "data/black list"             # Local record of blacklisted nodes
 GeoIPDatabase:    "data/GeoLite2-City.mmdb"     # GeoLite2 City database to provide GeoIP information.
 
 # Listen defines all IP:Port combinations to listen on. If empty, it will listen on all IPs automatically on available ports.
