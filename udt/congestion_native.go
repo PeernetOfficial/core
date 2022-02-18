@@ -1,7 +1,6 @@
 package udt
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
 	"time"
@@ -63,7 +62,6 @@ func (ncc NativeCongestionControl) OnACK(parms CongestionControlParms, ack packe
 	// If the current status is in the slow start phase, set the congestion window
 	// size to the product of packet arrival rate and (RTT + SYN). Slow Start ends. Stop.
 	if ncc.slowStart {
-		fmt.Println("slow start")
 		cWndSize = uint(int(cWndSize) + int(ack.BlindDiff(ncc.lastAck)))
 		ncc.lastAck = ack
 
@@ -83,12 +81,10 @@ func (ncc NativeCongestionControl) OnACK(parms CongestionControlParms, ack packe
 		// Set the congestion window size (CWND) to: CWND = A * (RTT + SYN) + 16.
 		cWndSize = uint((float64(recvRate)/float64(time.Second))*float64(rtt+ncc.rcInterval) + 16)
 		parms.SetCongestionWindowSize(cWndSize)
-		fmt.Println(cWndSize)
 	}
 	if ncc.loss {
 		ncc.loss = false
 		parms.SetCongestionWindowSize(cWndSize)
-		fmt.Println("ncc loss")
 		//fmt.Println(parms.GetCongestionWindowSize())
 		return
 	}
