@@ -29,6 +29,9 @@ func (ncc NativeCongestionControl) Init(parms CongestionControlParms, synTime ti
 	ncc.lastRCTime = time.Now()
 	parms.SetACKPeriod(ncc.rcInterval)
 
+	// TODO: Once packet loss is reported, the ACK interval should fall back to 1, and increased if a stable connection is detected.
+	parms.SetACKInterval(4)
+
 	ncc.slowStart = true
 	ncc.lastAck = parms.GetSndCurrSeqNo()
 	ncc.loss = false

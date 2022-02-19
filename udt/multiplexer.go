@@ -3,7 +3,6 @@
 package udt
 
 import (
-	"fmt"
 	"math/rand"
 
 	"github.com/PeernetOfficial/core/udt/packet"
@@ -57,7 +56,7 @@ func (m *multiplexer) goRead() {
 
 		p, err := packet.DecodePacket(buf)
 		if err != nil {
-			fmt.Printf("Error decoding UDT packet: %s\n", err)
+			//fmt.Printf("Error decoding UDT packet: %s\n", err)
 			return
 		}
 
@@ -67,7 +66,7 @@ func (m *multiplexer) goRead() {
 			var hsPacket *packet.HandshakePacket
 			var ok bool
 			if hsPacket, ok = p.(*packet.HandshakePacket); !ok {
-				fmt.Printf("Received non-handshake packet with destination socket = 0\n")
+				//fmt.Printf("Received non-handshake packet with destination socket = 0\n")
 				return
 			}
 
@@ -85,7 +84,7 @@ func (m *multiplexer) sendPacket(destSockID uint32, ts uint32, p packet.Packet) 
 	p.SetHeader(destSockID, ts)
 	if destSockID == 0 {
 		if _, ok := p.(*packet.HandshakePacket); !ok {
-			fmt.Printf("Sending non-handshake packet with destination socket = 0\n")
+			//fmt.Printf("Sending non-handshake packet with destination socket = 0\n")
 			return
 		}
 	}
@@ -93,7 +92,7 @@ func (m *multiplexer) sendPacket(destSockID uint32, ts uint32, p packet.Packet) 
 	buf := make([]byte, m.maxPacketSize)
 	plen, err := p.WriteTo(buf) // encode
 	if err != nil {
-		fmt.Printf("Error encoding UDT packet: %s\n", err.Error())
+		//fmt.Printf("Error encoding UDT packet: %s\n", err.Error())
 		return
 	}
 
