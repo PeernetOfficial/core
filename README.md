@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-  	backend, status, err := core.Init("Your application/1.0", "Config.yaml", nil)
+  	backend, status, err := core.Init("Your application/1.0", "Config.yaml", nil, nil)
     if status != core.ExitSuccess {
         fmt.Printf("Error %d initializing backend: %s\n", status, err.Error())
         return
