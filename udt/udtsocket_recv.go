@@ -24,7 +24,8 @@ type udtSocketRecv struct {
 	recvAck2           packet.PacketID  // largest packetID we've received an ACK2 from
 	recvLastArrival    time.Time        // time of the most recent data packet arrival
 	recvLastProbe      time.Time        // time of the most recent data packet probe packet
-	ackPeriod          atomicDuration   // (set by congestion control) delay between sending ACKs
+	ackPeriod          atomicDuration   // (set by congestion control) delay between sending ACKs. Currently not used.
+	ackInterval        atomicUint32     // (set by congestion control) number of data packets to send before sending an ACK
 	unackPktCount      uint             // number of packets we've received that we haven't sent an ACK for
 	recvPktHistory     []time.Duration  // list of recently received packets.
 	recvPktPairHistory []time.Duration  // probing packet window.
@@ -464,14 +465,13 @@ func (s *udtSocketRecv) ingestError(p *packet.ErrPacket) {
 
 // ackEvent sends an ACK message if appropriate. It informs the remote peer about the last packet received without loss.
 func (s *udtSocketRecv) ackEvent() {
-	// Acknowledge the packet if the threshold is reached. This used to be a parameter s.ackInterval supposed to be set by congestion control, but never was.
-	// Before, there was both the (unused) ACK interval s.ackInterval and s.ackTimerEvent which fired at SynTime, which was way too often and basically a ddos.
-	// It makes more sense to just send the ACK x split of the congestion window.
 	s.unackPktCount++
-	// DEBUG: Always send ack for now. Turns out the remote congestion window changes without the local one?
-	//if s.unackPktCount < s.socket.cong.GetCongestionWindowSize()/4 {
-	// return
-	//}
+
+	// Check if the threshold to send is reached, if used. Note that sendACK is called revery SynTime.
+	ackInterval := uint(s.ackInterval.get())
+	if (ackInterval > 0) && (ackInterval > s.unackPktCount) {
+		return
+	}
 
 	// The ack number is excluding.
 	ack := s.lastSequence.Add(1)
