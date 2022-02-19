@@ -88,6 +88,7 @@ func (s *udtSocketRecv) goReceiveEvent() {
 		case <-s.resendACKTimer: // handles both resending ACKs and NAKs
 			if s.recvAck2.IsLess(s.sentAck) {
 				s.sendACK(s.sentAck)
+				s.unackPktCount = 0
 			}
 			if first, valid := s.recvLossList.FirstSequence(); valid {
 				s.sendNAK(first, 1)
@@ -467,17 +468,18 @@ func (s *udtSocketRecv) ingestError(p *packet.ErrPacket) {
 func (s *udtSocketRecv) ackEvent() {
 	s.unackPktCount++
 
-	// Check if the threshold to send is reached, if used. Note that sendACK is called revery SynTime.
-	ackInterval := uint(s.ackInterval.get())
-	if (ackInterval > 0) && (ackInterval > s.unackPktCount) {
-		return
-	}
-
 	// The ack number is excluding.
 	ack := s.lastSequence.Add(1)
 
 	// Only send out the ACK if it represents new information to the remote, i.e. bigger than the last reported number.
 	if ack.IsLessEqual(s.sentAck) {
+		return
+	}
+
+	// Check if the threshold to send is reached, if used. Note that sendACK is called revery SynTime.
+	ackInterval := uint(s.ackInterval.get())
+	if (ackInterval > 0) && (ackInterval > s.unackPktCount) {
+		s.sentAck = ack // This is needed for resendACKTimer to pick it up in case no ackInterval count of packets are immediately sent.
 		return
 	}
 
