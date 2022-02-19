@@ -29,6 +29,7 @@ func DefaultConfig() *Config {
 		ListenReplayWindow: 5 * time.Minute,
 		LingerTime:         10 * time.Second,
 		MaxFlowWinSize:     64,
+		MaxBandwidth:       0,
 		MaxPacketSize:      65535,
 		SynTime:            10000 * time.Microsecond,
 		CongestionForSocket: func(sock *udtSocket) CongestionControl {

@@ -29,7 +29,7 @@ func (ncc NativeCongestionControl) Init(parms CongestionControlParms, synTime ti
 	ncc.lastRCTime = time.Now()
 	parms.SetACKPeriod(ncc.rcInterval)
 
-	// TODO: Once packet loss is reported, the ACK interval should fall back to 1, and increased if a stable connection is detected.
+	// This value should be adjusted at runtime according to congestion.
 	parms.SetACKInterval(4)
 
 	ncc.slowStart = true
@@ -83,6 +83,7 @@ func (ncc NativeCongestionControl) OnACK(parms CongestionControlParms, ack packe
 	} else {
 		// Set the congestion window size (CWND) to: CWND = A * (RTT + SYN) + 16.
 		cWndSize = uint((float64(recvRate)/float64(time.Second))*float64(rtt+ncc.rcInterval) + 16)
+		parms.SetCongestionWindowSize(cWndSize)
 	}
 	if ncc.loss {
 		ncc.loss = false
