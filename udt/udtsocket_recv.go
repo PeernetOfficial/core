@@ -145,7 +145,7 @@ func (s *udtSocketRecv) ingestMsgDropReq(p *packet.MsgDropReqPacket, now time.Ti
 
 	// try to push any pending packets out, now that we have dropped any blocking packets
 	for _, nextPkt := range s.recvPktPend.Range(stopSeq, s.nextSequenceExpect) {
-		if !s.attemptProcessPacket(nextPkt.pkt, false) {
+		if !s.attemptProcessPacket(nextPkt.pkt, false, false) {
 			break
 		}
 	}
@@ -184,6 +184,7 @@ func (s *udtSocketRecv) ingestData(p *packet.DataPacket, now time.Time) {
 		}
 	}
 	s.recvLastArrival = now
+	var ackImmediate bool
 
 	// If the incoming sequence number is greater than the expected one, treat all sequence numbers in the middle as lost (add to lost list) and send a NAK.
 	seqDiff := p.Seq.BlindDiff(s.nextSequenceExpect)
@@ -201,19 +202,20 @@ func (s *udtSocketRecv) ingestData(p *packet.DataPacket, now time.Time) {
 		if !s.recvLossList.Remove(p.Seq.Seq) {
 			return // already previously received packet -- ignore
 		}
+		ackImmediate = true
 	} else {
 		s.nextSequenceExpect = p.Seq.Add(1)
 	}
 
 	if s.socket.isDatagram && p.Seq == s.lastSequence.Add(1) {
 		s.lastSequence = p.Seq
-		s.ackEvent() // Need special sending for datagram, otherwise below code would only send it out after all pieces are received.
+		s.ackEvent(false) // Need special sending for datagram, otherwise below code would only send it out after all pieces are received.
 	}
 
-	s.attemptProcessPacket(p, true)
+	s.attemptProcessPacket(p, true, ackImmediate)
 }
 
-func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) bool {
+func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew, ackImmediate bool) bool {
 	var pieces []*packet.DataPacket
 	var success bool
 
@@ -239,7 +241,7 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew bool) b
 	}
 
 	s.lastSequence = pieces[len(pieces)-1].Seq
-	s.ackEvent()
+	s.ackEvent(ackImmediate)
 
 	// reassemble the data by appending it from all the pieces
 	var msg []byte
@@ -465,7 +467,7 @@ func (s *udtSocketRecv) ingestError(p *packet.ErrPacket) {
 }
 
 // ackEvent sends an ACK message if appropriate. It informs the remote peer about the last packet received without loss.
-func (s *udtSocketRecv) ackEvent() {
+func (s *udtSocketRecv) ackEvent(immediate bool) {
 	s.unackPktCount++
 
 	// The ack number is excluding.
@@ -477,10 +479,12 @@ func (s *udtSocketRecv) ackEvent() {
 	}
 
 	// Check if the threshold to send is reached, if used. Note that sendACK is called revery SynTime.
-	ackInterval := uint(s.ackInterval.get())
-	if (ackInterval > 0) && (ackInterval > s.unackPktCount) {
-		s.sentAck = ack // This is needed for resendACKTimer to pick it up in case no ackInterval count of packets are immediately sent.
-		return
+	if !immediate {
+		ackInterval := uint(s.ackInterval.get())
+		if (ackInterval > 0) && (ackInterval > s.unackPktCount) {
+			s.sentAck = ack // This is needed for resendACKTimer to pick it up in case no ackInterval count of packets are immediately sent.
+			return
+		}
 	}
 
 	s.sendACK(ack)
