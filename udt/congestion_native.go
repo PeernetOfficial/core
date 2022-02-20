@@ -24,7 +24,7 @@ type NativeCongestionControl struct {
 }
 
 // Init to be called (only) at the start of a UDT connection.
-func (ncc NativeCongestionControl) Init(parms CongestionControlParms, synTime time.Duration) {
+func (ncc *NativeCongestionControl) Init(parms CongestionControlParms, synTime time.Duration) {
 	ncc.rcInterval = synTime
 	ncc.lastRCTime = time.Now()
 	parms.SetACKPeriod(ncc.rcInterval)
@@ -32,7 +32,7 @@ func (ncc NativeCongestionControl) Init(parms CongestionControlParms, synTime ti
 	// This value should be adjusted at runtime according to congestion.
 	parms.SetACKInterval(4)
 
-	ncc.slowStart = true
+	ncc.slowStart = false
 	ncc.lastAck = parms.GetSndCurrSeqNo()
 	ncc.loss = false
 	ncc.lastDecSeq = ncc.lastAck.Add(-1)
@@ -41,17 +41,17 @@ func (ncc NativeCongestionControl) Init(parms CongestionControlParms, synTime ti
 	ncc.nakCount = 0
 	ncc.decRandom = 1
 
-	parms.SetCongestionWindowSize(16)
+	parms.SetCongestionWindowSize(32)
 	parms.SetPacketSendPeriod(1 * time.Microsecond)
 }
 
 // Close to be called when a UDT connection is closed.
-func (ncc NativeCongestionControl) Close(parms CongestionControlParms) {
+func (ncc *NativeCongestionControl) Close(parms CongestionControlParms) {
 	// nothing done for this event
 }
 
 // OnACK to be called when an ACK packet is received
-func (ncc NativeCongestionControl) OnACK(parms CongestionControlParms, ack packet.PacketID) {
+func (ncc *NativeCongestionControl) OnACK(parms CongestionControlParms, ack packet.PacketID) {
 	currTime := time.Now()
 	if currTime.Sub(ncc.lastRCTime) < ncc.rcInterval {
 		return
@@ -138,7 +138,7 @@ func (ncc NativeCongestionControl) OnACK(parms CongestionControlParms, ack packe
 }
 
 // OnNAK to be called when a loss report is received
-func (ncc NativeCongestionControl) OnNAK(parms CongestionControlParms, losslist []packet.PacketID) {
+func (ncc *NativeCongestionControl) OnNAK(parms CongestionControlParms, losslist []packet.PacketID) {
 	// If it is in slow start phase, set inter-packet interval to 1/recvrate. Slow start ends. Stop.
 	if ncc.slowStart {
 		ncc.slowStart = false
@@ -201,7 +201,7 @@ func (ncc NativeCongestionControl) OnNAK(parms CongestionControlParms, losslist 
 }
 
 // OnTimeout to be called when a timeout event occurs
-func (ncc NativeCongestionControl) OnTimeout(parms CongestionControlParms) {
+func (ncc *NativeCongestionControl) OnTimeout(parms CongestionControlParms) {
 	if ncc.slowStart {
 		ncc.slowStart = false
 		recvRate, _ := parms.GetReceiveRates()
@@ -211,26 +211,24 @@ func (ncc NativeCongestionControl) OnTimeout(parms CongestionControlParms) {
 			parms.SetPacketSendPeriod(time.Duration(float64(time.Microsecond) * float64(parms.GetCongestionWindowSize()) / float64(parms.GetRTT()+ncc.rcInterval)))
 		}
 	} else {
-		/*
-			pktSendPeriod := parms.GetPacketSendPeriod()
-			ncc.lastDecPeriod = pktSendPeriod
-			parms.SetPacketSendPeriod(math.Ceil(pktSendPeriod * 2))
-			ncc.lastDecSeq = ncc.lastAck
-		*/
+		pktSendPeriod := parms.GetPacketSendPeriod()
+		ncc.lastDecPeriod = pktSendPeriod
+		parms.SetPacketSendPeriod(time.Duration(pktSendPeriod * 2))
+		ncc.lastDecSeq = ncc.lastAck
 	}
 }
 
 // OnPktSent to be called when data is sent
-func (ncc NativeCongestionControl) OnPktSent(parms CongestionControlParms, pkt packet.Packet) {
+func (ncc *NativeCongestionControl) OnPktSent(parms CongestionControlParms, pkt packet.Packet) {
 	// nothing done for this event
 }
 
 // OnPktRecv to be called when a data is received
-func (ncc NativeCongestionControl) OnPktRecv(parms CongestionControlParms, pkt packet.DataPacket) {
+func (ncc *NativeCongestionControl) OnPktRecv(parms CongestionControlParms, pkt packet.DataPacket) {
 	// nothing done for this event
 }
 
 // OnCustomMsg to process a user-defined packet
-func (ncc NativeCongestionControl) OnCustomMsg(parms CongestionControlParms, pkt packet.UserDefControlPacket) {
+func (ncc *NativeCongestionControl) OnCustomMsg(parms CongestionControlParms, pkt packet.UserDefControlPacket) {
 	// nothing done for this event
 }
