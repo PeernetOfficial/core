@@ -31,7 +31,7 @@ func (ncc *NativeCongestionControl) Init(parms CongestionControlParms, synTime t
 
 	// This value should be adjusted at runtime according to congestion.
 	parms.SetACKInterval(4)
-	
+
 	ncc.slowStart = false
 	ncc.lastAck = parms.GetSndCurrSeqNo()
 	ncc.loss = false
