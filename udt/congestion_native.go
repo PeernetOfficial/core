@@ -31,7 +31,7 @@ func (ncc *NativeCongestionControl) Init(parms CongestionControlParms, synTime t
 
 	// This value should be adjusted at runtime according to congestion.
 	parms.SetACKInterval(4)
-
+	
 	ncc.slowStart = false
 	ncc.lastAck = parms.GetSndCurrSeqNo()
 	ncc.loss = false
@@ -87,7 +87,7 @@ func (ncc *NativeCongestionControl) OnACK(parms CongestionControlParms, ack pack
 	}
 	if ncc.loss {
 		ncc.loss = false
-		parms.SetCongestionWindowSize(cWndSize)
+		//parms.SetCongestionWindowSize(cWndSize)
 		return
 	}
 	/*
@@ -189,14 +189,13 @@ func (ncc *NativeCongestionControl) OnNAK(parms CongestionControlParms, losslist
 			ncc.nakCount++
 			if ncc.decRandom != 0 && ncc.nakCount%ncc.decRandom != 0 {
 				ncc.decCount++
+				// 0.875^5 = 0.51, rate should not be decreased by more than half within a congestion period
+				parms.SetPacketSendPeriod(pktSendPeriod * 1125 / 1000)
+				ncc.lastDecSeq = parms.GetSndCurrSeqNo()
 				return
 			}
 		}
-		ncc.decCount++
-
-		// 0.875^5 = 0.51, rate should not be decreased by more than half within a congestion period
-		parms.SetPacketSendPeriod(pktSendPeriod * 1125 / 1000)
-		ncc.lastDecSeq = parms.GetSndCurrSeqNo()
+		//ncc.decCount++
 	}
 }
 
