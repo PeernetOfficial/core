@@ -87,7 +87,6 @@ func (ncc *NativeCongestionControl) OnACK(parms CongestionControlParms, ack pack
 	}
 	if ncc.loss {
 		ncc.loss = false
-		//parms.SetCongestionWindowSize(cWndSize)
 		return
 	}
 	/*
@@ -195,7 +194,6 @@ func (ncc *NativeCongestionControl) OnNAK(parms CongestionControlParms, losslist
 				return
 			}
 		}
-		//ncc.decCount++
 	}
 }
 
