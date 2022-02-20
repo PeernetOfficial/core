@@ -93,7 +93,6 @@ func (s *udtSocketSend) goSendEvent() {
 		}
 
 		sendPeriod := s.sndPeriod.get()
-
 		if sendPeriod == 0 {
 			return nil
 		}
