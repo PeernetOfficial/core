@@ -249,18 +249,18 @@ func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Con
 	switch msg.Control {
 	case protocol.TransferControlRequestStart:
 		// First check if the file available in the warehouse.
-		_, fileInfo, status, _ := peer.Backend.UserWarehouse.FileExists(msg.Hash)
+		_, fileSize, status, _ := peer.Backend.UserWarehouse.FileExists(msg.Hash)
 		if status != warehouse.StatusOK {
 			// File not available.
 			peer.sendTransfer(nil, protocol.TransferControlNotAvailable, msg.TransferProtocol, msg.Hash, 0, 0, msg.Sequence, uuid.UUID{}, false)
 			return
-		} else if msg.Limit > 0 && fileInfo.Size() < int64(msg.Offset)+int64(msg.Limit) {
+		} else if msg.Limit > 0 && fileSize < msg.Offset+msg.Limit {
 			// If the read limit is out of bounds, this request is considered invalid and silently discarded.
 			return
 		}
 
 		// Create a local UDT client to connect to the remote UDT server and serve the file!
-		go peer.startFileTransferUDT(msg.Hash, uint64(fileInfo.Size()), msg.Offset, msg.Limit, msg.Sequence, msg.TransferID, msg.TransferProtocol)
+		go peer.startFileTransferUDT(msg.Hash, fileSize, msg.Offset, msg.Limit, msg.Sequence, msg.TransferID, msg.TransferProtocol)
 
 	case protocol.TransferControlActive:
 		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {

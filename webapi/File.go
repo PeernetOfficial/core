@@ -154,11 +154,11 @@ func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.R
 			if _, err := warehouse.ValidateHash(file.Hash); err != nil {
 				http.Error(w, "", http.StatusBadRequest)
 				return
-			} else if _, fileInfo, status, _ := api.backend.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
+			} else if _, fileSize, status, _ := api.backend.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
 				EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
 				return
 			} else {
-				file.Size = uint64(fileInfo.Size())
+				file.Size = fileSize
 			}
 		} else {
 			file.Hash = protocol.HashData(nil)
@@ -263,11 +263,11 @@ func (api *WebapiInstance) apiBlockchainFileUpdate(w http.ResponseWriter, r *htt
 			if _, err := warehouse.ValidateHash(file.Hash); err != nil {
 				http.Error(w, "", http.StatusBadRequest)
 				return
-			} else if _, fileInfo, status, _ := api.backend.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
+			} else if _, fileSize, status, _ := api.backend.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
 				EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
 				return
 			} else {
-				file.Size = uint64(fileInfo.Size())
+				file.Size = fileSize
 			}
 		} else {
 			file.Hash = protocol.HashData(nil)
