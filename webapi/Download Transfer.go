@@ -178,17 +178,17 @@ func (info *downloadInfo) storeDownloadData(data []byte, offset uint64) (status 
 
 func (info *downloadInfo) DownloadSelf() {
 	// Check if the file is available in the local warehouse.
-	_, fileInfo, status, _ := info.backend.UserWarehouse.FileExists(info.hash)
+	_, fileSize, status, _ := info.backend.UserWarehouse.FileExists(info.hash)
 	if status != warehouse.StatusOK {
 		info.status = DownloadCanceled
 		return
 	}
 
-	info.file.Size = uint64(fileInfo.Size())
+	info.file.Size = fileSize
 	info.status = DownloadActive
 
 	// read the file
-	status, bytesRead, _ := info.backend.UserWarehouse.ReadFile(info.hash, 0, int64(fileInfo.Size()), info.DiskFile.Handle)
+	status, bytesRead, _ := info.backend.UserWarehouse.ReadFile(info.hash, 0, int64(info.file.Size), info.DiskFile.Handle)
 
 	info.DiskFile.StoredSize = uint64(bytesRead)
 

@@ -107,11 +107,10 @@ func (api *WebapiInstance) apiFileRead(w http.ResponseWriter, r *http.Request) {
 // Limit is optional, 0 means the entire file.
 func serveFileFromWarehouse(backend *core.Backend, w http.ResponseWriter, fileHash []byte, offset, limit uint64, ranges []HTTPRange) (valid bool) {
 	// Check if the file is available in the local warehouse.
-	_, fileInfo, status, _ := backend.UserWarehouse.FileExists(fileHash)
+	_, fileSize, status, _ := backend.UserWarehouse.FileExists(fileHash)
 	if status != warehouse.StatusOK {
 		return false
 	}
-	fileSize := uint64(fileInfo.Size())
 
 	// validate offset and limit
 	if limit > 0 && offset+limit > fileSize {
@@ -124,7 +123,7 @@ func serveFileFromWarehouse(backend *core.Backend, w http.ResponseWriter, fileHa
 		limit = fileSize - offset
 	}
 
-	setContentLengthRangeHeader(w, offset, limit, uint64(fileInfo.Size()), ranges)
+	setContentLengthRangeHeader(w, offset, limit, fileSize, ranges)
 
 	status, _, _ = backend.UserWarehouse.ReadFile(fileHash, int64(offset), int64(limit), w)
 

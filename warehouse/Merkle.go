@@ -19,10 +19,10 @@ import (
 const merkleCompanionExt = ".merkle"
 
 // MerkleFileExists checks if the merkle companion file exists. It returns StatusInvalidHash, StatusFileNotFound, or StatusOK.
-func (wh *Warehouse) MerkleFileExists(hash []byte) (path string, fileInfo os.FileInfo, status int, err error) {
+func (wh *Warehouse) MerkleFileExists(hash []byte) (path string, fileSize uint64, status int, err error) {
 	hashA, err := ValidateHash(hash)
 	if err != nil {
-		return "", nil, StatusInvalidHash, err
+		return "", 0, StatusInvalidHash, err
 	}
 
 	a, b := buildPath(wh.Directory, hashA)
@@ -30,10 +30,10 @@ func (wh *Warehouse) MerkleFileExists(hash []byte) (path string, fileInfo os.Fil
 
 	if fileInfo, err := os.Stat(path); err == nil {
 		// file exists
-		return path, fileInfo, StatusOK, nil
+		return path, uint64(fileInfo.Size()), StatusOK, nil
 	}
 
-	return "", nil, StatusFileNotFound, os.ErrNotExist
+	return "", 0, StatusFileNotFound, os.ErrNotExist
 }
 
 // createMerkleCompanionFile creates a merkle companion file. If the merkle companion file already exists, it is overwritten.

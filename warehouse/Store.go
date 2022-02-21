@@ -210,10 +210,10 @@ func (wh *Warehouse) DeleteFile(hash []byte) (status int, err error) {
 }
 
 // FileExists checks if the file exists. It returns StatusInvalidHash, StatusFileNotFound, or StatusOK.
-func (wh *Warehouse) FileExists(hash []byte) (path string, fileInfo os.FileInfo, status int, err error) {
+func (wh *Warehouse) FileExists(hash []byte) (path string, fileSize uint64, status int, err error) {
 	hashA, err := ValidateHash(hash)
 	if err != nil {
-		return "", nil, StatusInvalidHash, err
+		return "", 0, StatusInvalidHash, err
 	}
 
 	a, b := buildPath(wh.Directory, hashA)
@@ -221,10 +221,10 @@ func (wh *Warehouse) FileExists(hash []byte) (path string, fileInfo os.FileInfo,
 
 	if fileInfo, err := os.Stat(path); err == nil {
 		// file exists
-		return path, fileInfo, StatusOK, nil
+		return path, uint64(fileInfo.Size()), StatusOK, nil
 	}
 
-	return "", nil, StatusFileNotFound, os.ErrNotExist
+	return "", 0, StatusFileNotFound, os.ErrNotExist
 }
 
 // DeleteWarehouse deletes all files in the warehouse
