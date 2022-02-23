@@ -251,7 +251,7 @@ func PeerConnectPublicKey(backend *core.Backend, publicKey *btcec.PublicKey, tim
 
 // PeerConnectNode tries to connect via the node ID
 func PeerConnectNode(backend *core.Backend, nodeID []byte, timeout time.Duration) (peer *core.PeerInfo, err error) {
-	if len(nodeID) == 256/8 {
+	if len(nodeID) != 256/8 {
 		return nil, errors.New("invalid node ID")
 	}
 
