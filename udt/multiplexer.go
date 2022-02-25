@@ -43,6 +43,7 @@ func (m *multiplexer) newSocket(config *Config, isServer bool, isDatagram bool) 
 
 // read runs in a goroutine and reads packets from conn using a buffer from the readBufferPool, or a new buffer.
 func (m *multiplexer) goRead() {
+
 	for {
 		var buf []byte
 		select {
@@ -89,8 +90,10 @@ func (m *multiplexer) sendPacket(destSockID uint32, ts uint32, p packet.Packet) 
 		}
 	}
 
-	// Print type of packet getting sent
-	m.socket.PrintTypeOfPacket(p, "send")
+	if m.socket != nil {
+		// Logging the count of the type of packet sent
+		m.socket.PrintTypeOfPacket(p, "send")
+	}
 
 	buf := make([]byte, m.maxPacketSize)
 	plen, err := p.WriteTo(buf) // encode
