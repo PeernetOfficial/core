@@ -43,12 +43,12 @@ type shutdownMessage struct {
 }
 
 /*
-udtSocket encapsulates a UDT socket between a local and remote address pair, as
-defined by the UDT specification.  udtSocket implements the net.Conn interface
+UDTSocket encapsulates a UDT socket between a local and remote address pair, as
+defined by the UDT specification.  UDTSocket implements the net.Conn interface
 so that it can be used anywhere that a stream-oriented network connection
 (like TCP) would be used.
 */
-type udtSocket struct {
+type UDTSocket struct {
 	// this data not changed after the socket is initialized and/or handshaked
 	m *multiplexer // the multiplexer that handles this socket
 	//raddr       *net.UDPAddr    // the remote address
@@ -165,7 +165,7 @@ type Metrics struct {
 *******************************************************************************/
 
 // Grab the next data packet
-func (s *udtSocket) fetchReadPacket(blocking bool) ([]byte, error) {
+func (s *UDTSocket) fetchReadPacket(blocking bool) ([]byte, error) {
 	var result []byte
 	if blocking {
 		for {
@@ -205,7 +205,7 @@ func (s *udtSocket) fetchReadPacket(blocking bool) ([]byte, error) {
 	return result, nil
 }
 
-func (s *udtSocket) connectionError() error {
+func (s *UDTSocket) connectionError() error {
 	switch s.sockState {
 	case sockStateRefused:
 		return errors.New("Connection refused by remote host")
@@ -225,7 +225,7 @@ func (s *udtSocket) connectionError() error {
 // Read can be made to time out and return an Error with Timeout() == true
 // after a fixed time limit; see SetDeadline and SetReadDeadline.
 // (required for net.Conn implementation)
-func (s *udtSocket) Read(p []byte) (n int, err error) {
+func (s *UDTSocket) Read(p []byte) (n int, err error) {
 	connErr := s.connectionError()
 	if s.isDatagram {
 		// for datagram sockets, block until we have a message to return and then return it
@@ -275,7 +275,7 @@ func (s *udtSocket) Read(p []byte) (n int, err error) {
 // Write can be made to time out and return an Error with Timeout() == true
 // after a fixed time limit; see SetDeadline and SetWriteDeadline.
 // (required for net.Conn implementation)
-func (s *udtSocket) Write(p []byte) (n int, err error) {
+func (s *UDTSocket) Write(p []byte) (n int, err error) {
 	// at the moment whatever we have right now we'll shove it into a channel and return
 	// on the other side:
 	//  for datagram sockets: this is a distinct message to be broken into as few packets as possible
@@ -328,7 +328,7 @@ func (s *udtSocket) Write(p []byte) (n int, err error) {
 // Write operations will be permitted to send (initial packets)
 // Read operations will return an error // (required for net.Conn implementation).
 // Note: Do not simultaneously call Close() and Write(). To close while the socket is still in use, use Terminate().
-func (s *udtSocket) Close() error {
+func (s *UDTSocket) Close() error {
 	s.closeMutex.Lock()
 	defer s.closeMutex.Unlock()
 
@@ -346,7 +346,7 @@ func (s *udtSocket) Close() error {
 
 // Terminate terminates the connection immediately. Unlike Close, it does not permit any reading/writing.
 // If the connection should be ordinarily closed (after reading/writing) use Close().
-func (s *udtSocket) Terminate() error {
+func (s *UDTSocket) Terminate() error {
 	s.closeMutex.Lock()
 	defer s.closeMutex.Unlock()
 
@@ -360,7 +360,7 @@ func (s *udtSocket) Terminate() error {
 	return nil
 }
 
-func (s *udtSocket) isOpen() bool {
+func (s *UDTSocket) isOpen() bool {
 	switch s.sockState {
 	case sockStateClosed, sockStateRefused, sockStateCorrupted, sockStateTimeout:
 		return false
@@ -371,14 +371,14 @@ func (s *udtSocket) isOpen() bool {
 
 // LocalAddr returns the local network address.
 // (required for net.Conn implementation)
-func (s *udtSocket) LocalAddr() net.Addr {
+func (s *UDTSocket) LocalAddr() net.Addr {
 	//return s.m.laddr
 	return nil
 }
 
 // RemoteAddr returns the remote network address.
 // (required for net.Conn implementation)
-func (s *udtSocket) RemoteAddr() net.Addr {
+func (s *UDTSocket) RemoteAddr() net.Addr {
 	//return s.raddr
 	return nil
 }
@@ -406,13 +406,13 @@ func (s *udtSocket) RemoteAddr() net.Addr {
 // failure on I/O can be detected using
 // errors.Is(err, syscall.ETIMEDOUT).
 // (required for net.Conn implementation)
-func (s *udtSocket) SetDeadline(t time.Time) error {
+func (s *UDTSocket) SetDeadline(t time.Time) error {
 	s.setDeadline(t, &s.readDeadline, &s.readDeadlinePassed)
 	s.setDeadline(t, &s.writeDeadline, &s.writeDeadlinePassed)
 	return nil
 }
 
-func (s *udtSocket) setDeadline(dl time.Time, timer **time.Timer, timerPassed *bool) {
+func (s *UDTSocket) setDeadline(dl time.Time, timer **time.Timer, timerPassed *bool) {
 	if *timer == nil {
 		if !dl.IsZero() {
 			*timer = time.NewTimer(dl.Sub(time.Now()))
@@ -439,7 +439,7 @@ func (s *udtSocket) setDeadline(dl time.Time, timer **time.Timer, timerPassed *b
 // and any currently-blocked Read call.
 // A zero value for t means Read will not time out.
 // (required for net.Conn implementation)
-func (s *udtSocket) SetReadDeadline(t time.Time) error {
+func (s *UDTSocket) SetReadDeadline(t time.Time) error {
 	s.setDeadline(t, &s.readDeadline, &s.readDeadlinePassed)
 	return nil
 }
@@ -450,7 +450,7 @@ func (s *udtSocket) SetReadDeadline(t time.Time) error {
 // some of the data was successfully written.
 // A zero value for t means Write will not time out.
 // (required for net.Conn implementation)
-func (s *udtSocket) SetWriteDeadline(t time.Time) error {
+func (s *UDTSocket) SetWriteDeadline(t time.Time) error {
 	s.setDeadline(t, &s.writeDeadline, &s.writeDeadlinePassed)
 	return nil
 }
@@ -460,7 +460,7 @@ func (s *udtSocket) SetWriteDeadline(t time.Time) error {
 *******************************************************************************/
 
 // newSocket creates a new UDT socket, which will be configured afterwards as either an incoming our outgoing socket
-func newSocket(m *multiplexer, config *Config, sockID uint32, isServer bool, isDatagram bool) (s *udtSocket) {
+func newSocket(m *multiplexer, config *Config, sockID uint32, isServer bool, isDatagram bool) (s *UDTSocket) {
 	now := time.Now()
 
 	maxFlowWinSize := config.MaxFlowWinSize
@@ -471,7 +471,7 @@ func newSocket(m *multiplexer, config *Config, sockID uint32, isServer bool, isD
 		maxFlowWinSize = 32
 	}
 
-	s = &udtSocket{
+	s = &UDTSocket{
 		m:      m,
 		Config: config,
 		//raddr:          raddr,
@@ -501,13 +501,13 @@ func newSocket(m *multiplexer, config *Config, sockID uint32, isServer bool, isD
 	return
 }
 
-func (s *udtSocket) launchProcessors() {
+func (s *UDTSocket) launchProcessors() {
 	s.send = newUdtSocketSend(s)
 	s.recv = newUdtSocketRecv(s)
 	s.cong.init(s.initPktSeq)
 }
 
-func (s *udtSocket) startConnect() error {
+func (s *UDTSocket) startConnect() error {
 
 	connectWait := &sync.WaitGroup{}
 	s.connectWait = connectWait
@@ -525,7 +525,7 @@ func (s *udtSocket) startConnect() error {
 	return s.connectionError()
 }
 
-func (s *udtSocket) goManageConnection() {
+func (s *UDTSocket) goManageConnection() {
 	for {
 		select {
 		case <-s.lingerTimer: // linger timer expired, shut everything down
@@ -553,7 +553,7 @@ func (s *udtSocket) goManageConnection() {
 	}
 }
 
-func (s *udtSocket) sendHandshake(reqType packet.HandshakeReqType) {
+func (s *UDTSocket) sendHandshake(reqType packet.HandshakeReqType) {
 	sockType := packet.TypeSTREAM
 	if s.isDatagram {
 		sockType = packet.TypeDGRAM
@@ -576,7 +576,7 @@ func (s *udtSocket) sendHandshake(reqType packet.HandshakeReqType) {
 }
 
 // checkValidHandshake checks to see if we want to accept a new connection with this handshake.
-func (s *udtSocket) checkValidHandshake(m *multiplexer, p *packet.HandshakePacket) bool {
+func (s *UDTSocket) checkValidHandshake(m *multiplexer, p *packet.HandshakePacket) bool {
 	if s.udtVer != 4 {
 		return false
 	}
@@ -585,7 +585,7 @@ func (s *udtSocket) checkValidHandshake(m *multiplexer, p *packet.HandshakePacke
 
 // readHandshake is received when a handshake packet is received without a destination, either as part
 // of a listening response or as a rendezvous connection
-func (s *udtSocket) readHandshake(m *multiplexer, p *packet.HandshakePacket) bool {
+func (s *UDTSocket) readHandshake(m *multiplexer, p *packet.HandshakePacket) bool {
 	switch s.sockState {
 	case sockStateInit: // server accepting a connection from a client
 		s.initPktSeq = p.InitPktSeq
@@ -662,7 +662,7 @@ func (s *udtSocket) readHandshake(m *multiplexer, p *packet.HandshakePacket) boo
 	return false
 }
 
-func (s *udtSocket) shutdown(sockState sockState, permitLinger bool, err error, reason int) {
+func (s *UDTSocket) shutdown(sockState sockState, permitLinger bool, err error, reason int) {
 	if !s.isOpen() {
 		return // already closed
 	}
@@ -706,14 +706,14 @@ func absdiff(a uint, b uint) uint {
 	return a - b
 }
 
-func (s *udtSocket) applyRTT(rtt uint) {
+func (s *UDTSocket) applyRTT(rtt uint) {
 	s.rttProt.Lock()
 	s.rttVar = (s.rttVar*3 + absdiff(s.rtt, rtt)) >> 2
 	s.rtt = (s.rtt*7 + rtt) >> 3
 	s.rttProt.Unlock()
 }
 
-func (s *udtSocket) getRTT() (rtt, rttVar uint) {
+func (s *UDTSocket) getRTT() (rtt, rttVar uint) {
 	s.rttProt.RLock()
 	rtt = s.rtt
 	rttVar = s.rttVar
@@ -722,7 +722,7 @@ func (s *udtSocket) getRTT() (rtt, rttVar uint) {
 }
 
 // Update Estimated Bandwidth and packet delivery rate
-func (s *udtSocket) applyReceiveRates(deliveryRate uint, bandwidth uint) {
+func (s *UDTSocket) applyReceiveRates(deliveryRate uint, bandwidth uint) {
 	s.receiveRateProt.Lock()
 	if deliveryRate > 0 {
 		s.deliveryRate = (s.deliveryRate*7 + deliveryRate) >> 3
@@ -733,7 +733,7 @@ func (s *udtSocket) applyReceiveRates(deliveryRate uint, bandwidth uint) {
 	s.receiveRateProt.Unlock()
 }
 
-func (s *udtSocket) getRcvSpeeds() (deliveryRate uint, bandwidth uint) {
+func (s *UDTSocket) getRcvSpeeds() (deliveryRate uint, bandwidth uint) {
 	s.receiveRateProt.RLock()
 	deliveryRate = s.deliveryRate
 	bandwidth = s.bandwidth
@@ -743,7 +743,7 @@ func (s *udtSocket) getRcvSpeeds() (deliveryRate uint, bandwidth uint) {
 
 // called by the multiplexer read loop when a packet is received for this socket.
 // Minimal processing is permitted but try not to stall the caller
-func (s *udtSocket) readPacket(m *multiplexer, p packet.Packet) {
+func (s *UDTSocket) readPacket(m *multiplexer, p packet.Packet) {
 	now := time.Now()
 	if s.sockState == sockStateClosed {
 		return

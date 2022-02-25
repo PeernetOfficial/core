@@ -12,7 +12,7 @@ type udtSocketRecv struct {
 	recvEvent  <-chan recvPktEvent  // receiver: ingest the specified packet. Sender is readPacket, receiver is goReceiveEvent
 	messageIn  chan<- []byte        // inbound messages. Sender is goReceiveEvent->ingestData, Receiver is client caller (Read)
 	sendPacket chan<- packet.Packet // send a packet out on the wire
-	socket     *udtSocket
+	socket     *UDTSocket
 
 	nextSequenceExpect packet.PacketID  // the peer's next largest packet ID expected.
 	lastSequence       packet.PacketID  // the peer's last received packet ID before any loss events
@@ -34,7 +34,7 @@ type udtSocketRecv struct {
 	resendACKTicker    time.Ticker      // Ticker for resending outgoing ACK
 }
 
-func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
+func newUdtSocketRecv(s *UDTSocket) *udtSocketRecv {
 	sr := &udtSocketRecv{
 		socket:       s,
 		sockClosed:   s.sockClosed,

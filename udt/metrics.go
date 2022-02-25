@@ -42,7 +42,7 @@ var (
 
 // PrintTypeOfPacket This is for metrics purposes
 // Prints the type of packet transmitted.
-func (s *udtSocket) PrintTypeOfPacket(p packet.Packet, Type string) {
+func (s *UDTSocket) PrintTypeOfPacket(p packet.Packet, Type string) {
 
 	if packet.PacketTypeName(p.PacketType()) == "handshake" {
 		//m.socket.PktSendHandShake = 0
@@ -162,16 +162,16 @@ func (s *udtSocket) PrintTypeOfPacket(p packet.Packet, Type string) {
 	}
 }
 
-func (s *udtSocket) IncrementDataPacketsAttemptedProcess() {
+func (s *UDTSocket) IncrementDataPacketsAttemptedProcess() {
 	s.metrics.DataPacketsAttemptedProcess++
 }
 
-func (s *udtSocket) IncrementDataPacketsNotFullyProcessed() {
+func (s *UDTSocket) IncrementDataPacketsNotFullyProcessed() {
 	s.metrics.DataPacketsNotFullyProcessed++
 }
 
 // PrintMetrics Prints metrics collected
-func (s *udtSocket) PrintMetrics() {
+func (s *UDTSocket) PrintMetrics() {
 	fmt.Printf("Total HandShake Packets Sent:%d \n", s.metrics.PktSendHandShake)
 	fmt.Printf("Total HandShake Packets Received:%d \n", s.metrics.PktRecvHandShake)
 

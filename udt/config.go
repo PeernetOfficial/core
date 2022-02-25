@@ -18,7 +18,7 @@ type Config struct {
 	SynTime            time.Duration // SynTime
 
 	CanAccept           func(hsPacket *packet.HandshakePacket) error // can this listener accept this connection?
-	CongestionForSocket func(sock *udtSocket) CongestionControl      // create or otherwise return the CongestionControl for this socket
+	CongestionForSocket func(sock *UDTSocket) CongestionControl      // create or otherwise return the CongestionControl for this socket
 }
 
 // DefaultConfig constructs a Config with default values
@@ -32,7 +32,7 @@ func DefaultConfig() *Config {
 		MaxBandwidth:       0,
 		MaxPacketSize:      65535,
 		SynTime:            10000 * time.Microsecond,
-		CongestionForSocket: func(sock *udtSocket) CongestionControl {
+		CongestionForSocket: func(sock *UDTSocket) CongestionControl {
 			return &NativeCongestionControl{}
 		},
 	}

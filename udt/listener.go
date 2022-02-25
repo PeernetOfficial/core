@@ -20,14 +20,14 @@ Listener implements the io.Listener interface for UDT.
 */
 type listener struct {
 	m              *multiplexer
-	accept         chan *udtSocket
+	accept         chan *UDTSocket
 	closed         chan struct{}
 	acceptHist     acceptSockHeap
 	acceptHistProt sync.Mutex
 	config         *Config
 }
 
-func (l *listener) Accept() (*udtSocket, error) {
+func (l *listener) Accept() (*UDTSocket, error) {
 	socket, ok := <-l.accept
 	if ok {
 		return socket, nil
@@ -166,7 +166,7 @@ func ListenUDT(config *Config, closer Closer, incomingData <-chan []byte, outgoi
 
 	l := &listener{
 		m:      m,
-		accept: make(chan *udtSocket, 100),
+		accept: make(chan *UDTSocket, 100),
 		closed: make(chan struct{}, 1),
 		config: config,
 	}
