@@ -101,6 +101,7 @@ type udtSocket struct {
 	cong *udtSocketCc   // reference to contestion control
 
 	// performance metrics
+	metrics *Metrics
 	//PktSent      uint64        // number of sent data packets, including retransmissions
 	//PktRecv      uint64        // number of received packets
 	//PktSndLoss   uint          // number of lost packets (sender side)
@@ -123,6 +124,40 @@ type udtSocket struct {
 	//MbpsBandwidth       float64       // estimated bandwidth, in Mb/s
 	//ByteAvailSndBuf     uint          // available UDT sender buffer size
 	//ByteAvailRcvBuf     uint          // available UDT receiver buffer size
+}
+
+type Metrics struct {
+	PktSent                      uint64  // number of sent data packets, including retransmissions
+	PktSendHandShake             uint64  // number of Handshake packets sent
+	PktRecvHandShake             uint64  // number of Handshake packets received
+	PktSendKeepAlive             uint64  // number of Keep-alive packets sent
+	PktRecvKeepAlive             uint64  // number of Keep-alive packets received
+	PktRecv                      uint64  // number of received packets
+	PktSentCongestion            uint64  // number of Congestion Packets sent
+	PktRecvCongestion            uint64  // number of Congestion Packets received
+	PktSentShutdown              uint64  // number of Shutdown Packets sent
+	PktRecvShutdown              uint64  // number of Shutdown Packets received
+	PktSendMessageDrop           uint64  // number of Message Drop Packets sent
+	PktRecvMessageDrop           uint64  // number of Message Drop Packets received
+	PktSendError                 uint64  // number of Error Packets sent
+	PktRecvError                 uint64  // number of Error Packets received
+	PktSendUserDefined           uint64  // number of User Defined Packets sent
+	PktRecvUserDefined           uint64  // number of User Defined Packets received
+	PktSndLoss                   uint    // number of lost packets (sender side)
+	PktRcvLoss                   uint    // number of lost packets (receiver side)
+	PktRetrans                   uint    // number of retransmitted packets
+	PktSentACK                   uint    // number of sent ACK packets
+	PktSentACK2                  uint    // number of sent ACK2 packets
+	PktRecvACK2                  uint    // number of received ACK2 packets
+	PktRecvACK                   uint    // number of received ACK packets
+	PktSentNAK                   uint    // number of sent NAK packets
+	PktRecvNAK                   uint    // number of received NAK packets
+	PktSentOther                 uint    // number of sent Other packets
+	PktRecvOther                 uint    // number of received Other packets
+	MbpsSendRate                 float64 // sending rate in Mb/s
+	MbpsRecvRate                 float64 // receiving rate in Mb/s
+	DataPacketsAttemptedProcess  int     // Tracking how many data packets are attempted to get processed
+	DataPacketsNotFullyProcessed int     // Tracking how many data packets are not fully processed
 }
 
 /*******************************************************************************
@@ -459,6 +494,7 @@ func newSocket(m *multiplexer, config *Config, sockID uint32, isServer bool, isD
 		bandwidth:       1,
 		sendPacket:      make(chan packet.Packet, 256),
 		shutdownEvent:   make(chan shutdownMessage, 5),
+		metrics:         &Metrics{},
 	}
 	s.cong = newUdtSocketCc(s)
 

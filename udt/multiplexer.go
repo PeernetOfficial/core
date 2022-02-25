@@ -89,6 +89,9 @@ func (m *multiplexer) sendPacket(destSockID uint32, ts uint32, p packet.Packet) 
 		}
 	}
 
+	// Print type of packet getting sent
+	m.socket.PrintTypeOfPacket(p, "send")
+
 	buf := make([]byte, m.maxPacketSize)
 	plen, err := p.WriteTo(buf) // encode
 	if err != nil {

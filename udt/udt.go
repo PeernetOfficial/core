@@ -11,10 +11,6 @@ implemented:
 
 */
 
-import (
-	"net"
-)
-
 // Closer provides a status code indicating why the closing happens.
 type Closer interface {
 	Close(reason int) error       // Close is called when the socket is actually closed.
@@ -35,7 +31,7 @@ const (
 )
 
 // DialUDT establishes an outbound UDT connection using the existing provided packet connection. It creates a UDT client.
-func DialUDT(config *Config, closer Closer, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}, isStream bool) (net.Conn, error) {
+func DialUDT(config *Config, closer Closer, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}, isStream bool) (*udtSocket, error) {
 	m := newMultiplexer(closer, config.MaxPacketSize, incomingData, outgoingData, terminationSignal)
 
 	s := m.newSocket(config, false, !isStream)

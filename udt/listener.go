@@ -27,7 +27,7 @@ type listener struct {
 	config         *Config
 }
 
-func (l *listener) Accept() (net.Conn, error) {
+func (l *listener) Accept() (*udtSocket, error) {
 	socket, ok := <-l.accept
 	if ok {
 		return socket, nil
@@ -161,7 +161,7 @@ func (l *listener) readHandshake(m *multiplexer, hsPacket *packet.HandshakePacke
 }
 
 // ListenUDT listens for incoming UDT connections using the existing provided packet connection. It creates a UDT server.
-func ListenUDT(config *Config, closer Closer, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}) net.Listener {
+func ListenUDT(config *Config, closer Closer, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}) *listener {
 	m := newMultiplexer(closer, config.MaxPacketSize, incomingData, outgoingData, terminationSignal)
 
 	l := &listener{
