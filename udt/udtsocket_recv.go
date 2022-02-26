@@ -8,7 +8,6 @@ import (
 
 type udtSocketRecv struct {
 	// channels
-	sockClosed <-chan struct{}      // closed when socket is closed
 	recvEvent  <-chan recvPktEvent  // receiver: ingest the specified packet. Sender is readPacket, receiver is goReceiveEvent
 	messageIn  chan<- []byte        // inbound messages. Sender is goReceiveEvent->ingestData, Receiver is client caller (Read)
 	sendPacket chan<- packet.Packet // send a packet out on the wire
@@ -39,7 +38,6 @@ type udtSocketRecv struct {
 func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
 	sr := &udtSocketRecv{
 		socket:           s,
-		sockClosed:       s.sockClosed,
 		recvEvent:        s.recvEvent,
 		messageIn:        s.messageIn,
 		sendPacket:       s.sendPacket,
@@ -70,7 +68,6 @@ func (s *udtSocketRecv) goReceiveEvent() {
 	defer s.resendACKTicker.Stop()
 
 	recvEvent := s.recvEvent
-	sockClosed := s.sockClosed
 	for {
 		select {
 		case evt, ok := <-recvEvent:
@@ -87,7 +84,9 @@ func (s *udtSocketRecv) goReceiveEvent() {
 			case *packet.ErrPacket:
 				s.ingestError(sp)
 			}
-		case <-sockClosed: // socket is closed, leave now
+		case <-s.socket.sockClosed: // socket is closed, leave now
+			return
+		case <-s.socket.terminateSignal:
 			return
 		case <-s.resendACKTimer: // handles both resending ACKs and NAKs
 			if s.recvAck2.IsLess(s.sentAck) && s.resendACKLimiter.Allow() {
