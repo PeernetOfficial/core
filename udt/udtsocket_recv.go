@@ -8,7 +8,6 @@ import (
 
 type udtSocketRecv struct {
 	// channels
-	recvEvent  <-chan recvPktEvent  // receiver: ingest the specified packet. Sender is readPacket, receiver is goReceiveEvent
 	messageIn  chan<- []byte        // inbound messages. Sender is goReceiveEvent->ingestData, Receiver is client caller (Read)
 	sendPacket chan<- packet.Packet // send a packet out on the wire
 	socket     *udtSocket
@@ -38,7 +37,6 @@ type udtSocketRecv struct {
 func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
 	sr := &udtSocketRecv{
 		socket:           s,
-		recvEvent:        s.recvEvent,
 		messageIn:        s.messageIn,
 		sendPacket:       s.sendPacket,
 		recvPktPend:      createPacketHeap(),
@@ -67,13 +65,9 @@ func (s *udtSocketRecv) configureHandshake(p *packet.HandshakePacket) {
 func (s *udtSocketRecv) goReceiveEvent() {
 	defer s.resendACKTicker.Stop()
 
-	recvEvent := s.recvEvent
 	for {
 		select {
-		case evt, ok := <-recvEvent:
-			if !ok {
-				return
-			}
+		case evt := <-s.socket.recvEvent:
 			switch sp := evt.pkt.(type) {
 			case *packet.Ack2Packet:
 				s.ingestAck2(sp, evt.now)
