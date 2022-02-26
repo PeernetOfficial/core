@@ -657,7 +657,6 @@ func (s *udtSocket) shutdown(sockState sockState, permitLinger bool, err error, 
 	s.connTimeout = nil
 	s.connRetry = nil
 	close(s.sockClosed)
-	close(s.recvEvent)
 
 	s.m.closer.Close(reason)
 
