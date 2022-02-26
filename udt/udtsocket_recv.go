@@ -32,18 +32,22 @@ type udtSocketRecv struct {
 	ackLinkInfoSent    time.Time        // when link info was sent in ACK packet last time
 	resendACKTimer     <-chan time.Time // Timer for resending outgoing ACK
 	resendACKTicker    time.Ticker      // Ticker for resending outgoing ACK
+	resendACKLimiter   rateLimiter      // Doubles after every resend to prevent ddos
+	resendNAKLimiter   rateLimiter      // Doubles after every resend to prevent ddos
 }
 
 func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
 	sr := &udtSocketRecv{
-		socket:       s,
-		sockClosed:   s.sockClosed,
-		recvEvent:    s.recvEvent,
-		messageIn:    s.messageIn,
-		sendPacket:   s.sendPacket,
-		recvPktPend:  createPacketHeap(),
-		recvLossList: createPacketIDHeap(),
-		ackHistory:   createHistoryHeap(),
+		socket:           s,
+		sockClosed:       s.sockClosed,
+		recvEvent:        s.recvEvent,
+		messageIn:        s.messageIn,
+		sendPacket:       s.sendPacket,
+		recvPktPend:      createPacketHeap(),
+		recvLossList:     createPacketIDHeap(),
+		ackHistory:       createHistoryHeap(),
+		resendACKLimiter: rateLimiter{MinWaitTime: s.Config.SynTime, MaxWaitTime: time.Second},
+		resendNAKLimiter: rateLimiter{MinWaitTime: s.Config.SynTime, MaxWaitTime: time.Second},
 	}
 
 	// set the timer for constantly resending ACKs for the highest sequence ID and NAKs for missing packets
@@ -86,11 +90,11 @@ func (s *udtSocketRecv) goReceiveEvent() {
 		case <-sockClosed: // socket is closed, leave now
 			return
 		case <-s.resendACKTimer: // handles both resending ACKs and NAKs
-			if s.recvAck2.IsLess(s.sentAck) {
+			if s.recvAck2.IsLess(s.sentAck) && s.resendACKLimiter.Allow() {
 				s.sendACK(s.sentAck)
 				s.unackPktCount = 0
 			}
-			if first, valid := s.recvLossList.FirstSequence(); valid {
+			if first, valid := s.recvLossList.FirstSequence(); valid && s.resendNAKLimiter.Allow() {
 				s.sendNAK(first, 1)
 			}
 		}
@@ -196,6 +200,7 @@ func (s *udtSocketRecv) ingestData(p *packet.DataPacket, now time.Time) {
 
 		s.sendNAK(s.nextSequenceExpect.Seq, uint32(seqDiff))
 		s.nextSequenceExpect = p.Seq.Add(1)
+		s.resendNAKLimiter.Reset()
 
 	} else if seqDiff < 0 {
 		// If the sequence number is less than LRSN, remove it from the receiver's loss list.
@@ -489,4 +494,41 @@ func (s *udtSocketRecv) ackEvent(immediate bool) {
 
 	s.sendACK(ack)
 	s.unackPktCount = 0
+	s.resendACKLimiter.Reset()
+}
+
+// rateLimiter is a simple helper to double resending time until reset
+// It does not rely on a Ticker which would be expensive.
+type rateLimiter struct {
+	timeStart time.Time
+	wait      time.Duration
+
+	// static variables to be set on init
+	MinWaitTime time.Duration
+	MaxWaitTime time.Duration
+
+	// Note that wait time is not secured via a mutex or atomic operation.
+	// The impact of a race condition is limited and currently does not warrant the overhead of constant locking/unlocking.
+}
+
+// Reset sets the initial wait time
+func (rate *rateLimiter) Reset() {
+	rate.timeStart = time.Now()
+	rate.wait = rate.MinWaitTime
+}
+
+// Allow checks if the rate allows to send. It will automatically double it if true.
+func (rate *rateLimiter) Allow() bool {
+	if rate.wait != 0 && time.Now().After(rate.timeStart.Add(rate.wait)) {
+		// double the wait time
+		rate.wait = rate.wait * 2
+		if rate.wait > rate.MaxWaitTime {
+			rate.wait = rate.MaxWaitTime
+		}
+		rate.timeStart = time.Now()
+
+		return true
+	}
+
+	return false
 }
