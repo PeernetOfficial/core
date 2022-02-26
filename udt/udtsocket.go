@@ -337,6 +337,7 @@ func (s *UDTSocket) Close() error {
 	}
 
 	s.isClosed = true
+	close(s.sockClosed)
 
 	// closing messageOut was a signal supposed to tell the send code to initiate shutdown. However, it closes too fast before all data is transferred.
 	// The entire UDT code is a piece of !@#$ and needs a rewrite.
@@ -692,7 +693,6 @@ func (s *UDTSocket) shutdown(sockState sockState, permitLinger bool, err error, 
 	s.connTimeout = nil
 	s.connRetry = nil
 	close(s.sockClosed)
-	close(s.recvEvent)
 
 	s.m.closer.Close(reason)
 
