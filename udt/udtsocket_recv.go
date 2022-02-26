@@ -75,7 +75,7 @@ func (s *udtSocketRecv) goReceiveEvent() {
 			}
 			if s.socket != nil {
 				// Metrics purposes
-				s.socket.PrintTypeOfPacket(evt.pkt, "received")
+				s.socket.RecordTypeOfPacket(evt.pkt, "received")
 			}
 			switch sp := evt.pkt.(type) {
 			case *packet.Ack2Packet:

@@ -92,7 +92,7 @@ func (m *multiplexer) sendPacket(destSockID uint32, ts uint32, p packet.Packet) 
 
 	if m.socket != nil {
 		// Logging the count of the type of packet sent
-		m.socket.PrintTypeOfPacket(p, "send")
+		m.socket.RecordTypeOfPacket(p, "send")
 	}
 
 	buf := make([]byte, m.maxPacketSize)
