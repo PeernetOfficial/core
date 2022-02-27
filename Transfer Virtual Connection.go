@@ -44,7 +44,7 @@ func newVirtualPacketConn(peer *PeerInfo, sendData func(data []byte, sequenceNum
 	v = &virtualPacketConn{
 		peer:              peer,
 		sendData:          sendData,
-		incomingData:      make(chan []byte, 100),
+		incomingData:      make(chan []byte, 512),
 		outgoingData:      make(chan []byte),
 		terminationSignal: make(chan struct{}),
 	}
@@ -67,7 +67,7 @@ func (v *virtualPacketConn) writeForward() {
 	}
 }
 
-// receiveData receives incoming data via an external message. Blocking until a read occurs or the connection is terminated!
+// receiveData receives incoming data via an external message. Non-blocking.
 func (v *virtualPacketConn) receiveData(data []byte) {
 	if v.IsTerminated() {
 		return
@@ -77,8 +77,9 @@ func (v *virtualPacketConn) receiveData(data []byte) {
 	select {
 	case v.incomingData <- data:
 	case <-v.terminationSignal:
+	default:
+		// packet lost
 	}
-	// TODO: Add read timeout
 }
 
 // Terminate closes the connection. Do not call this function manually. Use the underlying protocol's function to close the connection.

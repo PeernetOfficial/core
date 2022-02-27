@@ -302,7 +302,6 @@ func (s *udtSocket) Close() error {
 	}
 
 	s.isClosed = true
-	close(s.sockClosed)
 
 	// closing messageOut was a signal supposed to tell the send code to initiate shutdown. However, it closes too fast before all data is transferred.
 	// The entire UDT code is a piece of !@#$ and needs a rewrite.
@@ -713,8 +712,6 @@ func (s *udtSocket) readPacket(m *multiplexer, p packet.Packet) {
 		return
 	}
 
-	s.recvEvent <- recvPktEvent{pkt: p, now: now}
-
 	switch sp := p.(type) {
 	case *packet.HandshakePacket: // sent by both peers
 		s.readHandshake(m, sp)
@@ -724,5 +721,7 @@ func (s *udtSocket) readPacket(m *multiplexer, p packet.Packet) {
 		s.sendEvent <- recvPktEvent{pkt: p, now: now}
 	case *packet.UserDefControlPacket:
 		s.cong.onCustomMsg(*sp)
+	default:
+		s.recvEvent <- recvPktEvent{pkt: p, now: now}
 	}
 }
