@@ -29,7 +29,7 @@ type congMsg struct {
 type udtSocketCc struct {
 	// channels
 	sockClosed <-chan struct{} // closed when socket is closed
-	socket     *udtSocket
+	socket     *UDTSocket
 	congestion CongestionControl // congestion control object for this socket
 	msgs       chan congMsg
 
@@ -38,7 +38,7 @@ type udtSocketCc struct {
 	sndPeriod  time.Duration   // delay between sending packets
 }
 
-func newUdtSocketCc(s *udtSocket) *udtSocketCc {
+func newUdtSocketCc(s *UDTSocket) *udtSocketCc {
 	newCongestion := s.Config.CongestionForSocket
 	if newCongestion == nil {
 		newCongestion = DefaultConfig().CongestionForSocket

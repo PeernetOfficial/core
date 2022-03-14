@@ -10,7 +10,7 @@ type udtSocketRecv struct {
 	// channels
 	messageIn  chan<- []byte        // inbound messages. Sender is goReceiveEvent->ingestData, Receiver is client caller (Read)
 	sendPacket chan<- packet.Packet // send a packet out on the wire
-	socket     *udtSocket
+	socket     *UDTSocket
 
 	nextSequenceExpect packet.PacketID  // the peer's next largest packet ID expected.
 	lastSequence       packet.PacketID  // the peer's last received packet ID before any loss events
@@ -34,7 +34,7 @@ type udtSocketRecv struct {
 	resendNAKLimiter   rateLimiter      // Doubles after every resend to prevent ddos
 }
 
-func newUdtSocketRecv(s *udtSocket) *udtSocketRecv {
+func newUdtSocketRecv(s *UDTSocket) *udtSocketRecv {
 	sr := &udtSocketRecv{
 		socket:           s,
 		messageIn:        s.messageIn,
@@ -68,6 +68,7 @@ func (s *udtSocketRecv) goReceiveEvent() {
 	for {
 		select {
 		case evt := <-s.socket.recvEvent:
+			s.socket.recordTypeOfPacket(evt.pkt, false)
 			switch sp := evt.pkt.(type) {
 			case *packet.Ack2Packet:
 				s.ingestAck2(sp, evt.now)

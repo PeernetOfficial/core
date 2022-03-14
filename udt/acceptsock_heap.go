@@ -11,7 +11,7 @@ type acceptSockInfo struct {
 	sockID    uint32
 	initSeqNo packet.PacketID
 	lastTouch time.Time
-	sock      *udtSocket
+	sock      *UDTSocket
 }
 
 // acceptSockHeap defines a list of acceptSockInfo records sorted by their peer socketID and initial sequence number
@@ -61,7 +61,7 @@ func (h acceptSockHeap) compare(sockID uint32, initSeqNo packet.PacketID, idx in
 }
 
 // Find does a binary search of the heap for the specified packetID which is returned
-func (h acceptSockHeap) Find(sockID uint32, initSeqNo packet.PacketID) (*udtSocket, int) {
+func (h acceptSockHeap) Find(sockID uint32, initSeqNo packet.PacketID) (*UDTSocket, int) {
 	for n := 0; n < len(h); n++ {
 		if h[n].sock.sockID == sockID {
 			return h[n].sock, n

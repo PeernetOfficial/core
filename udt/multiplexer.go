@@ -10,7 +10,7 @@ import (
 
 // A multiplexer is a single UDT socket over a single PacketConn.
 type multiplexer struct {
-	socket            *udtSocket      // Socket
+	socket            *UDTSocket      // Socket
 	socketID          uint32          // Socket ID
 	listenSock        *listener       // the server socket listening to incoming connections, if there is one. Set by caller.
 	maxPacketSize     uint            // the Maximum Transmission Unit of packets sent from this address
@@ -35,7 +35,7 @@ func newMultiplexer(closer Closer, maxPacketSize uint, incomingData <-chan []byt
 	return
 }
 
-func (m *multiplexer) newSocket(config *Config, isServer bool, isDatagram bool) (s *udtSocket) {
+func (m *multiplexer) newSocket(config *Config, isServer bool, isDatagram bool) (s *UDTSocket) {
 	m.socketID = rand.Uint32()
 	m.socket = newSocket(m, config, m.socketID, isServer, isDatagram)
 	return m.socket
@@ -87,6 +87,10 @@ func (m *multiplexer) sendPacket(destSockID uint32, ts uint32, p packet.Packet) 
 			//fmt.Printf("Sending non-handshake packet with destination socket = 0\n")
 			return
 		}
+	}
+
+	if m.socket != nil {
+		m.socket.recordTypeOfPacket(p, true)
 	}
 
 	buf := make([]byte, m.maxPacketSize)
