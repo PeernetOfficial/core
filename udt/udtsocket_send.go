@@ -27,7 +27,7 @@ type udtSocketSend struct {
 	messageOut    <-chan sendMessage     // outbound data messages. Sender is client caller (Write), Receiver is goSendEvent. Closed when socket is closed
 	sendPacket    chan<- packet.Packet   // send a packet out on the wire
 	shutdownEvent chan<- shutdownMessage // channel signals the connection to be shutdown
-	socket        *udtSocket
+	socket        *UDTSocket
 
 	sendState       sendState        // current sender state
 	sendPktPend     *sendPacketHeap  // list of packets that have been sent but not yet acknowledged
@@ -44,7 +44,7 @@ type udtSocketSend struct {
 	resendDataTime  time.Duration    // Doubles after every send to prevent ddos
 }
 
-func newUdtSocketSend(s *udtSocket) *udtSocketSend {
+func newUdtSocketSend(s *UDTSocket) *udtSocketSend {
 	ss := &udtSocketSend{
 		socket:          s,
 		sendPktSeq:      s.initPktSeq,

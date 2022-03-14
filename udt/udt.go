@@ -11,10 +11,6 @@ implemented:
 
 */
 
-import (
-	"net"
-)
-
 // Closer provides a status code indicating why the closing happens.
 type Closer interface {
 	Close(reason int) error       // Close is called when the socket is actually closed.
@@ -27,15 +23,15 @@ const (
 	TerminateReasonLingerTimerExpired = 1001 // Socket: The linger timer expired. Use CloseLinger to know the actual closing reason.
 	TerminateReasonConnectTimeout     = 1002 // Socket: The connection timed out when sending the initial handshake.
 	TerminateReasonRemoteSentShutdown = 1003 // Remote peer sent a shutdown message.
-	TerminateReasonSocketClosed       = 1004 // Send: Socket closed. Called udtSocket.Close().
+	TerminateReasonSocketClosed       = 1004 // Send: Socket closed. Called UDTSocket.Close().
 	TerminateReasonInvalidPacketIDAck = 1005 // Send: Invalid packet ID received in ACK message.
 	TerminateReasonInvalidPacketIDNak = 1006 // Send: Invalid packet ID received in NAK message.
 	TerminateReasonCorruptPacketNak   = 1007 // Send: Invalid NAK packet received.
-	TerminateReasonSignal             = 1008 // Send: Terminate signal. Called udtSocket.Terminate().
+	TerminateReasonSignal             = 1008 // Send: Terminate signal. Called UDTSocket.Terminate().
 )
 
 // DialUDT establishes an outbound UDT connection using the existing provided packet connection. It creates a UDT client.
-func DialUDT(config *Config, closer Closer, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}, isStream bool) (net.Conn, error) {
+func DialUDT(config *Config, closer Closer, incomingData <-chan []byte, outgoingData chan<- []byte, terminationSignal <-chan struct{}, isStream bool) (*UDTSocket, error) {
 	m := newMultiplexer(closer, config.MaxPacketSize, incomingData, outgoingData, terminationSignal)
 
 	s := m.newSocket(config, false, !isStream)

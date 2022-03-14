@@ -10,7 +10,6 @@ package core
 
 import (
 	"errors"
-	"net"
 	"time"
 
 	"github.com/PeernetOfficial/core/protocol"
@@ -77,7 +76,7 @@ func (peer *PeerInfo) startFileTransferUDT(hash []byte, fileSize uint64, offset,
 // FileTransferRequestUDT creates a UDT server listening for incoming data transfer via the lite protocol and requests a file transfer from a remote peer.
 // The caller must call udtConn.Close() when done. Do not use any of the closing functions of virtualConn.
 // Limit is optional. 0 means the entire file.
-func (peer *PeerInfo) FileTransferRequestUDT(hash []byte, offset, limit uint64) (udtConn net.Conn, virtualConn *virtualPacketConn, err error) {
+func (peer *PeerInfo) FileTransferRequestUDT(hash []byte, offset, limit uint64) (udtConn *udt.UDTSocket, virtualConn *virtualPacketConn, err error) {
 	virtualConn = newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32, transferID uuid.UUID) {
 		peer.sendTransfer(data, protocol.TransferControlActive, protocol.TransferProtocolUDT, hash, offset, limit, sequenceNumber, transferID, transferLite)
 	})
