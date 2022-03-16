@@ -95,6 +95,7 @@ type UDTSocket struct {
 	connTimeout <-chan time.Time // connecting: fires when connection attempt times out
 	connRetry   <-chan time.Time // connecting: fires when connection attempt to be retried
 	lingerTimer <-chan time.Time // after disconnection, fires once our linger timer runs out
+	speedTicker *time.Ticker     // Ticker to calculate effective read and write speed
 
 	send *udtSocketSend // reference to sending side of this socket
 	recv *udtSocketRecv // reference to receiving side of this socket
@@ -105,35 +106,42 @@ type UDTSocket struct {
 }
 
 type Metrics struct {
-	PktSentData        uint64  // number of sent data packets, including retransmissions
-	PktSendHandShake   uint64  // number of Handshake packets sent
-	PktRecvHandShake   uint64  // number of Handshake packets received
-	PktSendKeepAlive   uint64  // number of Keep-alive packets sent
-	PktRecvKeepAlive   uint64  // number of Keep-alive packets received
-	PktRecvData        uint64  // number of received packets
-	PktSentCongestion  uint64  // number of Congestion Packets sent
-	PktRecvCongestion  uint64  // number of Congestion Packets received
-	PktSentShutdown    uint64  // number of Shutdown Packets sent
-	PktRecvShutdown    uint64  // number of Shutdown Packets received
-	PktSendMessageDrop uint64  // number of Message Drop Packets sent
-	PktRecvMessageDrop uint64  // number of Message Drop Packets received
-	PktSendError       uint64  // number of Error Packets sent
-	PktRecvError       uint64  // number of Error Packets received
-	PktSendUserDefined uint64  // number of User Defined Packets sent
-	PktRecvUserDefined uint64  // number of User Defined Packets received
-	PktSndLoss         uint    // number of lost packets (sender side)
-	PktRcvLoss         uint    // number of lost packets (receiver side)
-	PktRetrans         uint    // number of retransmitted packets
-	PktSentACK         uint    // number of sent ACK packets
-	PktSentACK2        uint    // number of sent ACK2 packets
-	PktRecvACK2        uint    // number of received ACK2 packets
-	PktRecvACK         uint    // number of received ACK packets
-	PktSentNAK         uint    // number of sent NAK packets
-	PktRecvNAK         uint    // number of received NAK packets
-	PktSentOther       uint    // number of sent Other packets
-	PktRecvOther       uint    // number of received Other packets
-	MbpsSendRate       float64 // sending rate in Mb/s
-	MbpsRecvRate       float64 // receiving rate in Mb/s
+	PktSentData        uint64    // number of sent data packets, including retransmissions
+	PktSendHandShake   uint64    // number of Handshake packets sent
+	PktRecvHandShake   uint64    // number of Handshake packets received
+	PktSendKeepAlive   uint64    // number of Keep-alive packets sent
+	PktRecvKeepAlive   uint64    // number of Keep-alive packets received
+	PktRecvData        uint64    // number of received packets
+	PktSentCongestion  uint64    // number of Congestion Packets sent
+	PktRecvCongestion  uint64    // number of Congestion Packets received
+	PktSentShutdown    uint64    // number of Shutdown Packets sent
+	PktRecvShutdown    uint64    // number of Shutdown Packets received
+	PktSendMessageDrop uint64    // number of Message Drop Packets sent
+	PktRecvMessageDrop uint64    // number of Message Drop Packets received
+	PktSendError       uint64    // number of Error Packets sent
+	PktRecvError       uint64    // number of Error Packets received
+	PktSendUserDefined uint64    // number of User Defined Packets sent
+	PktRecvUserDefined uint64    // number of User Defined Packets received
+	PktSndLoss         uint64    // number of lost packets (sender side)
+	PktRcvLoss         uint64    // number of lost packets (receiver side)
+	PktRetrans         uint64    // number of retransmitted packets
+	PktSentACK         uint64    // number of sent ACK packets
+	PktSentACK2        uint64    // number of sent ACK2 packets
+	PktRecvACK2        uint64    // number of received ACK2 packets
+	PktRecvACK         uint64    // number of received ACK packets
+	PktSentNAK         uint64    // number of sent NAK packets
+	PktRecvNAK         uint64    // number of received NAK packets
+	PktSentOther       uint64    // number of sent Other packets
+	PktRecvOther       uint64    // number of received Other packets
+	DataSent           uint64    // Payload data sent in bytes
+	DataReceived       uint64    // Payload data received in bytes
+	SpeedSend          float64   // Incoming data transfer speed in bytes/second
+	SpeedReceive       float64   // Outgoing data transfer speed in bytes/second
+	timeUpdateSend     time.Time // last time send speed was updated
+	timeUpdateRcv      time.Time // last time receive speed was updated
+	lastTotalSend      uint64    // bytes send when recorded last
+	lastTotalRcv       uint64    // bytes received when recorded last
+	Started            time.Time // Started
 }
 
 /*******************************************************************************
@@ -287,6 +295,7 @@ func (s *UDTSocket) Write(p []byte) (n int, err error) {
 			return n, errors.New("terminate signal")
 		case s.messageOut <- sendMessage{content: data, tim: time.Now()}:
 			// send successful
+			s.Metrics.DataSent += uint64(n)
 			return
 		case _, ok := <-deadline:
 			if !ok {
@@ -470,7 +479,8 @@ func newSocket(m *multiplexer, config *Config, sockID uint32, isServer bool, isD
 		bandwidth:       1,
 		sendPacket:      make(chan packet.Packet, 256),
 		shutdownEvent:   make(chan shutdownMessage, 5),
-		Metrics:         &Metrics{},
+		Metrics:         &Metrics{timeUpdateRcv: time.Now(), timeUpdateSend: time.Now(), Started: time.Now()},
+		speedTicker:     time.NewTicker(time.Second),
 	}
 	s.cong = newUdtSocketCc(s)
 
@@ -502,6 +512,8 @@ func (s *UDTSocket) startConnect() error {
 }
 
 func (s *UDTSocket) goManageConnection() {
+	defer s.speedTicker.Stop()
+
 	for {
 		select {
 		case <-s.lingerTimer: // linger timer expired, shut everything down
@@ -525,6 +537,14 @@ func (s *UDTSocket) goManageConnection() {
 				s.sendHandshake(packet.HsRequest)
 				s.connRetry = time.After(250 * time.Millisecond)
 			}
+		case <-s.speedTicker.C:
+			s.Metrics.SpeedSend = float64(s.Metrics.DataSent-s.Metrics.lastTotalSend) / time.Since(s.Metrics.timeUpdateSend).Seconds()
+			s.Metrics.timeUpdateSend = time.Now()
+			s.Metrics.lastTotalSend = s.Metrics.DataSent
+
+			s.Metrics.SpeedReceive = float64(s.Metrics.DataReceived-s.Metrics.lastTotalRcv) / time.Since(s.Metrics.timeUpdateRcv).Seconds()
+			s.Metrics.timeUpdateRcv = time.Now()
+			s.Metrics.lastTotalRcv = s.Metrics.DataReceived
 		}
 	}
 }

@@ -247,6 +247,10 @@ func (s *udtSocketRecv) attemptProcessPacket(p *packet.DataPacket, isNew, ackImm
 	for _, piece := range pieces {
 		msg = append(msg, piece.Data...)
 	}
+
+	// record metrics
+	s.socket.Metrics.DataReceived += uint64(len(msg))
+
 	s.messageIn <- msg
 	return true
 }
