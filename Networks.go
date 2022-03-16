@@ -87,3 +87,8 @@ func (backend *Backend) firewallDetectIndicatorFile() {
 		os.Remove(firewallIndicatorFile)
 	}
 }
+
+// List of all lite sessions
+func (backend *Backend) LiteSessions() (sessions []*protocol.LiteID) {
+	return backend.networks.LiteRouter.All()
+}

@@ -8,7 +8,6 @@ package core
 
 import (
 	"errors"
-	"net"
 	"time"
 
 	"github.com/PeernetOfficial/core/blockchain"
@@ -29,6 +28,7 @@ func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey *btcec.PublicKey, L
 	virtualConn := newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32, transferID uuid.UUID) {
 		peer.sendGetBlock(data, protocol.GetBlockControlActive, BlockchainPublicKey, 0, 0, nil, sequenceNumber, transferID, blockTransferLite)
 	})
+	virtualConn.Stats = &BlockTransferStats{BlockchainPublicKey: BlockchainPublicKey, Direction: DirectionOut, LimitBlockCount: LimitBlockCount, MaxBlockSize: MaxBlockSize, TargetBlocks: TargetBlocks}
 
 	// use the transfer ID indicated by the remote peer
 	// 17.01.2021: Due to using lite IDs, the sequence termination function in RegisterSequenceBi is no longer used, as data packets are only sent via lite packets.
@@ -51,6 +51,7 @@ func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey *btcec.PublicKey, L
 	}
 
 	defer udtConn.Close()
+	virtualConn.Stats.(*BlockTransferStats).UDTConn = udtConn
 
 	// loop through the requested TargetBlocks range.
 	sentBlocks := uint64(0)
@@ -87,10 +88,11 @@ func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey *btcec.PublicKey, L
 
 // BlockTransferRequest requests blocks from the peer.
 // The caller must call udtConn.Close() when done. Do not use any of the closing functions of virtualConn.
-func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey *btcec.PublicKey, LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange) (udtConn net.Conn, virtualConn *virtualPacketConn, err error) {
+func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey *btcec.PublicKey, LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange) (udtConn *udt.UDTSocket, virtualConn *VirtualPacketConn, err error) {
 	virtualConn = newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32, transferID uuid.UUID) {
 		peer.sendGetBlock(data, protocol.GetBlockControlActive, BlockchainPublicKey, 0, 0, nil, sequenceNumber, transferID, blockTransferLite)
 	})
+	virtualConn.Stats = &BlockTransferStats{BlockchainPublicKey: BlockchainPublicKey, Direction: DirectionIn, LimitBlockCount: LimitBlockCount, MaxBlockSize: MaxBlockSize, TargetBlocks: TargetBlocks}
 
 	// new lite ID
 	liteID := peer.Backend.networks.LiteRouter.NewLiteID(virtualConn, blockSequenceTimeout, virtualConn.sequenceTerminate)
@@ -123,6 +125,7 @@ func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey *btcec.PublicKey,
 		udtListener.Close()
 		return nil, nil, err
 	}
+	virtualConn.Stats.(*BlockTransferStats).UDTConn = udtConn
 
 	// We do not close the UDT listener here. It should automatically close after udtConn is closed.
 
@@ -168,4 +171,13 @@ func isTargetInRange(targets []protocol.BlockRange, offset, limit uint64) (valid
 	}
 
 	return false
+}
+
+type BlockTransferStats struct {
+	BlockchainPublicKey *btcec.PublicKey      // Target blockchain
+	Direction           int                   // Direction of the data transfer
+	LimitBlockCount     uint64                // Max count of blocks to be transferred
+	MaxBlockSize        uint64                // Max single block size to transfer
+	TargetBlocks        []protocol.BlockRange // List of blocks to transfer
+	UDTConn             *udt.UDTSocket        // Underlying UDT connection
 }

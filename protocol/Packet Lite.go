@@ -186,3 +186,14 @@ func (router *LiteRouter) RegisterLiteID(id uuid.UUID, data interface{}, timeout
 
 	return
 }
+
+// Returns all lite sessions
+func (router *LiteRouter) All() (sessions []*LiteID) {
+	router.Lock()
+	for _, info := range router.ids {
+		sessions = append(sessions, info)
+	}
+	router.Unlock()
+
+	return sessions
+}

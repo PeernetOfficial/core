@@ -423,9 +423,9 @@ func (nets *Networks) packetWorkerLite() {
 
 		// Handle the received data. Note this is called in the same Go routine.
 		// The underlying data receiver must not stall.
-		if v, ok := packet.Session.Data.(*virtualPacketConn); ok {
+		if v, ok := packet.Session.Data.(*VirtualPacketConn); ok {
 			// update stats TODO
-			//atomic.AddUint64(&packet.Session.Data.(*virtualPacketConn).peer.StatsPacketReceived, 1)
+			//atomic.AddUint64(&packet.Session.Data.(*VirtualPacketConn).peer.StatsPacketReceived, 1)
 			//connection.LastPacketIn = time.Now()
 
 			v.receiveData(packet.Payload)
