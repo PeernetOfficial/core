@@ -275,7 +275,7 @@ func FileStartReader(peer *core.PeerInfo, hash []byte, offset, limit uint64, can
 		return nil, 0, 0, errors.New("no valid connection to peer")
 	}
 
-	udtConn, _, err := peer.FileTransferRequestUDT(hash, offset, limit)
+	udtConn, virtualConn, err := peer.FileTransferRequestUDT(hash, offset, limit)
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -292,6 +292,8 @@ func FileStartReader(peer *core.PeerInfo, hash []byte, offset, limit uint64, can
 		udtConn.Close()
 		return nil, 0, 0, err
 	}
+
+	virtualConn.Stats.(*core.FileTransferStats).FileSize = fileSize
 
 	return udtConn, fileSize, transferSize, nil
 }

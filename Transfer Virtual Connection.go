@@ -15,9 +15,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// virtualPacketConn is a virtual connection.
-type virtualPacketConn struct {
-	peer *PeerInfo
+// VirtualPacketConn is a virtual connection.
+type VirtualPacketConn struct {
+	Peer *PeerInfo
+
+	// Stats are maintained by the caller
+	Stats interface{}
 
 	// function to send data to the remote peer
 	sendData func(data []byte, sequenceNumber uint32, transferID uuid.UUID)
@@ -39,10 +42,10 @@ type virtualPacketConn struct {
 	sync.Mutex
 }
 
-// newVirtualPacketConn creates a new virtual connection (both incomign and outgoing).
-func newVirtualPacketConn(peer *PeerInfo, sendData func(data []byte, sequenceNumber uint32, transferID uuid.UUID)) (v *virtualPacketConn) {
-	v = &virtualPacketConn{
-		peer:              peer,
+// newVirtualPacketConn creates a new virtual connection (both incoming and outgoing).
+func newVirtualPacketConn(peer *PeerInfo, sendData func(data []byte, sequenceNumber uint32, transferID uuid.UUID)) (v *VirtualPacketConn) {
+	v = &VirtualPacketConn{
+		Peer:              peer,
 		sendData:          sendData,
 		incomingData:      make(chan []byte, 512),
 		outgoingData:      make(chan []byte),
@@ -55,7 +58,7 @@ func newVirtualPacketConn(peer *PeerInfo, sendData func(data []byte, sequenceNum
 }
 
 // writeForward forwards outgoing messages
-func (v *virtualPacketConn) writeForward() {
+func (v *VirtualPacketConn) writeForward() {
 	for {
 		select {
 		case data := <-v.outgoingData:
@@ -68,7 +71,7 @@ func (v *virtualPacketConn) writeForward() {
 }
 
 // receiveData receives incoming data via an external message. Non-blocking.
-func (v *virtualPacketConn) receiveData(data []byte) {
+func (v *VirtualPacketConn) receiveData(data []byte) {
 	if v.IsTerminated() {
 		return
 	}
@@ -84,7 +87,7 @@ func (v *virtualPacketConn) receiveData(data []byte) {
 
 // Terminate closes the connection. Do not call this function manually. Use the underlying protocol's function to close the connection.
 // Reason: 404 = Remote peer does not store file (upstream), 2 = Remote termination signal (upstream), 3 = Sequence invalidation or expiration (upstream), 1000+ = Transfer protocol indicated closing (downstream)
-func (v *virtualPacketConn) Terminate(reason int) (err error) {
+func (v *VirtualPacketConn) Terminate(reason int) (err error) {
 	v.Lock()
 	defer v.Unlock()
 
@@ -100,31 +103,31 @@ func (v *virtualPacketConn) Terminate(reason int) (err error) {
 }
 
 // IsTerminated checks if the connection is terminated
-func (v *virtualPacketConn) IsTerminated() bool {
+func (v *VirtualPacketConn) IsTerminated() bool {
 	return v.closed
 }
 
 // sequenceTerminate is a wrapper for sequenece termination (invalidation or expiration)
-func (v *virtualPacketConn) sequenceTerminate() {
+func (v *VirtualPacketConn) sequenceTerminate() {
 	v.Terminate(3)
 }
 
 // Close provides a Close function to be called by the underlying transfer protocol.
 // Do not call the function manually; otherwise the underlying transfer protocol may not have time to send a termination message (and the remote peer would subsequently try to reconnect).
 // Rather, use the underlying transfer protocol's close function.
-func (v *virtualPacketConn) Close(reason int) (err error) {
-	v.peer.Backend.networks.Sequences.InvalidateSequence(v.peer.PublicKey, v.sequenceNumber, true)
+func (v *VirtualPacketConn) Close(reason int) (err error) {
+	v.Peer.Backend.networks.Sequences.InvalidateSequence(v.Peer.PublicKey, v.sequenceNumber, true)
 	return v.Terminate(reason)
 }
 
 // CloseLinger is to be called by the underlying transfer protocol when it will close the socket soon after lingering around.
 // Lingering happens to resend packets at the end of transfer, when it is not immediately known whether the remote peer received all packets.
-func (v *virtualPacketConn) CloseLinger(reason int) (err error) {
+func (v *VirtualPacketConn) CloseLinger(reason int) (err error) {
 	v.reason = reason
 	return nil
 }
 
 // GetTerminateReason returns the termination reason. 0 = Not yet terminated.
-func (v *virtualPacketConn) GetTerminateReason() int {
+func (v *VirtualPacketConn) GetTerminateReason() int {
 	return v.reason
 }

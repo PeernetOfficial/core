@@ -263,19 +263,19 @@ func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Con
 		go peer.startFileTransferUDT(msg.Hash, fileSize, msg.Offset, msg.Limit, msg.Sequence, msg.TransferID, msg.TransferProtocol)
 
 	case protocol.TransferControlActive:
-		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+		if v, ok := msg.SequenceInfo.Data.(*VirtualPacketConn); ok {
 			go v.receiveData(msg.Data)
 			return
 		}
 
 	case protocol.TransferControlNotAvailable:
-		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+		if v, ok := msg.SequenceInfo.Data.(*VirtualPacketConn); ok {
 			v.Terminate(404)
 			return
 		}
 
 	case protocol.TransferControlTerminate:
-		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+		if v, ok := msg.SequenceInfo.Data.(*VirtualPacketConn); ok {
 			v.Terminate(2)
 			return
 		}
@@ -303,25 +303,25 @@ func (peer *PeerInfo) cmdGetBlock(msg *protocol.MessageGetBlock, connection *Con
 		go peer.startBlockTransfer(msg.BlockchainPublicKey, msg.LimitBlockCount, msg.MaxBlockSize, msg.TargetBlocks, msg.Sequence, msg.TransferID)
 
 	case protocol.GetBlockControlActive:
-		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+		if v, ok := msg.SequenceInfo.Data.(*VirtualPacketConn); ok {
 			go v.receiveData(msg.Data)
 			return
 		}
 
 	case protocol.GetBlockControlNotAvailable:
-		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+		if v, ok := msg.SequenceInfo.Data.(*VirtualPacketConn); ok {
 			v.Terminate(404)
 			return
 		}
 
 	case protocol.GetBlockControlEmpty:
-		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+		if v, ok := msg.SequenceInfo.Data.(*VirtualPacketConn); ok {
 			v.Terminate(410)
 			return
 		}
 
 	case protocol.GetBlockControlTerminate:
-		if v, ok := msg.SequenceInfo.Data.(*virtualPacketConn); ok {
+		if v, ok := msg.SequenceInfo.Data.(*VirtualPacketConn); ok {
 			v.Terminate(2)
 			return
 		}
