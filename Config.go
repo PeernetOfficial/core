@@ -18,7 +18,7 @@ import (
 )
 
 // Version is the current core library version
-const Version = "Alpha 7/24.02.2022"
+const Version = "Alpha 8/24.03.2022"
 
 // Config defines the minimum required config for a Peernet client.
 type Config struct {
@@ -67,7 +67,7 @@ type peerSeed struct {
 }
 
 //go:embed "Config Default.yaml"
-var defaultConfig []byte
+var ConfigDefault []byte
 
 // LoadConfig reads the YAML configuration file and unmarshals it into the provided structure.
 // If the config file does not exist or is empty, it will fall back to the default config which is hardcoded.
@@ -78,7 +78,7 @@ func LoadConfig(Filename string, ConfigOut interface{}) (status int, err error) 
 	// check if the file is non existent or empty
 	stats, err := os.Stat(Filename)
 	if err != nil && os.IsNotExist(err) || err == nil && stats.Size() == 0 {
-		configData = defaultConfig
+		configData = ConfigDefault
 	} else if err != nil {
 		return ExitErrorConfigAccess, err
 	} else if configData, err = ioutil.ReadFile(Filename); err != nil {
@@ -142,7 +142,7 @@ func (backend *Backend) SaveConfig() {
 func (backend *Backend) configUpdateSeedList() {
 	// parse the embedded config
 	var configD Config
-	if err := yaml.Unmarshal(defaultConfig, &configD); err != nil {
+	if err := yaml.Unmarshal(ConfigDefault, &configD); err != nil {
 		return
 	}
 
