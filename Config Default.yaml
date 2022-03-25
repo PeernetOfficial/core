@@ -5,6 +5,7 @@ BlockchainGlobal: "data/blockchain global/"     # Blockchain global caches block
 WarehouseMain:    "data/warehouse main/"        # Warehouse main stores the actual data of files shared by the end-user.
 SearchIndex:      "data/search index/"          # Local search index of blockchain records. Empty to disable.
 GeoIPDatabase:    "data/GeoLite2-City.mmdb"     # GeoLite2 City database to provide GeoIP information.
+DataFolder:       "data/"                       # Data folder.
 
 # Listen defines all IP:Port combinations to listen on. If empty, it will listen on all IPs automatically on available ports.
 # IPv6 must be in the form "[IPv6]:Port". This setting is only recommended to be set on servers.

@@ -29,6 +29,7 @@ type Config struct {
 	WarehouseMain    string `yaml:"WarehouseMain"`    // Warehouse main stores the actual data of files shared by the end-user.
 	SearchIndex      string `yaml:"SearchIndex"`      // Local search index of blockchain records. Empty to disable.
 	GeoIPDatabase    string `yaml:"GeoIPDatabase"`    // GeoLite2 City database to provide GeoIP information.
+	DataFolder       string `yaml:"DataFolder"`       // Data folder.
 
 	// Target for the log messages: 0 = Log file,  1 = Stdout, 2 = Log file + Stdout, 3 = None
 	LogTarget int `yaml:"LogTarget"`
