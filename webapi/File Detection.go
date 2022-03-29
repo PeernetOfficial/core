@@ -58,7 +58,7 @@ func FileTranslateExtension(extension string) (fileType, fileFormat uint16) {
 	case "gif", "jpg", "jpeg", "png", "svg", "bmp", "tif", "tiff", "jfif", "webp":
 		return core.TypePicture, core.FormatPicture
 
-	case "mp4", "flv", "avi", "mov", "mpg", "mpeg", "h264", "3g2", "3gp", "mkv", "wmv", "webm":
+	case "mp4", "flv", "avi", "mov", "mpg", "mpeg", "h264", "3g2", "3gp", "mkv", "wmv", "webm", "ts":
 		return core.TypeVideo, core.FormatVideo
 
 	case "mp3", "ogg", "flac":
