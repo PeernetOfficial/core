@@ -93,6 +93,7 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 	api.Router.HandleFunc("/download/start", api.apiDownloadStart).Methods("GET")
 	api.Router.HandleFunc("/download/status", api.apiDownloadStatus).Methods("GET")
 	api.Router.HandleFunc("/download/action", api.apiDownloadAction).Methods("GET")
+	api.Router.HandleFunc("/follow/file", api.apiHostFile).Methods("GET")
 	api.Router.HandleFunc("/warehouse/create", api.apiWarehouseCreateFile).Methods("POST")
 	api.Router.HandleFunc("/warehouse/create/path", api.apiWarehouseCreateFilePath).Methods("GET")
 	api.Router.HandleFunc("/warehouse/read", api.apiWarehouseReadFile).Methods("GET")
