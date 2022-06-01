@@ -122,6 +122,7 @@ Optional parameters:
 			&sizemin=[Minimum file size]
 			&sizemax=[Maximum file size]
 			&sort=[sort order]
+			&offset=[absolute offset] with &limit=[records] to get items pagination style. Returned items (and ones before) are automatically frozen.
 Result:     200 with JSON structure SearchResult. Check the field status.
 */
 func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Request) {
@@ -135,6 +136,7 @@ func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		limit = 100
 	}
+	offset, errOffset := strconv.Atoi(r.Form.Get("offset"))
 
 	// find the job ID
 	job := api.JobLookup(jobID)
@@ -159,7 +161,12 @@ func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Reques
 	}
 
 	// query all results
-	resultFiles := job.ReturnNext(limit)
+	var resultFiles []*apiFile
+	if errOffset == nil {
+		resultFiles = job.ReturnResult(offset, limit)
+	} else {
+		resultFiles = job.ReturnNext(limit)
+	}
 
 	var result SearchResult
 	result.Files = []apiFile{}

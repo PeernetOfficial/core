@@ -688,14 +688,15 @@ Note that the date format for the `&from=` and `&to=` parameters is "2006-01-02 
 
 ```
 Request:    GET /search/result?id=[UUID]&limit=[max records]
-            Optional parameters:
-            &reset=[0|1] to reset the filters or sort orders with any of the below parameters (all required):
-            &filetype=[File Type]
-            &fileformat=[File Format]
-            &from=[Date From]&to=[Date To]
-            &sizemin=[Minimum file size]
-            &sizemax=[Maximum file size]
-            &sort=[sort order]
+Optional parameters:
+			&reset=[0|1] to reset the filters or sort orders with any of the below parameters (all required):
+			&filetype=[File Type]
+			&fileformat=[File Format]
+			&from=[Date From]&to=[Date To]
+			&sizemin=[Minimum file size]
+			&sizemax=[Maximum file size]
+			&sort=[sort order]
+			&offset=[absolute offset] with &limit=[records] to get items pagination style. Returned items (and ones before) are automatically frozen.
 Result:     200 with JSON structure SearchResult. Check the field status.
 ```
 
