@@ -68,7 +68,7 @@ resultLoop:
 		}
 
 		// new result
-		newFile := blockRecordFileToAPI(file)
+		newFile := BlockRecordFileToAPI(file)
 
 		job.Files = append(job.Files, &newFile)
 		job.AllFiles = append(job.AllFiles, &newFile)

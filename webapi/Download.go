@@ -23,7 +23,7 @@ type apiResponseDownloadStatus struct {
 	APIStatus      int       `json:"apistatus"`      // Status of the API call. See DownloadResponseX.
 	ID             uuid.UUID `json:"id"`             // Download ID. This can be used to query the latest status and take actions.
 	DownloadStatus int       `json:"downloadstatus"` // Status of the download. See DownloadX.
-	File           apiFile   `json:"file"`           // File information. Only available for status >= DownloadWaitSwarm.
+	File           ApiFile   `json:"file"`           // File information. Only available for status >= DownloadWaitSwarm.
 	Progress       struct {
 		TotalSize      uint64  `json:"totalsize"`      // Total size in bytes.
 		DownloadedSize uint64  `json:"downloadedsize"` // Count of bytes download so far.
@@ -189,7 +189,7 @@ type downloadInfo struct {
 	created time.Time // When the download was created.
 	ended   time.Time // When the download was finished (only status = DownloadFinished).
 
-	file apiFile // File metadata (only status >= DownloadWaitSwarm)
+	file ApiFile // File metadata (only status >= DownloadWaitSwarm)
 
 	DiskFile struct { // Target file on disk to store downloaded data
 		Name       string   // File name

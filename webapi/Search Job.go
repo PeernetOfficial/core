@@ -56,14 +56,14 @@ type SearchJob struct {
 	clientsMutex sync.Mutex // mutex for manipulating client list
 
 	// List of files found but not yet returned via API to the caller. They are subject to sorting.
-	Files       []*apiFile
+	Files       []*ApiFile
 	requireSort bool // if Files requires sort before returning the results
 
 	// FreezeFiles is a list of files that were already finally delivered via the API. They may NOT change in sorting.
-	FreezeFiles []*apiFile
+	FreezeFiles []*ApiFile
 
 	// List of all files. Does not change based on sorting or runtime filters. This list only gets expanded.
-	AllFiles []*apiFile
+	AllFiles []*ApiFile
 
 	ResultSync sync.Mutex // ResultSync ensures unique access to the file results
 
@@ -101,7 +101,7 @@ func (api *WebapiInstance) CreateSearchJob(Timeout time.Duration, MaxResults int
 }
 
 // ReturnResult returns the selected results.
-func (job *SearchJob) ReturnResult(Offset, Limit int) (Result []*apiFile) {
+func (job *SearchJob) ReturnResult(Offset, Limit int) (Result []*ApiFile) {
 	if Limit == 0 {
 		return Result
 	}
@@ -159,7 +159,7 @@ func (job *SearchJob) ReturnResult(Offset, Limit int) (Result []*apiFile) {
 }
 
 // ReturnNext returns the next results. Call must be serialized.
-func (job *SearchJob) ReturnNext(Limit int) (Result []*apiFile) {
+func (job *SearchJob) ReturnNext(Limit int) (Result []*ApiFile) {
 	Result = job.ReturnResult(job.currentOffset, Limit)
 	job.currentOffset += len(Result)
 
@@ -167,7 +167,7 @@ func (job *SearchJob) ReturnNext(Limit int) (Result []*apiFile) {
 }
 
 // PeekResult returns the selected results but will not change any frozen files or impact auto offset
-func (job *SearchJob) PeekResult(Offset, Limit int) (Result []*apiFile) {
+func (job *SearchJob) PeekResult(Offset, Limit int) (Result []*ApiFile) {
 	job.ResultSync.Lock()
 	defer job.ResultSync.Unlock()
 
@@ -218,7 +218,7 @@ func (job *SearchJob) RuntimeFilter(Filter SearchFilter) {
 	job.currentOffset = 0
 
 	// files remain in AllFiles, but Files needs to be filtered based on the new filter
-	job.Files = []*apiFile{}
+	job.Files = []*ApiFile{}
 	job.requireSort = false // Sorting is done immediately below
 
 	// set Files based on AllFiles with the filter
@@ -236,7 +236,7 @@ func (job *SearchJob) RuntimeFilter(Filter SearchFilter) {
 }
 
 // isFileFiltered returns true if the file conforms to the runtime filter. If there is no runtime filter, it always returns true.
-func (job *SearchJob) isFileFiltered(file *apiFile) bool {
+func (job *SearchJob) isFileFiltered(file *ApiFile) bool {
 	if job.filtersRuntime.FileType >= 0 && file.Type != uint8(job.filtersRuntime.FileType) {
 		return false
 	}
@@ -258,7 +258,7 @@ func (job *SearchJob) isFileFiltered(file *apiFile) bool {
 }
 
 // SortFiles sorts a list of files. It returns a sorted list. 0 = no sorting, 1 = Relevance ASC, 2 = Relevance DESC, 3 = Date ASC, 4 = Date DESC, 5 = Name ASC, 6 = Name DESC
-func SortFiles(files []*apiFile, Sort int) (sorted []*apiFile) {
+func SortFiles(files []*ApiFile, Sort int) (sorted []*ApiFile) {
 	switch Sort {
 	case SortRelevanceAsc:
 		sort.SliceStable(files, func(i, j int) bool { return files[i].Date.Before(files[j].Date) }) // first as date for secondary sorting
@@ -424,7 +424,7 @@ func (job *SearchJob) Statistics() (result SearchStatisticData) {
 }
 
 // statsAdd counts the files in the statistics
-func (job *SearchJob) statsAdd(files ...*apiFile) {
+func (job *SearchJob) statsAdd(files ...*ApiFile) {
 	job.stats.Lock()
 	defer job.stats.Unlock()
 

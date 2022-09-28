@@ -18,8 +18,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// apiFileMetadata contains metadata information.
-type apiFileMetadata struct {
+// ApiFileMetadata contains metadata information.
+type ApiFileMetadata struct {
 	Type uint16 `json:"type"` // See core.TagX constants.
 	Name string `json:"name"` // User friendly name of the metadata type. Use the Type fields to identify the metadata as this name may change.
 	// Depending on the exact type, one of the below fields is used for proper encoding:
@@ -29,8 +29,8 @@ type apiFileMetadata struct {
 	Number uint64    `json:"number"` // Number
 }
 
-// apiFile is the metadata of a file published on the blockchain
-type apiFile struct {
+// ApiFile is the metadata of a file published on the blockchain
+type ApiFile struct {
 	ID          uuid.UUID         `json:"id"`          // Unique ID.
 	Hash        []byte            `json:"hash"`        // Blake3 hash of the file data
 	Type        uint8             `json:"type"`        // File Type. For example audio or document. See TypeX.
@@ -41,13 +41,13 @@ type apiFile struct {
 	Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
 	Date        time.Time         `json:"date"`        // Date shared
 	NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file. Read only.
-	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
+	Metadata    []ApiFileMetadata `json:"metadata"`    // Additional metadata.
 }
 
 // --- conversion from core to API data ---
 
-func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
-	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Metadata: []apiFileMetadata{}}
+func BlockRecordFileToAPI(input blockchain.BlockRecordFile) (output ApiFile) {
+	output = ApiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Metadata: []ApiFileMetadata{}}
 
 	for _, tag := range input.Tags {
 		switch tag.Type {
@@ -65,23 +65,23 @@ func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
 
 		case blockchain.TagDateCreated:
 			date, _ := tag.Date()
-			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Date Created", Date: date})
+			output.Metadata = append(output.Metadata, ApiFileMetadata{Type: tag.Type, Name: "Date Created", Date: date})
 
 		case blockchain.TagSharedByCount:
-			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Shared By Count", Number: tag.Number()})
+			output.Metadata = append(output.Metadata, ApiFileMetadata{Type: tag.Type, Name: "Shared By Count", Number: tag.Number()})
 
 		case blockchain.TagSharedByGeoIP:
-			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Shared By GeoIP", Text: tag.Text()})
+			output.Metadata = append(output.Metadata, ApiFileMetadata{Type: tag.Type, Name: "Shared By GeoIP", Text: tag.Text()})
 
 		default:
-			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Blob: tag.Data})
+			output.Metadata = append(output.Metadata, ApiFileMetadata{Type: tag.Type, Blob: tag.Data})
 		}
 	}
 
 	return output
 }
 
-func blockRecordFileFromAPI(input apiFile) (output blockchain.BlockRecordFile) {
+func BlockRecordFileFromAPI(input ApiFile) (output blockchain.BlockRecordFile) {
 	output = blockchain.BlockRecordFile{ID: input.ID, Hash: input.Hash, Type: input.Type, Format: input.Format, Size: input.Size}
 
 	if input.Name != "" {
@@ -115,9 +115,9 @@ func blockRecordFileFromAPI(input apiFile) (output blockchain.BlockRecordFile) {
 
 // --- File API ---
 
-// apiBlockAddFiles contains a list of files from the blockchain
-type apiBlockAddFiles struct {
-	Files  []apiFile `json:"files"`  // List of files
+// ApiBlockAddFiles contains a list of files from the blockchain
+type ApiBlockAddFiles struct {
+	Files  []ApiFile `json:"files"`  // List of files
 	Status int       `json:"status"` // Status of the operation, only used when this structure is returned from the API.
 }
 
@@ -128,12 +128,12 @@ If any file is not stored in the Warehouse, the function aborts with the status 
 If the block record encoding fails for any file, this function aborts with the status code StatusCorruptBlockRecord.
 In case the function aborts, the blockchain remains unchanged.
 
-Request:    POST /blockchain/file/add with JSON structure apiBlockAddFiles
+Request:    POST /blockchain/file/add with JSON structure ApiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
 			400 if invalid input
 */
 func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.Request) {
-	var input apiBlockAddFiles
+	var input ApiBlockAddFiles
 	if err := DecodeJSON(w, r, &input); err != nil {
 		return
 	}
@@ -165,10 +165,10 @@ func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.R
 			file.Size = 0
 		}
 
-		blockRecord := blockRecordFileFromAPI(file)
+		blockRecord := BlockRecordFileFromAPI(file)
 
 		// Set the merkle tree info as appropriate.
-		if !setFileMerkleInfo(api.backend, &blockRecord) {
+		if !SetFileMerkleInfo(api.backend, &blockRecord) {
 			EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
 			return
 		}
@@ -185,15 +185,15 @@ func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.R
 apiBlockchainFileList lists all files stored on the blockchain.
 
 Request:    GET /blockchain/file/list
-Response:   200 with JSON structure apiBlockAddFiles
+Response:   200 with JSON structure ApiBlockAddFiles
 */
 func (api *WebapiInstance) apiBlockchainFileList(w http.ResponseWriter, r *http.Request) {
 	files, status := api.backend.UserBlockchain.ListFiles()
 
-	var result apiBlockAddFiles
+	var result ApiBlockAddFiles
 
 	for _, file := range files {
-		result.Files = append(result.Files, blockRecordFileToAPI(file))
+		result.Files = append(result.Files, BlockRecordFileToAPI(file))
 	}
 
 	result.Status = status
@@ -205,11 +205,11 @@ func (api *WebapiInstance) apiBlockchainFileList(w http.ResponseWriter, r *http.
 apiBlockchainFileDelete deletes files with the provided IDs. Other fields are ignored.
 It will automatically delete the file in the Warehouse if there are no other references.
 
-Request:    POST /blockchain/file/delete with JSON structure apiBlockAddFiles
+Request:    POST /blockchain/file/delete with JSON structure ApiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
 */
 func (api *WebapiInstance) apiBlockchainFileDelete(w http.ResponseWriter, r *http.Request) {
-	var input apiBlockAddFiles
+	var input ApiBlockAddFiles
 	if err := DecodeJSON(w, r, &input); err != nil {
 		return
 	}
@@ -237,12 +237,12 @@ func (api *WebapiInstance) apiBlockchainFileDelete(w http.ResponseWriter, r *htt
 /*
 apiBlockchainSelfUpdateFile updates files that are already published on the blockchain.
 
-Request:    POST /blockchain/file/update with JSON structure apiBlockAddFiles
+Request:    POST /blockchain/file/update with JSON structure ApiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
 			400 if invalid input
 */
 func (api *WebapiInstance) apiBlockchainFileUpdate(w http.ResponseWriter, r *http.Request) {
-	var input apiBlockAddFiles
+	var input ApiBlockAddFiles
 	if err := DecodeJSON(w, r, &input); err != nil {
 		return
 	}
@@ -274,10 +274,10 @@ func (api *WebapiInstance) apiBlockchainFileUpdate(w http.ResponseWriter, r *htt
 			file.Size = 0
 		}
 
-		blockRecord := blockRecordFileFromAPI(file)
+		blockRecord := BlockRecordFileFromAPI(file)
 
 		// Set the merkle tree info as appropriate.
-		if !setFileMerkleInfo(api.backend, &blockRecord) {
+		if !SetFileMerkleInfo(api.backend, &blockRecord) {
 			EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: blockchain.StatusNotInWarehouse})
 			return
 		}
@@ -293,7 +293,7 @@ func (api *WebapiInstance) apiBlockchainFileUpdate(w http.ResponseWriter, r *htt
 // ---- metadata functions ----
 
 // GetMetadata returns the specified metadata or nil if not available.
-func (file *apiFile) GetMetadata(Type uint16) (info *apiFileMetadata) {
+func (file *ApiFile) GetMetadata(Type uint16) (info *ApiFileMetadata) {
 	for n := range file.Metadata {
 		if file.Metadata[n].Type == Type {
 			return &file.Metadata[n]
@@ -304,7 +304,7 @@ func (file *apiFile) GetMetadata(Type uint16) (info *apiFileMetadata) {
 }
 
 // GetNumber returns the data as number. 0 if not available.
-func (info *apiFileMetadata) GetNumber() uint64 {
+func (info *ApiFileMetadata) GetNumber() uint64 {
 	if info == nil {
 		return 0
 	}
@@ -313,12 +313,12 @@ func (info *apiFileMetadata) GetNumber() uint64 {
 }
 
 // IsVirtualFolder returns true if the file is a virtual folder
-func (file *apiFile) IsVirtualFolder() bool {
+func (file *ApiFile) IsVirtualFolder() bool {
 	return file.Type == core.TypeFolder && file.Format == core.FormatFolder
 }
 
-// setFileMerkleInfo sets the merkle fields in the BlockRecordFile
-func setFileMerkleInfo(backend *core.Backend, file *blockchain.BlockRecordFile) (valid bool) {
+// SetFileMerkleInfo sets the merkle fields in the BlockRecordFile
+func SetFileMerkleInfo(backend *core.Backend, file *blockchain.BlockRecordFile) (valid bool) {
 	if file.Size <= merkle.MinimumFragmentSize {
 		// If smaller or equal than the minimum fragment size, the merkle tree is not used.
 		file.MerkleRootHash = file.Hash
