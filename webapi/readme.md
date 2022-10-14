@@ -920,7 +920,7 @@ Result:     200 with JSON structure apiResponseDownloadStatus (using APIStatus a
 This returns recently shared files in Peernet. Results are returned in real-time. The file type is an optional filter.
 
 ```
-Request:    GET /explore?limit=[max records]&type=[file type]
+Request:    GET /explore?limit=[max records]&type=[file type]&offset=[offset]
 Result:     200 with JSON structure SearchResult. Check the field status.
 ```
 

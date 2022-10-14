@@ -13,7 +13,7 @@ import (
 )
 
 // queryRecentShared returns recently shared files on the network from random peers until the limit is reached.
-func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int, limitPeer, limitTotal uint64) (files []blockchain.BlockRecordFile) {
+func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int, limitPeer, offsetTotal, limitTotal uint64) (files []blockchain.BlockRecordFile) {
 	if limitPeer == 0 {
 		limitPeer = 1
 	}
@@ -50,13 +50,18 @@ func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int
 
 					// found a new file! append.
 					if filesFromPeer < limitPeer {
+						filesFromPeer++
+
+						if offsetTotal > 0 {
+							offsetTotal--
+							continue
+						}
+
 						files = append(files, file)
 
 						if uint64(len(files)) >= limitTotal {
 							return
 						}
-
-						filesFromPeer++
 					} else if uint64(len(filesSeconday)) < limitTotal-uint64(len(files)) {
 						filesSeconday = append(filesSeconday, file)
 					} else {
