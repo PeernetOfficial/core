@@ -349,11 +349,12 @@ func (api *WebapiInstance) apiSearchStatistic(w http.ResponseWriter, r *http.Req
 apiExplore returns recently shared files in Peernet. Results are returned in real-time. The file type is an optional filter. See TypeX.
 Special type -2 = Binary, Compressed, Container, Executable. This special type includes everything except Documents, Video, Audio, Ebooks, Picture, Text.
 
-Request:    GET /explore?limit=[max records]&type=[file type]
+Request:    GET /explore?limit=[max records]&type=[file type]&offset=[offset]
 Result:     200 with JSON structure SearchResult. Check the field status.
 */
 func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
+	offset, _ := strconv.Atoi(r.Form.Get("offset"))
 	limit, err := strconv.Atoi(r.Form.Get("limit"))
 	if err != nil {
 		limit = 100
@@ -363,7 +364,7 @@ func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 		fileType = -1
 	}
 
-	resultFiles := api.queryRecentShared(api.backend, fileType, uint64(limit*20/100), uint64(limit))
+	resultFiles := api.queryRecentShared(api.backend, fileType, uint64(limit*20/100), uint64(offset), uint64(limit))
 
 	var result SearchResult
 	result.Files = []apiFile{}
