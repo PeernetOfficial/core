@@ -8,6 +8,7 @@ package webapi
 
 import (
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strconv"
 )
@@ -67,7 +68,8 @@ func (api *WebapiInstance) apiAccountInfo(w http.ResponseWriter, r *http.Request
 apiAccountDelete deletes the current account. The confirm parameter must include the user's choice.
 Request:    GET /account/delete?confirm=[0 or 1]
 Result:     204 if the user choses not to delete the account
-            200 if successfully deleted
+
+	200 if successfully deleted
 */
 func (api *WebapiInstance) apiAccountDelete(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
@@ -79,4 +81,32 @@ func (api *WebapiInstance) apiAccountDelete(w http.ResponseWriter, r *http.Reque
 	api.backend.DeleteAccount()
 
 	w.WriteHeader(http.StatusOK)
+}
+
+/*
+apiStatusPeers returns the information about peers currently connected
+Request:    GET /status/peers
+Result:     200 with JSON array apiResponsePeerInfo
+*/
+func (api *WebapiInstance) apiStatusPeers(w http.ResponseWriter, r *http.Request) {
+	var peers []apiResponsePeerInfo
+
+	// query all nodes
+	for _, peer := range api.backend.PeerlistGet() {
+		peerInfo := apiResponsePeerInfo{PeerID: hex.EncodeToString(peer.PublicKey.SerializeCompressed()), NodeID: hex.EncodeToString(peer.NodeID)}
+
+		if latitude, longitude, valid := api.Peer2GeoIP(peer); valid {
+			peerInfo.GeoIP = fmt.Sprintf("%.4f", latitude) + "," + fmt.Sprintf("%.4f", longitude)
+		}
+
+		peers = append(peers, peerInfo)
+	}
+
+	EncodeJSON(api.backend, w, r, peers)
+}
+
+type apiResponsePeerInfo struct {
+	PeerID string `json:"peerid"` // Peer ID. This is derived from the public in compressed form.
+	NodeID string `json:"nodeid"` // Node ID. This is the blake3 hash of the peer ID and used in the DHT.
+	GeoIP  string `json:"geopi"`  // GeoIP location as "Latitude,Longitude" CSV format. Empty if location not available.
 }

@@ -70,6 +70,7 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 
 	api.Router.HandleFunc("/test", apiTest).Methods("GET")
 	api.Router.HandleFunc("/status", api.apiStatus).Methods("GET")
+	api.Router.HandleFunc("/status/peers", api.apiStatusPeers).Methods("GET")
 	api.Router.HandleFunc("/account/info", api.apiAccountInfo).Methods("GET")
 	api.Router.HandleFunc("/account/delete", api.apiAccountDelete).Methods("GET")
 	api.Router.HandleFunc("/blockchain/header", api.apiBlockchainHeaderFunc).Methods("GET")
