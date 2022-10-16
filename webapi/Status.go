@@ -84,7 +84,10 @@ func (api *WebapiInstance) apiAccountDelete(w http.ResponseWriter, r *http.Reque
 }
 
 /*
-apiStatusPeers returns the information about peers currently connected
+apiStatusPeers returns the information about peers currently connected.
+The GeoIP information may not alawys be available, for example if the GeoIP file is not available or the mapping from IP address to location is not available.
+Peers that are connected only via local network will not have a geo location.
+
 Request:    GET /status/peers
 Result:     200 with JSON array apiResponsePeerInfo
 */
@@ -93,7 +96,14 @@ func (api *WebapiInstance) apiStatusPeers(w http.ResponseWriter, r *http.Request
 
 	// query all nodes
 	for _, peer := range api.backend.PeerlistGet() {
-		peerInfo := apiResponsePeerInfo{PeerID: hex.EncodeToString(peer.PublicKey.SerializeCompressed()), NodeID: hex.EncodeToString(peer.NodeID)}
+		peerInfo := apiResponsePeerInfo{
+			PeerID:            peer.PublicKey.SerializeCompressed(),
+			NodeID:            peer.NodeID,
+			UserAgent:         peer.UserAgent,
+			IsRoot:            peer.IsRootPeer,
+			BlockchainHeight:  peer.BlockchainHeight,
+			BlockchainVersion: peer.BlockchainVersion,
+		}
 
 		if latitude, longitude, valid := api.Peer2GeoIP(peer); valid {
 			peerInfo.GeoIP = fmt.Sprintf("%.4f", latitude) + "," + fmt.Sprintf("%.4f", longitude)
@@ -106,7 +116,11 @@ func (api *WebapiInstance) apiStatusPeers(w http.ResponseWriter, r *http.Request
 }
 
 type apiResponsePeerInfo struct {
-	PeerID string `json:"peerid"` // Peer ID. This is derived from the public in compressed form.
-	NodeID string `json:"nodeid"` // Node ID. This is the blake3 hash of the peer ID and used in the DHT.
-	GeoIP  string `json:"geopi"`  // GeoIP location as "Latitude,Longitude" CSV format. Empty if location not available.
+	PeerID            []byte `json:"peerid"`            // Peer ID. This is derived from the public in compressed form.
+	NodeID            []byte `json:"nodeid"`            // Node ID. This is the blake3 hash of the peer ID and used in the DHT.
+	GeoIP             string `json:"geoip"`             // GeoIP location as "Latitude,Longitude" CSV format. Empty if location not available.
+	UserAgent         string `json:"useragent"`         // User Agent.
+	IsRoot            bool   `json:"isroot"`            // If the peer is a root peer.
+	BlockchainHeight  uint64 `json:"blockchainheight"`  // Blockchain height
+	BlockchainVersion uint64 `json:"blockchainversion"` // Blockchain version
 }
