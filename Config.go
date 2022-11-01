@@ -18,7 +18,7 @@ import (
 )
 
 // Version is the current core library version
-const Version = "Alpha 8/24.03.2022"
+const Version = "Alpha 9/01.11.2022"
 
 // Config defines the minimum required config for a Peernet client.
 type Config struct {
