@@ -62,7 +62,7 @@ type SearchRequestResponse struct {
 // SearchResult contains the search results.
 type SearchResult struct {
 	Status    int         `json:"status"`    // Status: 0 = Success with results, 1 = No more results available, 2 = Search ID not found, 3 = No results yet available keep trying
-	Files     []apiFile   `json:"files"`     // List of files found
+	Files     []ApiFile   `json:"files"`     // List of files found
 	Statistic interface{} `json:"statistic"` // Statistics of all results (independent from applied filters), if requested. Only set if files are returned (= if statistics changed). See SearchStatisticData.
 }
 
@@ -161,7 +161,7 @@ func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Reques
 	}
 
 	// query all results
-	var resultFiles []*apiFile
+	var resultFiles []*ApiFile
 	if errOffset == nil {
 		resultFiles = job.ReturnResult(offset, limit)
 	} else {
@@ -169,7 +169,7 @@ func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Reques
 	}
 
 	var result SearchResult
-	result.Files = []apiFile{}
+	result.Files = []ApiFile{}
 
 	// loop over results
 	for n := range resultFiles {
@@ -241,7 +241,7 @@ func (api *WebapiInstance) apiSearchResultStream(w http.ResponseWriter, r *http.
 	// Only exit if limit is reached if used, otherwise only if there are no result or the connection breaks.
 	for {
 		// query all results
-		var resultFiles []*apiFile
+		var resultFiles []*ApiFile
 
 		queryCount := 1
 		if useLimit {
@@ -255,7 +255,7 @@ func (api *WebapiInstance) apiSearchResultStream(w http.ResponseWriter, r *http.
 
 		// loop over results
 		var result SearchResult
-		result.Files = []apiFile{}
+		result.Files = []ApiFile{}
 
 		for n := range resultFiles {
 			result.Files = append(result.Files, *resultFiles[n])
@@ -367,11 +367,11 @@ func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 	resultFiles := api.queryRecentShared(api.backend, fileType, uint64(limit*20/100), uint64(offset), uint64(limit))
 
 	var result SearchResult
-	result.Files = []apiFile{}
+	result.Files = []ApiFile{}
 
 	// loop over results
 	for n := range resultFiles {
-		result.Files = append(result.Files, blockRecordFileToAPI(resultFiles[n]))
+		result.Files = append(result.Files, BlockRecordFileToAPI(resultFiles[n]))
 	}
 
 	if len(result.Files) == 0 {

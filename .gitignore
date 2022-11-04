@@ -4,3 +4,6 @@ log.txt
 test.*
 # Ignore the IDE gitignore files
 .idea/
+# Test cases generate the following
+data/
+Config.yaml
