@@ -125,7 +125,7 @@ func (network *Network) Listen() {
 		if isLite, err := network.networkGroup.LiteRouter.IsPacketLite(buffer[:length]); isLite && err != nil {
 			continue
 		} else if isLite {
-			network.networkGroup.litePacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverPublicKey: network.backend.peerPublicKey, unicast: true}
+			network.networkGroup.litePacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverPublicKey: network.backend.PeerPublicKey, unicast: true}
 			continue
 		}
 
@@ -135,7 +135,7 @@ func (network *Network) Listen() {
 		}
 
 		// send the packet to a channel which is processed by multiple workers.
-		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverPublicKey: network.backend.peerPublicKey, unicast: true}
+		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverPublicKey: network.backend.PeerPublicKey, unicast: true}
 	}
 }
 
@@ -149,7 +149,7 @@ func (nets *Networks) packetWorker() {
 		}
 
 		// immediately discard message if sender = self
-		if senderPublicKey.IsEqual(nets.backend.peerPublicKey) {
+		if senderPublicKey.IsEqual(nets.backend.PeerPublicKey) {
 			continue
 		}
 
@@ -283,9 +283,9 @@ func (nets *Networks) packetWorker() {
 		case protocol.CommandTraverse:
 			if traverse, _ := protocol.DecodeTraverse(raw); traverse != nil {
 				nets.backend.Filters.MessageIn(peer, raw, traverse)
-				if traverse.TargetPeer.IsEqual(nets.backend.peerPublicKey) && traverse.AuthorizedRelayPeer.IsEqual(peer.PublicKey) {
+				if traverse.TargetPeer.IsEqual(nets.backend.PeerPublicKey) && traverse.AuthorizedRelayPeer.IsEqual(peer.PublicKey) {
 					peer.cmdTraverseReceive(traverse)
-				} else if traverse.AuthorizedRelayPeer.IsEqual(nets.backend.peerPublicKey) {
+				} else if traverse.AuthorizedRelayPeer.IsEqual(nets.backend.PeerPublicKey) {
 					peer.cmdTraverseForward(traverse)
 				}
 			}

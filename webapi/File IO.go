@@ -26,13 +26,16 @@ Instead of providing the node ID, the peer ID is also accepted in the &node= par
 The default timeout for connecting to the peer is 10 seconds.
 
 Request:    GET /file/read?hash=[hash]&node=[node ID]
-            Optional: &offset=[offset]&limit=[limit] or via Range header.
-            Optional: &timeout=[seconds]
+
+	Optional: &offset=[offset]&limit=[limit] or via Range header.
+	Optional: &timeout=[seconds]
+
 Response:   200 with the content
-            206 with partial content
-            400 if the parameters are invalid
-            404 if the file was not found or other error on transfer initiate
-            502 if unable to find or connect to the remote peer in time
+
+	206 with partial content
+	400 if the parameters are invalid
+	404 if the file was not found or other error on transfer initiate
+	502 if unable to find or connect to the remote peer in time
 */
 func (api *WebapiInstance) apiFileRead(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
@@ -69,7 +72,7 @@ func (api *WebapiInstance) apiFileRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Is the file available in the local warehouse? In that case requesting it from the remote is unnecessary.
-	if serveFileFromWarehouse(api.backend, w, fileHash, uint64(offset), uint64(limit), ranges) {
+	if serveFileFromWarehouse(api.Backend, w, fileHash, uint64(offset), uint64(limit), ranges) {
 		return
 	}
 
@@ -77,9 +80,9 @@ func (api *WebapiInstance) apiFileRead(w http.ResponseWriter, r *http.Request) {
 	var peer *core.PeerInfo
 
 	if valid2 {
-		peer, err = PeerConnectNode(api.backend, nodeID, timeout)
+		peer, err = PeerConnectNode(api.Backend, nodeID, timeout)
 	} else if err3 == nil {
-		peer, err = PeerConnectPublicKey(api.backend, publicKey, timeout)
+		peer, err = PeerConnectPublicKey(api.Backend, publicKey, timeout)
 	}
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
@@ -139,13 +142,16 @@ The default timeout for connecting to the peer is 10 seconds.
 Formats: 14 = Video
 
 Request:    GET /file/view?hash=[hash]&node=[node ID]&format=[format]
-            Optional: &offset=[offset]&limit=[limit] or via Range header.
-            Optional: &timeout=[seconds]
+
+	Optional: &offset=[offset]&limit=[limit] or via Range header.
+	Optional: &timeout=[seconds]
+
 Response:   200 with the content
-            206 with partial content
-            400 if the parameters are invalid
-            404 if the file was not found or other error on transfer initiate
-            502 if unable to find or connect to the remote peer in time
+
+	206 with partial content
+	400 if the parameters are invalid
+	404 if the file was not found or other error on transfer initiate
+	502 if unable to find or connect to the remote peer in time
 */
 func (api *WebapiInstance) apiFileView(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
@@ -193,7 +199,7 @@ func (api *WebapiInstance) apiFileView(w http.ResponseWriter, r *http.Request) {
 
 	// Is the file available in the local warehouse? In that case requesting it from the remote is unnecessary.
 	if !localCacheDisable {
-		if serveFileFromWarehouse(api.backend, w, fileHash, uint64(offset), uint64(limit), ranges) {
+		if serveFileFromWarehouse(api.Backend, w, fileHash, uint64(offset), uint64(limit), ranges) {
 			return
 		}
 	}
@@ -202,9 +208,9 @@ func (api *WebapiInstance) apiFileView(w http.ResponseWriter, r *http.Request) {
 	var peer *core.PeerInfo
 
 	if valid2 {
-		peer, err = PeerConnectNode(api.backend, nodeID, timeout)
+		peer, err = PeerConnectNode(api.Backend, nodeID, timeout)
 	} else if err3 == nil {
-		peer, err = PeerConnectPublicKey(api.backend, publicKey, timeout)
+		peer, err = PeerConnectPublicKey(api.Backend, publicKey, timeout)
 	}
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)

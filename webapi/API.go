@@ -22,7 +22,7 @@ import (
 )
 
 type WebapiInstance struct {
-	backend         *core.Backend
+	Backend         *core.Backend
 	geoipCityReader *geoip2.CityReader
 
 	// Router can be used to register additional API functions
@@ -57,7 +57,7 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 	}
 
 	api = &WebapiInstance{
-		backend:         Backend,
+		Backend:         Backend,
 		Router:          mux.NewRouter(),
 		AllowKeyInParam: []string{"/file/read", "/file/view"},
 		allJobs:         make(map[uuid.UUID]*SearchJob),

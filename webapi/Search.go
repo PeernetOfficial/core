@@ -80,7 +80,8 @@ apiSearch submits a search request
 
 Request:    POST /search with JSON SearchRequest
 Result:     200 on success with JSON SearchRequestResponse
-            400 on invalid JSON
+
+	400 on invalid JSON
 */
 func (api *WebapiInstance) apiSearch(w http.ResponseWriter, r *http.Request) {
 
@@ -106,7 +107,7 @@ func (api *WebapiInstance) apiSearch(w http.ResponseWriter, r *http.Request) {
 
 	job := api.dispatchSearch(input)
 
-	EncodeJSON(api.backend, w, r, SearchRequestResponse{Status: 0, ID: job.id})
+	EncodeJSON(api.Backend, w, r, SearchRequestResponse{Status: 0, ID: job.id})
 }
 
 /*
@@ -115,14 +116,16 @@ If reset is set, all results will be filtered and sorted according to the settin
 
 Request:    GET /search/result?id=[UUID]&limit=[max records]
 Optional parameters:
-			&reset=[0|1] to reset the filters or sort orders with any of the below parameters (all required):
-			&filetype=[File Type]
-			&fileformat=[File Format]
-			&from=[Date From]&to=[Date To]
-			&sizemin=[Minimum file size]
-			&sizemax=[Maximum file size]
-			&sort=[sort order]
-			&offset=[absolute offset] with &limit=[records] to get items pagination style. Returned items (and ones before) are automatically frozen.
+
+	&reset=[0|1] to reset the filters or sort orders with any of the below parameters (all required):
+	&filetype=[File Type]
+	&fileformat=[File Format]
+	&from=[Date From]&to=[Date To]
+	&sizemin=[Minimum file size]
+	&sizemax=[Maximum file size]
+	&sort=[sort order]
+	&offset=[absolute offset] with &limit=[records] to get items pagination style. Returned items (and ones before) are automatically frozen.
+
 Result:     200 with JSON structure SearchResult. Check the field status.
 */
 func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +144,7 @@ func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Reques
 	// find the job ID
 	job := api.JobLookup(jobID)
 	if job == nil {
-		EncodeJSON(api.backend, w, r, SearchResult{Status: 2})
+		EncodeJSON(api.Backend, w, r, SearchResult{Status: 2})
 		return
 	}
 
@@ -201,7 +204,7 @@ func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Reques
 		result.Statistic = job.Statistics()
 	}
 
-	EncodeJSON(api.backend, w, r, result)
+	EncodeJSON(api.Backend, w, r, result)
 }
 
 /*
@@ -209,7 +212,8 @@ apiSearchResultStream provides a websocket to receive results as stream.
 
 Request:    GET /search/result/ws?id=[UUID]&limit=[optional max records]
 Result:     If successful, upgrades to a websocket and sends JSON structure SearchResult messages.
-            Limit is optional. Not used if ommitted or 0.
+
+	Limit is optional. Not used if ommitted or 0.
 */
 func (api *WebapiInstance) apiSearchResultStream(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
@@ -224,7 +228,7 @@ func (api *WebapiInstance) apiSearchResultStream(w http.ResponseWriter, r *http.
 	// look up the job
 	job := api.JobLookup(jobID)
 	if job == nil {
-		EncodeJSON(api.backend, w, r, SearchResult{Status: 2})
+		EncodeJSON(api.Backend, w, r, SearchResult{Status: 2})
 		return
 	}
 
@@ -293,8 +297,9 @@ apiSearchTerminate terminates a search
 
 Request:    GET /search/terminate?id=[UUID]
 Response:   204 Empty
-            400 Invalid input
-            404 ID not found
+
+	400 Invalid input
+	404 ID not found
 */
 func (api *WebapiInstance) apiSearchTerminate(w http.ResponseWriter, r *http.Request) {
 
@@ -336,13 +341,13 @@ func (api *WebapiInstance) apiSearchStatistic(w http.ResponseWriter, r *http.Req
 	// find the job ID
 	job := api.JobLookup(jobID)
 	if job == nil {
-		EncodeJSON(api.backend, w, r, SearchStatistic{Status: 2})
+		EncodeJSON(api.Backend, w, r, SearchStatistic{Status: 2})
 		return
 	}
 
 	stats := job.Statistics()
 
-	EncodeJSON(api.backend, w, r, SearchStatistic{SearchStatisticData: stats, Status: 0, IsTerminated: job.IsTerminated()})
+	EncodeJSON(api.Backend, w, r, SearchStatistic{SearchStatisticData: stats, Status: 0, IsTerminated: job.IsTerminated()})
 }
 
 /*
@@ -364,7 +369,7 @@ func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 		fileType = -1
 	}
 
-	resultFiles := api.queryRecentShared(api.backend, fileType, uint64(limit*20/100), uint64(offset), uint64(limit))
+	resultFiles := api.queryRecentShared(api.Backend, fileType, uint64(limit*20/100), uint64(offset), uint64(limit))
 
 	var result SearchResult
 	result.Files = []apiFile{}
@@ -380,7 +385,7 @@ func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 
 	result.Status = 1 // No more results to expect
 
-	EncodeJSON(api.backend, w, r, result)
+	EncodeJSON(api.Backend, w, r, result)
 }
 
 func (input *SearchRequest) Parse() (Timeout time.Duration) {

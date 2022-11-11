@@ -35,14 +35,14 @@ Request:    GET /profile/list
 Response:   200 with JSON structure apiProfileData
 */
 func (api *WebapiInstance) apiProfileList(w http.ResponseWriter, r *http.Request) {
-	fields, status := api.backend.UserBlockchain.ProfileList()
+	fields, status := api.Backend.UserBlockchain.ProfileList()
 
 	result := apiProfileData{Status: status}
 	for n := range fields {
 		result.Fields = append(result.Fields, blockRecordProfileToAPI(fields[n]))
 	}
 
-	EncodeJSON(api.backend, w, r, result)
+	EncodeJSON(api.Backend, w, r, result)
 }
 
 /*
@@ -63,11 +63,11 @@ func (api *WebapiInstance) apiProfileRead(w http.ResponseWriter, r *http.Request
 	var result apiProfileData
 
 	var data []byte
-	if data, result.Status = api.backend.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.StatusOK {
+	if data, result.Status = api.Backend.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.StatusOK {
 		result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: uint16(fieldN), Data: data}))
 	}
 
-	EncodeJSON(api.backend, w, r, result)
+	EncodeJSON(api.Backend, w, r, result)
 }
 
 /*
@@ -88,9 +88,9 @@ func (api *WebapiInstance) apiProfileWrite(w http.ResponseWriter, r *http.Reques
 		fields = append(fields, blockRecordProfileFromAPI(input.Fields[n]))
 	}
 
-	newHeight, newVersion, status := api.backend.UserBlockchain.ProfileWrite(fields)
+	newHeight, newVersion, status := api.Backend.UserBlockchain.ProfileWrite(fields)
 
-	EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
+	EncodeJSON(api.Backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 /*
@@ -111,9 +111,9 @@ func (api *WebapiInstance) apiProfileDelete(w http.ResponseWriter, r *http.Reque
 		fields = append(fields, input.Fields[n].Type)
 	}
 
-	newHeight, newVersion, status := api.backend.UserBlockchain.ProfileDelete(fields)
+	newHeight, newVersion, status := api.Backend.UserBlockchain.ProfileDelete(fields)
 
-	EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
+	EncodeJSON(api.Backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 // --- conversion from core to API data ---

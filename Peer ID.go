@@ -28,8 +28,8 @@ func (backend *Backend) initPeerID() {
 	if len(backend.Config.PrivateKey) > 0 {
 		configPK, err := hex.DecodeString(backend.Config.PrivateKey)
 		if err == nil {
-			backend.peerPrivateKey, backend.peerPublicKey = btcec.PrivKeyFromBytes(btcec.S256(), configPK)
-			backend.nodeID = protocol.PublicKey2NodeID(backend.peerPublicKey)
+			backend.PeerPrivateKey, backend.PeerPublicKey = btcec.PrivKeyFromBytes(btcec.S256(), configPK)
+			backend.nodeID = protocol.PublicKey2NodeID(backend.PeerPublicKey)
 
 			if backend.Config.AutoUpdateSeedList {
 				backend.configUpdateSeedList()
@@ -43,15 +43,15 @@ func (backend *Backend) initPeerID() {
 
 	// if the peer ID is empty, create a new user public-private key pair
 	var err error
-	backend.peerPrivateKey, backend.peerPublicKey, err = Secp256k1NewPrivateKey()
+	backend.PeerPrivateKey, backend.PeerPublicKey, err = Secp256k1NewPrivateKey()
 	if err != nil {
 		backend.LogError("initPeerID", "generating public-private key pairs: %s\n", err.Error())
 		os.Exit(ExitPrivateKeyCreate)
 	}
-	backend.nodeID = protocol.PublicKey2NodeID(backend.peerPublicKey)
+	backend.nodeID = protocol.PublicKey2NodeID(backend.PeerPublicKey)
 
 	// save the newly generated private key into the config
-	backend.Config.PrivateKey = hex.EncodeToString(backend.peerPrivateKey.Serialize())
+	backend.Config.PrivateKey = hex.EncodeToString(backend.PeerPrivateKey.Serialize())
 
 	backend.SaveConfig()
 }
@@ -68,7 +68,7 @@ func Secp256k1NewPrivateKey() (privateKey *btcec.PrivateKey, publicKey *btcec.Pu
 
 // ExportPrivateKey returns the peers public and private key
 func (backend *Backend) ExportPrivateKey() (privateKey *btcec.PrivateKey, publicKey *btcec.PublicKey) {
-	return backend.peerPrivateKey, backend.peerPublicKey
+	return backend.PeerPrivateKey, backend.PeerPublicKey
 }
 
 // SelfNodeID returns the node ID used for DHT
@@ -250,7 +250,7 @@ func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord) (nodes 
 // selfPeerRecord returns self as peer record
 func (backend *Backend) selfPeerRecord() (result protocol.PeerRecord) {
 	return protocol.PeerRecord{
-		PublicKey: backend.peerPublicKey,
+		PublicKey: backend.PeerPublicKey,
 		NodeID:    backend.nodeID,
 		//IP:          network.address.IP,
 		//Port:        uint16(network.address.Port),

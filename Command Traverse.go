@@ -99,13 +99,13 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse) {
 
 	// ---- fork packetWorker to decode and validate embedded packet ---
 	// Due to missing connection and other embedded details in the message (such as ports), the packet is not just simply queued to rawPacketsIncoming.
-	decoded, senderPublicKey, err := protocol.PacketDecrypt(msg.EmbeddedPacketRaw, peer.Backend.peerPublicKey)
+	decoded, senderPublicKey, err := protocol.PacketDecrypt(msg.EmbeddedPacketRaw, peer.Backend.PeerPublicKey)
 	if err != nil {
 		return
 	}
 	if !senderPublicKey.IsEqual(msg.SignerPublicKey) {
 		return
-	} else if senderPublicKey.IsEqual(peer.Backend.peerPublicKey) {
+	} else if senderPublicKey.IsEqual(peer.Backend.PeerPublicKey) {
 		return
 	} else if decoded.Protocol != 0 {
 		return

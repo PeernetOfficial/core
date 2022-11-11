@@ -26,13 +26,13 @@ Request:    POST /warehouse/create with raw data to create as new file
 Response:   200 with JSON structure WarehouseResult
 */
 func (api *WebapiInstance) apiWarehouseCreateFile(w http.ResponseWriter, r *http.Request) {
-	hash, status, err := api.backend.UserWarehouse.CreateFile(r.Body, 0)
+	hash, status, err := api.Backend.UserWarehouse.CreateFile(r.Body, 0)
 
 	if err != nil {
-		api.backend.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
+		api.Backend.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
 	}
 
-	EncodeJSON(api.backend, w, r, WarehouseResult{Status: status, Hash: hash})
+	EncodeJSON(api.Backend, w, r, WarehouseResult{Status: status, Hash: hash})
 }
 
 /*
@@ -51,23 +51,26 @@ func (api *WebapiInstance) apiWarehouseCreateFilePath(w http.ResponseWriter, r *
 		return
 	}
 
-	hash, status, err := api.backend.UserWarehouse.CreateFileFromPath(filePath)
+	hash, status, err := api.Backend.UserWarehouse.CreateFileFromPath(filePath)
 
 	if err != nil {
-		api.backend.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
+		api.Backend.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
 	}
 
-	EncodeJSON(api.backend, w, r, WarehouseResult{Status: status, Hash: hash})
+	EncodeJSON(api.Backend, w, r, WarehouseResult{Status: status, Hash: hash})
 }
 
 /*
 apiWarehouseReadFile reads a file in the warehouse.
 
 Request:    GET /warehouse/read?hash=[hash]
-            Optional parameters &offset=[file offset]&limit=[read limit in bytes]
+
+	Optional parameters &offset=[file offset]&limit=[read limit in bytes]
+
 Response:   200 with the raw file data
-			404 if file was not found
-			500 in case of internal error opening the file
+
+	404 if file was not found
+	500 in case of internal error opening the file
 */
 func (api *WebapiInstance) apiWarehouseReadFile(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
@@ -80,7 +83,7 @@ func (api *WebapiInstance) apiWarehouseReadFile(w http.ResponseWriter, r *http.R
 	offset, _ := strconv.Atoi(r.Form.Get("offset"))
 	limit, _ := strconv.Atoi(r.Form.Get("limit"))
 
-	status, bytesRead, err := api.backend.UserWarehouse.ReadFile(hash, int64(offset), int64(limit), w)
+	status, bytesRead, err := api.Backend.UserWarehouse.ReadFile(hash, int64(offset), int64(limit), w)
 
 	switch status {
 	case warehouse.StatusFileNotFound:
@@ -94,7 +97,7 @@ func (api *WebapiInstance) apiWarehouseReadFile(w http.ResponseWriter, r *http.R
 	}
 
 	if err != nil {
-		api.backend.LogError("warehouse.ReadFile", "status %d read %d error: %v", status, bytesRead, err)
+		api.Backend.LogError("warehouse.ReadFile", "status %d read %d error: %v", status, bytesRead, err)
 	}
 }
 
@@ -112,13 +115,13 @@ func (api *WebapiInstance) apiWarehouseDeleteFile(w http.ResponseWriter, r *http
 		return
 	}
 
-	status, err := api.backend.UserWarehouse.DeleteFile(hash)
+	status, err := api.Backend.UserWarehouse.DeleteFile(hash)
 
 	if err != nil {
-		api.backend.LogError("warehouse.DeleteFile", "status %d error: %v", status, err)
+		api.Backend.LogError("warehouse.DeleteFile", "status %d error: %v", status, err)
 	}
 
-	EncodeJSON(api.backend, w, r, WarehouseResult{Status: status, Hash: hash})
+	EncodeJSON(api.Backend, w, r, WarehouseResult{Status: status, Hash: hash})
 }
 
 /*
@@ -126,7 +129,9 @@ apiWarehouseReadFilePath reads a file from the warehouse and stores it to the ta
 The path must include the full directory and file name.
 
 Request:    GET /warehouse/read/path?hash=[hash]&path=[target path on disk]
-            Optional parameters &offset=[file offset]&limit=[read limit in bytes]
+
+	Optional parameters &offset=[file offset]&limit=[read limit in bytes]
+
 Response:   200 with JSON structure WarehouseResult
 */
 func (api *WebapiInstance) apiWarehouseReadFilePath(w http.ResponseWriter, r *http.Request) {
@@ -141,11 +146,11 @@ func (api *WebapiInstance) apiWarehouseReadFilePath(w http.ResponseWriter, r *ht
 	offset, _ := strconv.Atoi(r.Form.Get("offset"))
 	limit, _ := strconv.Atoi(r.Form.Get("limit"))
 
-	status, bytesRead, err := api.backend.UserWarehouse.ReadFileToDisk(hash, int64(offset), int64(limit), targetFile)
+	status, bytesRead, err := api.Backend.UserWarehouse.ReadFileToDisk(hash, int64(offset), int64(limit), targetFile)
 
 	if err != nil {
-		api.backend.LogError("warehouse.ReadFileToDisk", "status %d read %d error: %v", status, bytesRead, err)
+		api.Backend.LogError("warehouse.ReadFileToDisk", "status %d read %d error: %v", status, bytesRead, err)
 	}
 
-	EncodeJSON(api.backend, w, r, WarehouseResult{Status: status, Hash: hash})
+	EncodeJSON(api.Backend, w, r, WarehouseResult{Status: status, Hash: hash})
 }
