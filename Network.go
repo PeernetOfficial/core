@@ -162,9 +162,13 @@ func (nets *Networks) packetWorker() {
 
 		nets.backend.Filters.PacketIn(decoded, senderPublicKey, connection)
 
+		//if senderPublicKey.SerializeUncompressed() != nil
 		// A peer structure will always be returned, even if the peer won't be added to the peer list.
 		peer, added := nets.backend.PeerlistAdd(senderPublicKey, connection)
-		if !added {
+
+		if peer == nil {
+			continue
+		} else if !added {
 			connection = peer.registerConnection(connection)
 		}
 
