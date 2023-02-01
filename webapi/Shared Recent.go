@@ -14,7 +14,7 @@ import (
 )
 
 // queryRecentShared returns recently shared files on the network from random peers until the limit is reached.
-func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int, limitPeer, offsetTotal, limitTotal uint64, nodeID []byte) (files []blockchain.BlockRecordFile) {
+func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int, limitPeer, offsetTotal, limitTotal uint64, nodeID []byte, nodeIDState bool) (files []blockchain.BlockRecordFile) {
     if limitPeer == 0 {
         limitPeer = 1
     }
@@ -23,11 +23,16 @@ func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int
     var peerList []*core.PeerInfo
 
     // check if the NodeID is provided or not
-    if len(nodeID) == 0 {
+    if len(nodeID) == 0 && !nodeIDState {
         // Use the peer list to know about active peers. Random order!
         peerList = api.backend.PeerlistGet()
     } else {
-        _, peerList[0], _ = api.backend.FindNode(nodeID, time.Second*5)
+        // Get peer information based on the NodeID provided
+        _, peer, err := api.backend.FindNode(nodeID, time.Second*5)
+        if err != nil {
+            return
+        }
+        peerList = append(peerList, peer)
     }
 
     // Files from peers exceeding the limit. It is used if from all peers the total limit is not reached.
