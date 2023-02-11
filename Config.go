@@ -43,7 +43,7 @@ type Config struct {
 	PrivateKey string `yaml:"PrivateKey"` // The Private Key, hex encoded so it can be copied manually
 
 	// Initial peer seed list
-	SeedList           []peerSeed `yaml:"SeedList"`
+	SeedList           []PeerSeed `yaml:"SeedList"`
 	AutoUpdateSeedList bool       `yaml:"AutoUpdateSeedList"`
 	SeedListVersion    int        `yaml:"SeedListVersion"`
 
@@ -61,8 +61,8 @@ type Config struct {
 	LimitTotalRecords  uint64 `yaml:"LimitTotalRecords"`  // Record count limit. 0 = unlimited. Max Records * Max Block Size = Size Limit.
 }
 
-// peerSeed is a singl peer entry from the config's seed list
-type peerSeed struct {
+// PeerSeed is a singl peer entry from the config's seed list
+type PeerSeed struct {
 	PublicKey string   `yaml:"PublicKey"` // Public key = peer ID. Hex encoded.
 	Address   []string `yaml:"Address"`   // IP:Port
 }

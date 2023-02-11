@@ -76,11 +76,11 @@ func (api *WebapiInstance) apiDownloadStart(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	info := &downloadInfo{backend: api.backend, api: api, id: uuid.New(), created: time.Now(), hash: hash, nodeID: nodeID}
+	info := &downloadInfo{backend: api.Backend, api: api, id: uuid.New(), created: time.Now(), hash: hash, nodeID: nodeID}
 
 	// create the file immediately
 	if info.initDiskFile(filePath) != nil {
-		EncodeJSON(api.backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseFileInvalid})
+		EncodeJSON(api.Backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseFileInvalid})
 		return
 	}
 
@@ -90,7 +90,7 @@ func (api *WebapiInstance) apiDownloadStart(w http.ResponseWriter, r *http.Reque
 	// start the download!
 	go info.Start()
 
-	EncodeJSON(api.backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseSuccess, ID: info.id, DownloadStatus: DownloadWaitMetadata})
+	EncodeJSON(api.Backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseSuccess, ID: info.id, DownloadStatus: DownloadWaitMetadata})
 }
 
 /*
@@ -109,7 +109,7 @@ func (api *WebapiInstance) apiDownloadStatus(w http.ResponseWriter, r *http.Requ
 
 	info := api.downloadLookup(id)
 	if info == nil {
-		EncodeJSON(api.backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseIDNotFound})
+		EncodeJSON(api.Backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseIDNotFound})
 		return
 	}
 
@@ -132,7 +132,7 @@ func (api *WebapiInstance) apiDownloadStatus(w http.ResponseWriter, r *http.Requ
 
 	info.RUnlock()
 
-	EncodeJSON(api.backend, w, r, response)
+	EncodeJSON(api.Backend, w, r, response)
 }
 
 /*
@@ -154,7 +154,7 @@ func (api *WebapiInstance) apiDownloadAction(w http.ResponseWriter, r *http.Requ
 
 	info := api.downloadLookup(id)
 	if info == nil {
-		EncodeJSON(api.backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseIDNotFound})
+		EncodeJSON(api.Backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseIDNotFound})
 		return
 	}
 
@@ -171,7 +171,7 @@ func (api *WebapiInstance) apiDownloadAction(w http.ResponseWriter, r *http.Requ
 		apiStatus = info.Cancel()
 	}
 
-	EncodeJSON(api.backend, w, r, apiResponseDownloadStatus{APIStatus: apiStatus, ID: info.id, DownloadStatus: info.status})
+	EncodeJSON(api.Backend, w, r, apiResponseDownloadStatus{APIStatus: apiStatus, ID: info.id, DownloadStatus: info.status})
 }
 
 // ---- download tracking ----

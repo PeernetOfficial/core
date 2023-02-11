@@ -213,9 +213,9 @@ func (api *WebapiInstance) apiFileFormat(w http.ResponseWriter, r *http.Request)
 
 	fileType, fileFormat, err := FileDetectType(filePath)
 	if err != nil {
-		EncodeJSON(api.backend, w, r, apiResponseFileFormat{Status: 1})
+		EncodeJSON(api.Backend, w, r, apiResponseFileFormat{Status: 1})
 		return
 	}
 
-	EncodeJSON(api.backend, w, r, apiResponseFileFormat{Status: 0, FileType: fileType, FileFormat: fileFormat})
+	EncodeJSON(api.Backend, w, r, apiResponseFileFormat{Status: 0, FileType: fileType, FileFormat: fileFormat})
 }

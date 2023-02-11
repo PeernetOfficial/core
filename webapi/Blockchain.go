@@ -27,9 +27,9 @@ Request:    GET /blockchain/header
 Result:     200 with JSON structure apiResponsePeerSelf
 */
 func (api *WebapiInstance) apiBlockchainHeaderFunc(w http.ResponseWriter, r *http.Request) {
-	publicKey, height, version := api.backend.UserBlockchain.Header()
+	publicKey, height, version := api.Backend.UserBlockchain.Header()
 
-	EncodeJSON(api.backend, w, r, apiBlockchainHeader{Version: version, Height: height, PeerID: hex.EncodeToString(publicKey.SerializeCompressed())})
+	EncodeJSON(api.Backend, w, r, apiBlockchainHeader{Version: version, Height: height, PeerID: hex.EncodeToString(publicKey.SerializeCompressed())})
 }
 
 type apiBlockRecordRaw struct {
@@ -67,9 +67,9 @@ func (api *WebapiInstance) apiBlockchainAppend(w http.ResponseWriter, r *http.Re
 		records = append(records, blockchain.BlockRecordRaw{Type: record.Type, Data: record.Data})
 	}
 
-	newHeight, newVersion, status := api.backend.UserBlockchain.Append(records)
+	newHeight, newVersion, status := api.Backend.UserBlockchain.Append(records)
 
-	EncodeJSON(api.backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
+	EncodeJSON(api.Backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 type apiBlockchainBlock struct {
@@ -96,7 +96,7 @@ func (api *WebapiInstance) apiBlockchainRead(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	block, status, _ := api.backend.UserBlockchain.Read(uint64(blockN))
+	block, status, _ := api.Backend.UserBlockchain.Read(uint64(blockN))
 	result := apiBlockchainBlock{Status: status}
 
 	if status == 0 {
@@ -118,5 +118,5 @@ func (api *WebapiInstance) apiBlockchainRead(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	EncodeJSON(api.backend, w, r, result)
+	EncodeJSON(api.Backend, w, r, result)
 }

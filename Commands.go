@@ -288,7 +288,7 @@ func (peer *PeerInfo) cmdGetBlock(msg *protocol.MessageGetBlock, connection *Con
 	switch msg.Control {
 	case protocol.GetBlockControlRequestStart:
 		// Currently only support the local blockchain.
-		if !msg.BlockchainPublicKey.IsEqual(peer.Backend.peerPublicKey) {
+		if !msg.BlockchainPublicKey.IsEqual(peer.Backend.PeerPublicKey) {
 			peer.sendGetBlock(nil, protocol.GetBlockControlNotAvailable, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence, uuid.UUID{}, false)
 			return
 		} else if _, height, _ := peer.Backend.UserBlockchain.Header(); height == 0 {
