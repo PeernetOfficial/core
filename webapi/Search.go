@@ -106,7 +106,7 @@ func (api *WebapiInstance) apiSearch(w http.ResponseWriter, r *http.Request) {
 
 	job := api.dispatchSearch(input)
 
-	EncodeJSON(api.backend, w, r, SearchRequestResponse{Status: 0, ID: job.id})
+	EncodeJSON(api.Backend, w, r, SearchRequestResponse{Status: 0, ID: job.id})
 }
 
 /*
@@ -143,7 +143,7 @@ func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Reques
 	// find the job ID
 	job := api.JobLookup(jobID)
 	if job == nil {
-		EncodeJSON(api.backend, w, r, SearchResult{Status: 2})
+		EncodeJSON(api.Backend, w, r, SearchResult{Status: 2})
 		return
 	}
 
@@ -203,7 +203,7 @@ func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Reques
 		result.Statistic = job.Statistics()
 	}
 
-	EncodeJSON(api.backend, w, r, result)
+	EncodeJSON(api.Backend, w, r, result)
 }
 
 /*
@@ -227,7 +227,7 @@ func (api *WebapiInstance) apiSearchResultStream(w http.ResponseWriter, r *http.
 	// look up the job
 	job := api.JobLookup(jobID)
 	if job == nil {
-		EncodeJSON(api.backend, w, r, SearchResult{Status: 2})
+		EncodeJSON(api.Backend, w, r, SearchResult{Status: 2})
 		return
 	}
 
@@ -340,13 +340,13 @@ func (api *WebapiInstance) apiSearchStatistic(w http.ResponseWriter, r *http.Req
 	// find the job ID
 	job := api.JobLookup(jobID)
 	if job == nil {
-		EncodeJSON(api.backend, w, r, SearchStatistic{Status: 2})
+		EncodeJSON(api.Backend, w, r, SearchStatistic{Status: 2})
 		return
 	}
 
 	stats := job.Statistics()
 
-	EncodeJSON(api.backend, w, r, SearchStatistic{SearchStatisticData: stats, Status: 0, IsTerminated: job.IsTerminated()})
+	EncodeJSON(api.Backend, w, r, SearchStatistic{SearchStatisticData: stats, Status: 0, IsTerminated: job.IsTerminated()})
 }
 
 /*
@@ -371,7 +371,7 @@ func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 
 	result := api.ExploreHelper(fileType, limit, offset, []byte{}, false)
 
-	EncodeJSON(api.backend, w, r, result)
+	EncodeJSON(api.Backend, w, r, result)
 }
 
 /*
@@ -398,12 +398,12 @@ func (api *WebapiInstance) apiExploreNodeID(w http.ResponseWriter, r *http.Reque
 
 	result := api.ExploreHelper(fileType, limit, offset, NodeId, true)
 
-	EncodeJSON(api.backend, w, r, result)
+	EncodeJSON(api.Backend, w, r, result)
 }
 
 // ExploreHelper Helper function for the explore route with the possibility search based on a node ID
 func (api *WebapiInstance) ExploreHelper(fileType int, limit, offset int, nodeID []byte, nodeIDState bool) *SearchResult {
-	resultFiles := api.queryRecentShared(api.backend, fileType, uint64(limit*20/100), uint64(offset), uint64(limit), nodeID, nodeIDState)
+	resultFiles := api.queryRecentShared(api.Backend, fileType, uint64(limit*20/100), uint64(offset), uint64(limit), nodeID, nodeIDState)
 
 	var result SearchResult
 	result.Files = []apiFile{}
