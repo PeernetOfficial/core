@@ -22,7 +22,7 @@ import (
 )
 
 type WebapiInstance struct {
-	backend         *core.Backend
+	Backend         *core.Backend
 	geoipCityReader *geoip2.CityReader
 
 	// Router can be used to register additional API functions
@@ -57,7 +57,7 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 	}
 
 	api = &WebapiInstance{
-		backend:         Backend,
+		Backend:         Backend,
 		Router:          mux.NewRouter(),
 		AllowKeyInParam: []string{"/file/read", "/file/view"},
 		allJobs:         make(map[uuid.UUID]*SearchJob),
@@ -170,7 +170,7 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, data interface{}) (err e
 
 // authenticateMiddleware returns a middleware function to be used with mux.Router.Use(). It handles all authentication functionality.
 func (api *WebapiInstance) authenticateMiddleware(APIKey uuid.UUID) func(http.Handler) http.Handler {
-	return (func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			keyID, err := uuid.Parse(r.Header.Get("x-api-key"))
 			if err != nil { // special case for some paths
@@ -194,5 +194,5 @@ func (api *WebapiInstance) authenticateMiddleware(APIKey uuid.UUID) func(http.Ha
 
 			next.ServeHTTP(w, r)
 		})
-	})
+	}
 }

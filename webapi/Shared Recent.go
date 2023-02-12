@@ -25,10 +25,10 @@ func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int
 	// check if the NodeID is provided or not
 	if len(nodeID) == 0 && !nodeIDState {
 		// Use the peer list to know about active peers. Random order!
-		peerList = api.backend.PeerlistGet()
+		peerList = api.Backend.PeerlistGet()
 	} else {
 		// Get peer information based on the NodeID provided
-		_, peer, err := api.backend.FindNode(nodeID, time.Second*5)
+		_, peer, err := api.Backend.FindNode(nodeID, time.Second*5)
 		if err != nil {
 			return
 		}
