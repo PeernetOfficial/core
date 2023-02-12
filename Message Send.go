@@ -90,12 +90,12 @@ func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd *btce
 	// self-reported ports are not set, as this isn't sent via a specific network but a relay
 	//packet.SetSelfReportedPorts(c.Network.SelfReportedPorts())
 
-	embeddedPacketRaw, err := protocol.PacketEncrypt(peer.Backend.peerPrivateKey, receiverEnd, packet)
+	embeddedPacketRaw, err := protocol.PacketEncrypt(peer.Backend.PeerPrivateKey, receiverEnd, packet)
 	if err != nil {
 		return err
 	}
 
-	packetRaw, err := protocol.EncodeTraverse(peer.Backend.peerPrivateKey, embeddedPacketRaw, receiverEnd, peer.PublicKey)
+	packetRaw, err := protocol.EncodeTraverse(peer.Backend.PeerPrivateKey, embeddedPacketRaw, receiverEnd, peer.PublicKey)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func (peer *PeerInfo) sendTransfer(data []byte, control, transferProtocol uint8,
 		return peer.sendLite(raw)
 	}
 
-	packetRaw, err := protocol.EncodeTransfer(peer.Backend.peerPrivateKey, data, control, transferProtocol, hash, offset, limit, transferID)
+	packetRaw, err := protocol.EncodeTransfer(peer.Backend.PeerPrivateKey, data, control, transferProtocol, hash, offset, limit, transferID)
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func (peer *PeerInfo) sendGetBlock(data []byte, control uint8, blockchainPublicK
 		return peer.sendLite(raw)
 	}
 
-	packetRaw, err := protocol.EncodeGetBlock(peer.Backend.peerPrivateKey, data, control, blockchainPublicKey, limitBlockCount, maxBlockSize, targetBlocks, transferID)
+	packetRaw, err := protocol.EncodeGetBlock(peer.Backend.PeerPrivateKey, data, control, blockchainPublicKey, limitBlockCount, maxBlockSize, targetBlocks, transferID)
 	if err != nil {
 		return err
 	}

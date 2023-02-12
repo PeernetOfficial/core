@@ -56,7 +56,7 @@ loopSeedList:
 			continue
 		}
 
-		if peer.publicKey.IsEqual(backend.peerPublicKey) { // skip if self
+		if peer.publicKey.IsEqual(backend.PeerPublicKey) { // skip if self
 			continue
 		}
 
@@ -287,7 +287,7 @@ func (backend *Backend) isReturnedPeerBadQuality(record *protocol.PeerRecord) bo
 	}
 
 	// Must not be self. There is no point that a remote peer would return self
-	if record.PublicKey.IsEqual(backend.peerPublicKey) {
+	if record.PublicKey.IsEqual(backend.PeerPublicKey) {
 		//fmt.Printf("IsReturnedPeerBadQuality received self peer\n")
 		return true
 	}

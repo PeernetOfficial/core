@@ -101,8 +101,8 @@ type Backend struct {
 	nodesDHT              *dht.DHT                 // Nodes connected in the DHT.
 
 	// peerID is the current peer's ID. It is a ECDSA (secp256k1) 257-bit public key.
-	peerPrivateKey *btcec.PrivateKey
-	peerPublicKey  *btcec.PublicKey
+	PeerPrivateKey *btcec.PrivateKey
+	PeerPublicKey  *btcec.PublicKey
 
 	// The node ID is the blake3 hash of the public key compressed form.
 	nodeID []byte

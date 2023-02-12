@@ -80,10 +80,10 @@ apiSearch submits a search request
 
 Request:    POST /search with JSON SearchRequest
 Result:     200 on success with JSON SearchRequestResponse
-            400 on invalid JSON
+
+	400 on invalid JSON
 */
 func (api *WebapiInstance) apiSearch(w http.ResponseWriter, r *http.Request) {
-
     var input SearchRequest
     if err := DecodeJSON(w, r, &input); err != nil {
         return
@@ -115,14 +115,16 @@ If reset is set, all results will be filtered and sorted according to the settin
 
 Request:    GET /search/result?id=[UUID]&limit=[max records]
 Optional parameters:
-			&reset=[0|1] to reset the filters or sort orders with any of the below parameters (all required):
-			&filetype=[File Type]
-			&fileformat=[File Format]
-			&from=[Date From]&to=[Date To]
-			&sizemin=[Minimum file size]
-			&sizemax=[Maximum file size]
-			&sort=[sort order]
-			&offset=[absolute offset] with &limit=[records] to get items pagination style. Returned items (and ones before) are automatically frozen.
+
+	&reset=[0|1] to reset the filters or sort orders with any of the below parameters (all required):
+	&filetype=[File Type]
+	&fileformat=[File Format]
+	&from=[Date From]&to=[Date To]
+	&sizemin=[Minimum file size]
+	&sizemax=[Maximum file size]
+	&sort=[sort order]
+	&offset=[absolute offset] with &limit=[records] to get items pagination style. Returned items (and ones before) are automatically frozen.
+
 Result:     200 with JSON structure SearchResult. Check the field status.
 */
 func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +211,8 @@ apiSearchResultStream provides a websocket to receive results as stream.
 
 Request:    GET /search/result/ws?id=[UUID]&limit=[optional max records]
 Result:     If successful, upgrades to a websocket and sends JSON structure SearchResult messages.
-            Limit is optional. Not used if ommitted or 0.
+
+	Limit is optional. Not used if ommitted or 0.
 */
 func (api *WebapiInstance) apiSearchResultStream(w http.ResponseWriter, r *http.Request) {
     r.ParseForm()
@@ -293,8 +296,9 @@ apiSearchTerminate terminates a search
 
 Request:    GET /search/terminate?id=[UUID]
 Response:   204 Empty
-            400 Invalid input
-            404 ID not found
+
+	400 Invalid input
+	404 ID not found
 */
 func (api *WebapiInstance) apiSearchTerminate(w http.ResponseWriter, r *http.Request) {
 

@@ -18,7 +18,7 @@ import (
 // If it is corrupted, it will log the error and exit the process.
 func (backend *Backend) initUserBlockchain() {
 	var err error
-	backend.UserBlockchain, err = blockchain.Init(backend.peerPrivateKey, backend.Config.BlockchainMain)
+	backend.UserBlockchain, err = blockchain.Init(backend.PeerPrivateKey, backend.Config.BlockchainMain)
 
 	if err != nil {
 		backend.LogError("initUserBlockchain", "error: %s\n", err.Error())
@@ -32,7 +32,7 @@ func (backend *Backend) userBlockchainUpdateSearchIndex() {
 
 		if newVersion != oldVersion || newHeight < oldHeight {
 			// invalidate search index data for the user's blockchain
-			backend.SearchIndex.UnindexBlockchain(backend.peerPublicKey)
+			backend.SearchIndex.UnindexBlockchain(backend.PeerPublicKey)
 
 			// reindex everything
 			for blockN := uint64(0); blockN < newHeight; blockN++ {
@@ -41,7 +41,7 @@ func (backend *Backend) userBlockchainUpdateSearchIndex() {
 					continue
 				}
 
-				backend.SearchIndex.IndexNewBlock(backend.peerPublicKey, newVersion, blockN, raw)
+				backend.SearchIndex.IndexNewBlock(backend.PeerPublicKey, newVersion, blockN, raw)
 			}
 
 			return
@@ -55,7 +55,7 @@ func (backend *Backend) userBlockchainUpdateSearchIndex() {
 					continue
 				}
 
-				backend.SearchIndex.IndexNewBlock(backend.peerPublicKey, newVersion, blockN, raw)
+				backend.SearchIndex.IndexNewBlock(backend.PeerPublicKey, newVersion, blockN, raw)
 			}
 		}
 	}
@@ -64,7 +64,7 @@ func (backend *Backend) userBlockchainUpdateSearchIndex() {
 // ReadBlock reads a block and decodes the records. This may be a block of the user's blockchain, or any other that is cached in the global blockchain cache.
 func (backend *Backend) ReadBlock(PublicKey *btcec.PublicKey, Version, BlockNumber uint64) (decoded *blockchain.BlockDecoded, raw []byte, found bool, err error) {
 	// requesting a block from the user's blockchain?
-	if PublicKey.IsEqual(backend.peerPublicKey) {
+	if PublicKey.IsEqual(backend.PeerPublicKey) {
 		_, _, version := backend.UserBlockchain.Header()
 		if Version != version {
 			return nil, nil, false, nil

@@ -33,7 +33,7 @@ Request:    GET /status
 Result:     200 with JSON structure Status
 */
 func (api *WebapiInstance) apiStatus(w http.ResponseWriter, r *http.Request) {
-	status := apiResponseStatus{Status: 0, CountPeerList: api.backend.PeerlistCount()}
+	status := apiResponseStatus{Status: 0, CountPeerList: api.Backend.PeerlistCount()}
 	status.CountNetwork = status.CountPeerList // For now always same as CountPeerList, until native Statistics message to root peers is available.
 
 	// Connected: If at leat 2 peers.
@@ -41,7 +41,7 @@ func (api *WebapiInstance) apiStatus(w http.ResponseWriter, r *http.Request) {
 	// Instead, the core should keep a count of "active peers".
 	status.IsConnected = status.CountPeerList >= 2
 
-	EncodeJSON(api.backend, w, r, status)
+	EncodeJSON(api.Backend, w, r, status)
 }
 
 type apiResponsePeerSelf struct {
@@ -56,12 +56,12 @@ Result:     200 with JSON structure apiResponsePeerSelf
 */
 func (api *WebapiInstance) apiAccountInfo(w http.ResponseWriter, r *http.Request) {
 	response := apiResponsePeerSelf{}
-	response.NodeID = hex.EncodeToString(api.backend.SelfNodeID())
+	response.NodeID = hex.EncodeToString(api.Backend.SelfNodeID())
 
-	_, publicKey := api.backend.ExportPrivateKey()
+	_, publicKey := api.Backend.ExportPrivateKey()
 	response.PeerID = hex.EncodeToString(publicKey.SerializeCompressed())
 
-	EncodeJSON(api.backend, w, r, response)
+	EncodeJSON(api.Backend, w, r, response)
 }
 
 /*
@@ -78,7 +78,7 @@ func (api *WebapiInstance) apiAccountDelete(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	api.backend.DeleteAccount()
+	api.Backend.DeleteAccount()
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -95,7 +95,7 @@ func (api *WebapiInstance) apiStatusPeers(w http.ResponseWriter, r *http.Request
 	var peers []apiResponsePeerInfo
 
 	// query all nodes
-	for _, peer := range api.backend.PeerlistGet() {
+	for _, peer := range api.Backend.PeerlistGet() {
 		peerInfo := apiResponsePeerInfo{
 			PeerID:            peer.PublicKey.SerializeCompressed(),
 			NodeID:            peer.NodeID,
@@ -112,7 +112,7 @@ func (api *WebapiInstance) apiStatusPeers(w http.ResponseWriter, r *http.Request
 		peers = append(peers, peerInfo)
 	}
 
-	EncodeJSON(api.backend, w, r, peers)
+	EncodeJSON(api.Backend, w, r, peers)
 }
 
 type apiResponsePeerInfo struct {

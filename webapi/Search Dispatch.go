@@ -32,18 +32,18 @@ func (api *WebapiInstance) dispatchSearch(input SearchRequest) (job *SearchJob) 
 }
 
 func (job *SearchJob) localSearch(api *WebapiInstance, term string) {
-	if api.backend.SearchIndex == nil {
+	if api.Backend.SearchIndex == nil {
 		job.Status = SearchStatusNoIndex
 		return
 	}
 
-	results := api.backend.SearchIndex.Search(term)
+	results := api.Backend.SearchIndex.Search(term)
 
 	job.ResultSync.Lock()
 
 resultLoop:
 	for _, result := range results {
-		file, _, found, err := api.backend.ReadFile(result.PublicKey, result.BlockchainVersion, result.BlockNumber, result.FileID)
+		file, _, found, err := api.Backend.ReadFile(result.PublicKey, result.BlockchainVersion, result.BlockNumber, result.FileID)
 		if err != nil || !found {
 			continue
 		}
@@ -55,10 +55,10 @@ resultLoop:
 			}
 		}
 
-		if bytes.Equal(file.NodeID, api.backend.SelfNodeID()) {
+		if bytes.Equal(file.NodeID, api.Backend.SelfNodeID()) {
 			// Indicates data from the current user.
 			file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
-		} else if peer := api.backend.NodelistLookup(file.NodeID); peer != nil {
+		} else if peer := api.Backend.NodelistLookup(file.NodeID); peer != nil {
 			// add the tags 'Shared By Count' and 'Shared By GeoIP'
 			file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
 			if latitude, longitude, valid := api.Peer2GeoIP(peer); valid {
