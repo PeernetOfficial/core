@@ -457,6 +457,19 @@ Request:    POST /blockchain/file/update with JSON structure apiBlockAddFiles
 Response:   200 with JSON structure apiBlockchainBlockStatus
 ```
 
+### List Recent files based on the Node ID
+
+This returns recently shared files in Peernet. Results are returned in real-time. The file type is an optional filter.
+
+```
+Request:    GET /blockchain/view?node=[node ID]&limit=[max records]&type=[file type]&offset=[offset]
+Result:     200 with JSON structure SearchResult. Check the field status.
+```
+
+Example request to list 20 recently shared files (all file types): `http://127.0.0.1:112/blockchain/view?node=[node ID]&limit=20`
+
+Example request to list 10 recent documents: `http://127.0.0.1:112/blockchain/view?node=[node ID]&type=5&limit=10`
+
 ## Profile Functions
 
 User profile data such as the username, email address, and picture are stored on the blockchain. Profile fields are text (UTF-8) or binary encoded, depending on the type.
