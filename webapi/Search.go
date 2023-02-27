@@ -374,33 +374,6 @@ func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 	EncodeJSON(api.Backend, w, r, result)
 }
 
-/*
-apiExploreNodeID returns the shared files of a particular node in Peernet. Results are returned in real-time. The file type is an optional filter. See TypeX.
-Special type -2 = Binary, Compressed, Container, Executable. This special type includes everything except Documents, Video, Audio, Ebooks, Picture, Text.
-
-Request:    GET /explore/node?limit=[max records]&type=[file type]&offset=[offset]&NodeID=[node id]
-Result:     200 with JSON structure SearchResult. Check the field status.
-*/
-func (api *WebapiInstance) apiExploreNodeID(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	offset, _ := strconv.Atoi(r.Form.Get("offset"))
-	limit, err := strconv.Atoi(r.Form.Get("limit"))
-	if err != nil {
-		limit = 100
-	}
-	// ID fields for results for a specific node ID.
-	NodeId, _ := DecodeBlake3Hash(r.Form.Get("NodeID"))
-
-	fileType, err := strconv.Atoi(r.Form.Get("type"))
-	if err != nil {
-		fileType = -1
-	}
-
-	result := api.ExploreHelper(fileType, limit, offset, NodeId, true)
-
-	EncodeJSON(api.Backend, w, r, result)
-}
-
 // ExploreHelper Helper function for the explore route with the possibility search based on a node ID
 func (api *WebapiInstance) ExploreHelper(fileType int, limit, offset int, nodeID []byte, nodeIDState bool) *SearchResult {
 	resultFiles := api.queryRecentShared(api.Backend, fileType, uint64(limit*20/100), uint64(offset), uint64(limit), nodeID, nodeIDState)

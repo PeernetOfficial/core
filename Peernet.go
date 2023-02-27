@@ -107,11 +107,11 @@ type Backend struct {
 	// The node ID is the blake3 hash of the public key compressed form.
 	nodeID []byte
 
-	// peerList keeps track of all peers
-	peerList      map[[btcec.PubKeyBytesLenCompressed]byte]*PeerInfo
+	// PeerList keeps track of all peers
+	PeerList      map[[btcec.PubKeyBytesLenCompressed]byte]*PeerInfo
 	peerlistMutex sync.RWMutex
 
-	// nodeList is a mirror of peerList but using the node ID
+	// nodeList is a mirror of PeerList but using the node ID
 	nodeList map[[protocol.HashSize]byte]*PeerInfo
 
 	// peerMonitor is a list of channels receiving information about new peers

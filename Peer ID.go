@@ -21,7 +21,7 @@ import (
 )
 
 func (backend *Backend) initPeerID() {
-	backend.peerList = make(map[[btcec.PubKeyBytesLenCompressed]byte]*PeerInfo)
+	backend.PeerList = make(map[[btcec.PubKeyBytesLenCompressed]byte]*PeerInfo)
 	backend.nodeList = make(map[[protocol.HashSize]byte]*PeerInfo)
 
 	// load existing key from config, if available
@@ -123,7 +123,7 @@ func (backend *Backend) PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*
 	backend.peerlistMutex.Lock()
 	defer backend.peerlistMutex.Unlock()
 
-	peer, ok := backend.peerList[publicKeyCompressed]
+	peer, ok := backend.PeerList[publicKeyCompressed]
 	if ok {
 		return peer, false
 	}
@@ -131,7 +131,7 @@ func (backend *Backend) PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*
 	peer = &PeerInfo{Backend: backend, PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], NodeID: protocol.PublicKey2NodeID(PublicKey), messageSequence: rand.Uint32()}
 	_, peer.IsRootPeer = rootPeers[publicKeyCompressed]
 
-	backend.peerList[publicKeyCompressed] = peer
+	backend.PeerList[publicKeyCompressed] = peer
 
 	// also add to mirrored nodeList
 	var nodeID [protocol.HashSize]byte
@@ -141,7 +141,7 @@ func (backend *Backend) PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*
 	// add to Kademlia
 	backend.nodesDHT.AddNode(&dht.Node{ID: peer.NodeID, Info: peer})
 
-	// TODO: If the node isn't added to Kademlia, it should be either added temporarily to the peerList with an expiration, or to a temp list, or not at all.
+	// TODO: If the node isn't added to Kademlia, it should be either added temporarily to the PeerList with an expiration, or to a temp list, or not at all.
 
 	// send to all channels non-blocking
 	for _, monitor := range backend.peerMonitor {
@@ -165,7 +165,7 @@ func (backend *Backend) PeerlistRemove(peer *PeerInfo) {
 	// remove from Kademlia
 	backend.nodesDHT.RemoveNode(peer.NodeID)
 
-	delete(backend.peerList, publicKey2Compressed(peer.PublicKey))
+	delete(backend.PeerList, publicKey2Compressed(peer.PublicKey))
 
 	var nodeID [protocol.HashSize]byte
 	copy(nodeID[:], peer.NodeID)
@@ -178,7 +178,7 @@ func (backend *Backend) PeerlistGet() (peers []*PeerInfo) {
 	backend.peerlistMutex.RLock()
 	defer backend.peerlistMutex.RUnlock()
 
-	for _, peer := range backend.peerList {
+	for _, peer := range backend.PeerList {
 		peers = append(peers, peer)
 	}
 
@@ -190,7 +190,7 @@ func (backend *Backend) PeerlistLookup(publicKey *btcec.PublicKey) (peer *PeerIn
 	backend.peerlistMutex.RLock()
 	defer backend.peerlistMutex.RUnlock()
 
-	return backend.peerList[publicKey2Compressed(publicKey)]
+	return backend.PeerList[publicKey2Compressed(publicKey)]
 }
 
 // NodelistLookup returns the peer from the list with the node ID
@@ -209,7 +209,7 @@ func (backend *Backend) PeerlistCount() (count int) {
 	backend.peerlistMutex.RLock()
 	defer backend.peerlistMutex.RUnlock()
 
-	return len(backend.peerList)
+	return len(backend.PeerList)
 }
 
 func publicKey2Compressed(publicKey *btcec.PublicKey) [btcec.PubKeyBytesLenCompressed]byte {
