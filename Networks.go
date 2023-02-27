@@ -49,7 +49,7 @@ type Networks struct {
 	backend *Backend
 }
 
-//  ReplyTimeout is the round-trip timeout for message sequences.
+// ReplyTimeout is the round-trip timeout for message sequences.
 const ReplyTimeout = 20
 
 func (backend *Backend) initMessageSequence() {
