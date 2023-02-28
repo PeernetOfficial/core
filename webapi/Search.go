@@ -374,7 +374,7 @@ func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 	EncodeJSON(api.Backend, w, r, result)
 }
 
-// ExploreHelper Helper function for the explore route with the possibility search based on a node ID
+// ExploreHelper Helper function http://localhost:8078 or the explore route with the possibility search based on a node ID
 func (api *WebapiInstance) ExploreHelper(fileType int, limit, offset int, nodeID []byte, nodeIDState bool) *SearchResult {
 	resultFiles := api.queryRecentShared(api.Backend, fileType, uint64(limit*20/100), uint64(offset), uint64(limit), nodeID, nodeIDState)
 
