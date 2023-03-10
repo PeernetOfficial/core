@@ -7,9 +7,10 @@ Author:     Peter Kleissner
 package webapi
 
 import (
-    "encoding/hex"
-    "net/http"
-    "strconv"
+	"bytes"
+	"encoding/hex"
+	"net/http"
+	"strconv"
 
     "github.com/PeernetOfficial/core/blockchain"
 )
@@ -146,4 +147,39 @@ func (api *WebapiInstance) apiExploreNodeID(w http.ResponseWriter, r *http.Reque
     result := api.ExploreHelper(fileType, limit, offset, NodeId, true)
 
     EncodeJSON(api.Backend, w, r, result)
+}
+
+/*
+apiExploreNodeID returns the shared files of a particular node in Peernet. Results are returned in real-time. The file type is an optional filter. See TypeX.
+Special type -2 = Binary, Compressed, Container, Executable. This special type includes everything except Documents, Video, Audio, Ebooks, Picture, Text.
+
+Request:    GET /blockchain/view?limit=[max records]&type=[file type]&offset=[offset]&node=[node id]
+Result:     200 with JSON structure SearchResult. Check the field status.
+*/
+func (api *WebapiInstance) apiExploreNodeID(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	offset, _ := strconv.Atoi(r.Form.Get("offset"))
+	limit, err := strconv.Atoi(r.Form.Get("limit"))
+	if err != nil {
+		limit = 100
+	}
+	// ID fields for results for a specific node ID.
+	NodeId, _ := DecodeBlake3Hash(r.Form.Get("node"))
+
+	fileType, err := strconv.Atoi(r.Form.Get("type"))
+	if err != nil {
+		fileType = -1
+	}
+
+	// check if the node IDs are the same
+	if bytes.Compare(NodeId, api.Backend.SelfNodeID()) == 0 {
+		// setting the value of block to 0
+		r.Form.Add("block", "0")
+		api.apiBlockchainRead(w, r)
+		return
+	}
+
+	result := api.ExploreHelper(fileType, limit, offset, NodeId, true)
+
+	EncodeJSON(api.Backend, w, r, result)
 }
