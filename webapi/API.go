@@ -81,6 +81,7 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 	api.Router.HandleFunc("/blockchain/file/delete", api.apiBlockchainFileDelete).Methods("POST")
 	api.Router.HandleFunc("/blockchain/file/update", api.apiBlockchainFileUpdate).Methods("POST")
 	api.Router.HandleFunc("/blockchain/view", api.apiExploreNodeID).Methods("GET")
+	api.Router.HandleFunc("/merge/directory", api.apiMergeDirectory).Methods("GET")
 	api.Router.HandleFunc("/profile/list", api.apiProfileList).Methods("GET")
 	api.Router.HandleFunc("/profile/read", api.apiProfileRead).Methods("GET")
 	api.Router.HandleFunc("/profile/write", api.apiProfileWrite).Methods("POST")
