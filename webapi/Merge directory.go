@@ -23,7 +23,7 @@ func (api *WebapiInstance) apiMergeDirectory(w http.ResponseWriter, r *http.Requ
 		limit = 100
 	}
 	// ID fields for results for a specific node ID.
-	NodeId, _ := DecodeBlake3Hash(r.Form.Get("node"))
+	//NodeId, _ := DecodeBlake3Hash(r.Form.Get("node"))
 	hash, _ := DecodeBlake3Hash(r.Form.Get("hash"))
 
 	fileType, err := strconv.Atoi(r.Form.Get("type"))
@@ -31,14 +31,14 @@ func (api *WebapiInstance) apiMergeDirectory(w http.ResponseWriter, r *http.Requ
 		fileType = -1
 	}
 
-	result := api.ExploreFileSharedByNodeThatSharedSimilarFile(fileType, limit, offset, NodeId, hash, true)
+	result := api.ExploreFileSharedByNodeThatSharedSimilarFile(fileType, limit, offset, hash, true)
 
 	EncodeJSON(api.Backend, w, r, result)
 }
 
 // ExploreFileSharedByNodeThatSharedSimilarFile lists files shared by a nodes which share the same file as a common point
 // Currently this is a greedy search and requires work for optimization
-func (api *WebapiInstance) ExploreFileSharedByNodeThatSharedSimilarFile(fileType int, limit, offset int, nodeID []byte, hash []byte, nodeIDState bool) *SearchResultMergedDirectory {
+func (api *WebapiInstance) ExploreFileSharedByNodeThatSharedSimilarFile(fileType int, limit, offset int, hash []byte, nodeIDState bool) *SearchResultMergedDirectory {
 	// lookup all NodeID blockchains which have the similar hash
 	// do a search to get all the node IDs sharing the particular file
 	NodeIDs, _ := api.Backend.SearchIndex.SearchNodeIDBasedOnHash(hash)
