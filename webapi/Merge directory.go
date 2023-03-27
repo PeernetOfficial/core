@@ -1,6 +1,9 @@
 package webapi
 
 import (
+	"bytes"
+	"fmt"
+	"github.com/PeernetOfficial/core/blockchain"
 	"net/http"
 	"strconv"
 )
@@ -38,7 +41,10 @@ func (api *WebapiInstance) apiMergeDirectory(w http.ResponseWriter, r *http.Requ
 func (api *WebapiInstance) ExploreFileSharedByNodeThatSharedSimilarFile(fileType int, limit, offset int, nodeID []byte, hash []byte, nodeIDState bool) *SearchResultMergedDirectory {
 	// lookup all NodeID blockchains which have the similar hash
 	// do a search to get all the node IDs sharing the particular file
-	NodeIDs, _ := api.Backend.SearchIndex.SearchNodeIDBasedOnHash(nodeID)
+	NodeIDs, _ := api.Backend.SearchIndex.SearchNodeIDBasedOnHash(hash)
+
+	// Does a greedy search to find node serving similar files
+	api.GreedySearchMergeDirection(&NodeIDs, fileType, hash)
 
 	var result SearchResultMergedDirectory
 
@@ -51,7 +57,6 @@ func (api *WebapiInstance) ExploreFileSharedByNodeThatSharedSimilarFile(fileType
 		for n := range resultFiles {
 			ApiFile = append(ApiFile, blockRecordFileToAPI(resultFiles[n]))
 		}
-
 		result.Files = append(result.Files, ApiFile)
 
 	}
@@ -59,4 +64,66 @@ func (api *WebapiInstance) ExploreFileSharedByNodeThatSharedSimilarFile(fileType
 	result.Status = 1 // No more results to expect
 
 	return &result
+}
+
+// GreedySearchMergeDirection This function is implemented since the local index tables do not
+// always consist of the required hashes of the NodeIDs.
+func (api *WebapiInstance) GreedySearchMergeDirection(nodeID *[][]byte, fileType int, hash []byte) {
+
+	// get all NodeIDs
+	peerList := api.Backend.PeerlistGet()
+
+	var tags []blockchain.BlockRecordFileTag
+
+	// search with AllNodes which have a match of the NodeID.
+	for _, peer := range peerList {
+		if peer.BlockchainHeight == 0 {
+			continue
+		}
+
+		var filesFromPeer uint64
+
+		// decode blocks from top down
+		for blockN := peer.BlockchainHeight - 1; blockN > 0; blockN-- {
+			blockDecoded, _, found, _ := api.Backend.ReadBlock(peer.PublicKey, peer.BlockchainVersion, blockN)
+			if !found {
+				continue
+			}
+
+			for _, record := range blockDecoded.RecordsDecoded {
+				if file, ok := record.(blockchain.BlockRecordFile); ok && isFileTypeMatchBlock(&file, fileType) {
+					// add the tags 'Shared By Count' and 'Shared By GeoIP'
+					file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
+					if latitude, longitude, valid := api.Peer2GeoIP(peer); valid {
+						sharedByGeoIP := fmt.Sprintf("%.4f", latitude) + "," + fmt.Sprintf("%.4f", longitude)
+						file.Tags = append(file.Tags, blockchain.TagFromText(blockchain.TagSharedByGeoIP, sharedByGeoIP))
+					}
+
+					// found a new file! append.
+					filesFromPeer++
+
+					// if both the hashes match
+					if bytes.Equal(file.Hash, hash) {
+						// set the Tags needed for the filter parameter
+						tags = file.Tags
+					}
+
+					for _, tag := range file.Tags {
+						// checks if any of tags from
+						// the NodeID provided matches
+						// Requires better search parameters
+						// So that it's more narrow
+						for i := range tags {
+							if tag.Text() == tags[i].Text() {
+								*nodeID = append(*nodeID, file.NodeID)
+								break
+							}
+						}
+					}
+				}
+			}
+
+		}
+	}
+
 }
