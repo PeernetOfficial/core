@@ -11,10 +11,25 @@ import (
 // SearchResultMergedDirectory contains results for the merged directory.
 type SearchResultMergedDirectory struct {
 	Status    int         `json:"status"`    // Status: 0 = Success with results, 1 = No more results available, 2 = Search ID not found, 3 = No results yet available keep trying
-	Files     [][]apiFile `json:"files"`     // List of files found
+	Files     []apiFile   `json:"files"`     // List of files found
 	Statistic interface{} `json:"statistic"` // Statistics of all results (independent from applied filters), if requested. Only set if files are returned (= if statistics changed). See SearchStatisticData.
 }
 
+/*
+apiMergeDirectory Shows the recent files of peers that shared
+the same file as the one provided in the GET request.
+Currently searches through Memory for Nodes currently
+identified in the network and then checks if the files
+they shared match with the hash that is provided
+in the search parameter and the queries the recent
+file that node shared and then returns that result
+back.
+
+Request:    GET /merge/directory with JSON structure apiMergeDirectory
+Response:   200 with JSON structure SearchResultMergedDirectory
+
+	400 if invalid input
+*/
 func (api *WebapiInstance) apiMergeDirectory(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	offset, _ := strconv.Atoi(r.Form.Get("offset"))
@@ -41,7 +56,8 @@ func (api *WebapiInstance) apiMergeDirectory(w http.ResponseWriter, r *http.Requ
 func (api *WebapiInstance) ExploreFileSharedByNodeThatSharedSimilarFile(fileType int, limit, offset int, hash []byte, nodeIDState bool) *SearchResultMergedDirectory {
 	// lookup all NodeID blockchains which have the similar hash
 	// do a search to get all the node IDs sharing the particular file
-	NodeIDs, _ := api.Backend.SearchIndex.SearchNodeIDBasedOnHash(hash)
+	var NodeIDs [][]byte
+	NodeIDs, _ = api.Backend.SearchIndex.SearchNodeIDBasedOnHash(hash)
 
 	// Does a greedy search to find node serving similar files
 	api.GreedySearchMergeDirection(&NodeIDs, fileType, hash)
@@ -51,13 +67,10 @@ func (api *WebapiInstance) ExploreFileSharedByNodeThatSharedSimilarFile(fileType
 	for i := range NodeIDs {
 		resultFiles := api.queryRecentShared(api.Backend, fileType, uint64(limit*20/100), uint64(offset), uint64(limit), NodeIDs[i], nodeIDState)
 
-		var ApiFile []apiFile
-
 		// loop over results
 		for n := range resultFiles {
-			ApiFile = append(ApiFile, blockRecordFileToAPI(resultFiles[n]))
+			result.Files = append(result.Files, blockRecordFileToAPI(resultFiles[n]))
 		}
-		result.Files = append(result.Files, ApiFile)
 
 	}
 
@@ -73,7 +86,7 @@ func (api *WebapiInstance) GreedySearchMergeDirection(nodeID *[][]byte, fileType
 	// get all NodeIDs
 	peerList := api.Backend.PeerlistGet()
 
-	var tags []blockchain.BlockRecordFileTag
+	//var tags []blockchain.BlockRecordFileTag
 
 	// search with AllNodes which have a match of the NodeID.
 	for _, peer := range peerList {
@@ -105,21 +118,22 @@ func (api *WebapiInstance) GreedySearchMergeDirection(nodeID *[][]byte, fileType
 					// if both the hashes match
 					if bytes.Equal(file.Hash, hash) {
 						// set the Tags needed for the filter parameter
-						tags = file.Tags
+						//tags = file.Tags
+						*nodeID = append(*nodeID, file.NodeID)
 					}
 
-					for _, tag := range file.Tags {
-						// checks if any of tags from
-						// the NodeID provided matches
-						// Requires better search parameters
-						// So that it's more narrow
-						for i := range tags {
-							if tag.Text() == tags[i].Text() {
-								*nodeID = append(*nodeID, file.NodeID)
-								break
-							}
-						}
-					}
+					//for _, tag := range file.Tags {
+					//	// checks if any of tags from
+					//	// the NodeID provided matches
+					//	// Requires better search parameters
+					//	// So that it's more narrow
+					//	for i := range tags {
+					//		if tag.Text() == tags[i].Text() {
+					//			*nodeID = append(*nodeID, file.NodeID)
+					//			break
+					//		}
+					//	}
+					//}
 				}
 			}
 
