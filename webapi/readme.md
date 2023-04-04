@@ -72,6 +72,9 @@ These are the functions provided by the API:
 /warehouse/read                 Read a file in the warehouse
 /warehouse/read/path            Read a file in the warehouse to disk
 /warehouse/delete               Delete a file in the warehouse
+
+/merge/directory                List all recent files shared by peers based 
+                                on the similar file shared
 ```
 
 # API Documentation
@@ -1099,3 +1102,30 @@ Response:   200 with JSON structure WarehouseResult
 ```
 
 Example request: `http://127.0.0.1:112/warehouse/delete?hash=dbf344f23e7820261329883ae26f64929a7c9977549001d28dc40c9202d7651e`
+
+### Merge Directory
+Shows the recent files of peers that shared
+the same file as the one provided in the GET request.
+Currently searches through Memory for Nodes currently 
+identified in the network and then checks if the files 
+they shared match with the hash that is provided 
+in the search parameter and the queries the recent 
+file that node shared and then returns that result 
+back.
+
+```
+Request:    GET /merge/directory?hash=[hash]
+Response:   200 with JSON structure SearchResultMergedDirectory
+```
+
+Example request: `http://127.0.0.1:112/merge/directory?hash=dbf344f23e7820261329883ae26f64929a7c9977549001d28dc40c9202d7651e`
+
+```go
+// SearchResultMergedDirectory contains results for the merged directory.
+type SearchResultMergedDirectory struct {
+	Status    int         `json:"status"`    // Status: 0 = Success with results, 1 = No more results available, 2 = Search ID not found, 3 = No results yet available keep trying
+	Files     []apiFile   `json:"files"`     // List of files found
+	Statistic interface{} `json:"statistic"` // Statistics of all results (independent from applied filters), if requested. Only set if files are returned (= if statistics changed). See SearchStatisticData.
+}
+```
+
