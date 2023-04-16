@@ -38,7 +38,7 @@ const (
 
 // CreateFile creates a new file in the warehouse
 // If fileSize is provided, creating the merkle tree is significantly faster as it will be created on the fly. If the file size is unknown, set the size to 0.
-func (wh *Warehouse) CreateFile(data io.Reader, fileSize uint64) (hash []byte, status int, err error) {
+func (wh *Warehouse) CreateFile(data io.Reader, fileSize uint64, uploadStatus io.Writer) (hash []byte, status int, err error) {
 	// create a temporary file to hold the body content
 	tmpFile, err := wh.tempFile()
 	if err != nil {
@@ -55,8 +55,14 @@ func (wh *Warehouse) CreateFile(data io.Reader, fileSize uint64) (hash []byte, s
 	// create the hash-writer
 	hashWriter := blake3.New(hashSize, nil)
 
-	// the multi-writer writes to the temp-file and the hash simultaneously
-	mw := io.MultiWriter(tmpFile, hashWriter)
+	var mw io.Writer
+
+	if uploadStatus != nil {
+		// the multi-writer writes to the temp-file and the hash simultaneously
+		mw = io.MultiWriter(tmpFile, hashWriter, uploadStatus)
+	} else {
+		mw = io.MultiWriter(tmpFile, hashWriter)
+	}
 
 	// copy into the multiwriter
 	if _, err = io.Copy(mw, data); err != nil {
@@ -132,7 +138,7 @@ func (wh *Warehouse) CreateFileFromPath(file string) (hash []byte, status int, e
 	}
 
 	// create the file using the opened file
-	return wh.CreateFile(fileHandle, fileSize)
+	return wh.CreateFile(fileHandle, fileSize, nil)
 }
 
 // ReadFile reads a file from the warehouse and outputs it to the writer

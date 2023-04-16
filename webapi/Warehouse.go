@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package webapi
 
 import (
+	"github.com/google/uuid"
 	"net/http"
 	"strconv"
 
@@ -20,16 +21,52 @@ type WarehouseResult struct {
 }
 
 /*
-apiWarehouseCreateFile creates a file in the warehouse.
+ApiWarehouseCreateFile creates a file in the warehouse.
 
 Request:    POST /warehouse/create with raw data to create as new file
 Response:   200 with JSON structure WarehouseResult
 */
-func (api *WebapiInstance) apiWarehouseCreateFile(w http.ResponseWriter, r *http.Request) {
-	hash, status, err := api.Backend.UserWarehouse.CreateFile(r.Body, 0)
+func (api *WebapiInstance) ApiWarehouseCreateFile(w http.ResponseWriter, r *http.Request) {
+	// changing parameter to take ID as a parameter for upload and file itself
+	ID := r.FormValue("ID")
+	file, handler, err := r.FormFile("File")
+	if err != nil {
+		api.Backend.LogError("warehouse.CreateFile", "error: %v", err)
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+
+	var hash []byte
+	var status int
+
+	if ID != "" {
+		IDUUID, err := uuid.Parse(ID)
+		if err != nil {
+			api.Backend.LogError("warehouse.CreateFile", "error: %v", err)
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
+		info := api.uploadLookup(IDUUID)
+		if info == nil {
+			var newInfo UploadStatus
+			newInfo.ID = IDUUID
+			newInfo.Progress.TotalSize = uint64(handler.Size)
+			api.uploadAdd(&newInfo)
+			hash, status, err = api.Backend.UserWarehouse.CreateFile(file, uint64(handler.Size), &newInfo)
+		} else {
+			info.Progress.TotalSize = uint64(handler.Size)
+			hash, status, err = api.Backend.UserWarehouse.CreateFile(file, uint64(handler.Size), info)
+		}
+
+	} else {
+		// File := r.
+		hash, status, err = api.Backend.UserWarehouse.CreateFile(file, uint64(handler.Size), nil)
+	}
 
 	if err != nil {
 		api.Backend.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
+		http.Error(w, "", http.StatusBadRequest)
+		return
 	}
 
 	EncodeJSON(api.Backend, w, r, WarehouseResult{Status: status, Hash: hash})

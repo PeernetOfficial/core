@@ -36,6 +36,10 @@ type WebapiInstance struct {
 	// download info
 	downloads      map[uuid.UUID]*downloadInfo
 	downloadsMutex sync.RWMutex
+
+	// upload info
+	uploads      map[uuid.UUID]*UploadStatus
+	uploadsMutex sync.RWMutex
 }
 
 // WSUpgrader is used for websocket functionality. It allows all requests.
@@ -62,6 +66,7 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 		AllowKeyInParam: []string{"/file/read", "/file/view"},
 		allJobs:         make(map[uuid.UUID]*SearchJob),
 		downloads:       make(map[uuid.UUID]*downloadInfo),
+		uploads:         make(map[uuid.UUID]*UploadStatus),
 	}
 
 	if APIKey != uuid.Nil {
@@ -96,7 +101,9 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 	api.Router.HandleFunc("/download/start", api.apiDownloadStart).Methods("GET")
 	api.Router.HandleFunc("/download/status", api.apiDownloadStatus).Methods("GET")
 	api.Router.HandleFunc("/download/action", api.apiDownloadAction).Methods("GET")
-	api.Router.HandleFunc("/warehouse/create", api.apiWarehouseCreateFile).Methods("POST")
+	api.Router.HandleFunc("/warehouse/create", api.ApiWarehouseCreateFile).Methods("POST")
+	api.Router.HandleFunc("/warehouse/create/uploadID", api.apiUploadID).Methods("GET")
+	api.Router.HandleFunc("/warehouse/create/track/uploadID", api.apiUploadInfo).Methods("GET")
 	api.Router.HandleFunc("/warehouse/create/path", api.apiWarehouseCreateFilePath).Methods("GET")
 	api.Router.HandleFunc("/warehouse/read", api.apiWarehouseReadFile).Methods("GET")
 	api.Router.HandleFunc("/warehouse/read/path", api.apiWarehouseReadFilePath).Methods("GET")
