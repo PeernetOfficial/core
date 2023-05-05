@@ -72,6 +72,8 @@ func (api *WebapiInstance) ExploreFileSharedByNodeThatSharedSimilarFile(fileType
 			result.Files = append(result.Files, blockRecordFileToAPI(resultFiles[n]))
 		}
 
+		//
+
 	}
 
 	result.Status = 1 // No more results to expect
@@ -85,8 +87,6 @@ func (api *WebapiInstance) GreedySearchMergeDirection(nodeID *[][]byte, fileType
 
 	// get all NodeIDs
 	peerList := api.Backend.PeerlistGet()
-
-	//var tags []blockchain.BlockRecordFileTag
 
 	// search with AllNodes which have a match of the NodeID.
 	for _, peer := range peerList {
@@ -112,28 +112,16 @@ func (api *WebapiInstance) GreedySearchMergeDirection(nodeID *[][]byte, fileType
 						file.Tags = append(file.Tags, blockchain.TagFromText(blockchain.TagSharedByGeoIP, sharedByGeoIP))
 					}
 
-					// found a new file! append.
-					filesFromPeer++
-
 					// if both the hashes match
 					if bytes.Equal(file.Hash, hash) {
 						// set the Tags needed for the filter parameter
 						//tags = file.Tags
+
+						// found a new file! append.
+						filesFromPeer++
+
 						*nodeID = append(*nodeID, file.NodeID)
 					}
-
-					//for _, tag := range file.Tags {
-					//	// checks if any of tags from
-					//	// the NodeID provided matches
-					//	// Requires better search parameters
-					//	// So that it's more narrow
-					//	for i := range tags {
-					//		if tag.Text() == tags[i].Text() {
-					//			*nodeID = append(*nodeID, file.NodeID)
-					//			break
-					//		}
-					//	}
-					//}
 				}
 			}
 

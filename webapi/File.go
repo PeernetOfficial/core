@@ -42,6 +42,7 @@ type apiFile struct {
 	Date        time.Time         `json:"date"`        // Date shared
 	NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file. Read only.
 	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
+	Profile     apiBlockRecordProfile
 }
 
 // --- conversion from core to API data ---
@@ -136,6 +137,7 @@ Response:   200 with JSON structure apiBlockchainBlockStatus
 func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.Request) {
 	var input apiBlockAddFiles
 	if err := DecodeJSON(w, r, &input); err != nil {
+		api.Backend.LogError("blockchain.AddFile", "error: %v", "error decoding JSON")
 		return
 	}
 
@@ -143,6 +145,8 @@ func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.R
 
 	for _, file := range input.Files {
 		if len(file.Hash) != protocol.HashSize {
+			api.Backend.LogError("blockchain.AddFile", "error: %v", "file length is not the same length as "+
+				"the protocol hash size.")
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
@@ -153,6 +157,7 @@ func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.R
 		// Verify that the file exists in the warehouse. Folders are exempt from this check as they are only virtual.
 		if !file.IsVirtualFolder() {
 			if _, err := warehouse.ValidateHash(file.Hash); err != nil {
+				api.Backend.LogError("blockchain.AddFile", "error: %v", err)
 				http.Error(w, "", http.StatusBadRequest)
 				return
 			} else if _, fileSize, status, _ := api.Backend.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
@@ -178,6 +183,9 @@ func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.R
 	}
 
 	newHeight, newVersion, status := api.Backend.UserBlockchain.AddFiles(filesAdd)
+
+	// Temporary log to check the output for warehouse API
+	api.Backend.LogError("blockchain.AddFile", "output %v", apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 
 	EncodeJSON(api.Backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }

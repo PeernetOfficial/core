@@ -94,6 +94,9 @@ func FileTranslateExtension(extension string) (fileType, fileFormat uint16) {
 	case "iso":
 		return core.TypeContainer, core.FormatISO
 
+	case "pnsearch":
+		return core.TypeText, core.FormatPeernetSearch
+
 	default:
 		return core.TypeBinary, core.FormatBinary
 	}

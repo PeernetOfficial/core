@@ -4,12 +4,15 @@ import (
 	"github.com/google/uuid"
 	"math"
 	"net/http"
+	"sync"
 )
 
 type UploadStatus struct {
-	APIStatus    int       `json:"apistatus"`    // Status of the API call. See DownloadResponseX.
-	ID           uuid.UUID `json:"id"`           // Download ID. This can be used to query the latest status and take actions.
-	UploadStatus int       `json:"uploadstatus"` // Status of the download. See DownloadX.
+	APIStatus    int       `json:"apistatus"` // Status of the API call. See DownloadResponseX.
+	ID           uuid.UUID `json:"id"`        // Download ID. This can be used to query the latest status and take actions.
+	sync.RWMutex           // Mutext for changing the status
+
+	UploadStatus int `json:"uploadstatus"` // Status of the download. See DownloadX.
 	Progress     struct {
 		TotalSize    uint64  `json:"totalsize"`    // Total size in bytes.
 		UploadedSize uint64  `json:"uploadedsize"` // Count of bytes download so far.

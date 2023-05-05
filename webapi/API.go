@@ -42,6 +42,13 @@ type WebapiInstance struct {
 	uploadsMutex sync.RWMutex
 }
 
+// API error
+// This follows the same format as the logger
+type errorResponse struct {
+	function string
+	error    string
+}
+
 // WSUpgrader is used for websocket functionality. It allows all requests.
 var WSUpgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
