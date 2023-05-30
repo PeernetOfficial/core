@@ -1,5 +1,5 @@
 /*
-File Name:  Block Record.go
+File Username:  Block Record.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 

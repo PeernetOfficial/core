@@ -1,5 +1,5 @@
 /*
-File Name:  Search Client.go
+File Username:  Search Client.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 

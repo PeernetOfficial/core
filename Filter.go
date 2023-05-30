@@ -1,5 +1,5 @@
 /*
-File Name:  Filter.go
+File Username:  Filter.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 

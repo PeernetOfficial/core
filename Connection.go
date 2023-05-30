@@ -1,5 +1,5 @@
 /*
-File Name:  Connection.go
+File Username:  Connection.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

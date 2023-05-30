@@ -1,5 +1,5 @@
 /*
-File Name:  Ping.go
+File Username:  Ping.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

@@ -1,5 +1,5 @@
 /*
-File Name:  Message Encoding Traverse.go
+File Username:  Message Encoding Traverse.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

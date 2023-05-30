@@ -1,5 +1,5 @@
 /*
-File Name:  Search.go
+File Username:  Search.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 
@@ -353,7 +353,7 @@ func (api *WebapiInstance) apiSearchStatistic(w http.ResponseWriter, r *http.Req
 apiExplore returns recently shared files in Peernet. Results are returned in real-time. The file type is an optional filter. See TypeX.
 Special type -2 = Binary, Compressed, Container, Executable. This special type includes everything except Documents, Video, Audio, Ebooks, Picture, Text.
 
-Request:    GET /explore?limit=[max records]&type=[file type]&offset=[offset]
+Request:    GET /explore?limit=[max records]&type=[file type]&offset=[offset]&node=[nodeID]
 Result:     200 with JSON structure SearchResult. Check the field status.
 */
 func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
@@ -369,7 +369,14 @@ func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 		fileType = -1
 	}
 
-	result := api.ExploreHelper(fileType, limit, offset, []byte{}, false)
+	var result *SearchResult
+
+	NodeId, valid := DecodeBlake3Hash(r.Form.Get("node"))
+	if valid {
+		result = api.ExploreHelper(fileType, limit, offset, NodeId, true)
+	} else {
+		result = api.ExploreHelper(fileType, limit, offset, []byte{}, false)
+	}
 
 	EncodeJSON(api.Backend, w, r, result)
 }

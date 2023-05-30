@@ -1,5 +1,5 @@
 /*
-File Name:  Command.go
+File Username:  Command.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

@@ -1,5 +1,5 @@
 /*
-File Name:  GeoIP.go
+File Username:  GeoIP.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 

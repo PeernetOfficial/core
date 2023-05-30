@@ -1,5 +1,5 @@
 /*
-File Name:  Merkle Tree.go
+File Username:  Merkle Tree.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 

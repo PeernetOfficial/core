@@ -1,5 +1,5 @@
 /*
-File Name:  Message Encoding Get Block.go
+File Username:  Message Encoding Get Block.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 

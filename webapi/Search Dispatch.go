@@ -1,5 +1,5 @@
 /*
-File Name:  Search Dispatch.go
+File Username:  Search Dispatch.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */

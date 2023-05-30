@@ -1,5 +1,5 @@
 /*
-File Name:  Warehouse.go
+File Username:  Warehouse.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */
@@ -93,7 +93,7 @@ func (wh *Warehouse) IterateFiles(Callback func(Hash []byte, Size int64) (Contin
 		name1 := file.Name()
 		_, err = hex.DecodeString(name1)
 
-		// we are only looking for directories. Name has to be "XXXX" hex chars only.
+		// we are only looking for directories. Username has to be "XXXX" hex chars only.
 		if !file.IsDir() || len(name1) != 4 || err != nil {
 			continue
 		}
@@ -108,7 +108,7 @@ func (wh *Warehouse) IterateFiles(Callback func(Hash []byte, Size int64) (Contin
 			name2 := file2.Name()
 			_, err = hex.DecodeString(name2)
 
-			// we are only looking for directories. Name has to be "XXXX" hex chars only.
+			// we are only looking for directories. Username has to be "XXXX" hex chars only.
 			if !file2.IsDir() || len(name2) != 4 || err != nil {
 				continue
 			}

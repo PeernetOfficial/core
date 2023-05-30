@@ -1,5 +1,5 @@
 /*
-File Name:  Profile Data.go
+File Username:  Profile Data.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

@@ -1,5 +1,5 @@
 /*
-File Name:  Peer ID.go
+File Username:  Peer ID.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

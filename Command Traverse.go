@@ -1,5 +1,5 @@
 /*
-File Name:  Command Traverse.go
+File Username:  Command Traverse.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

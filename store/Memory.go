@@ -1,5 +1,5 @@
 /*
-File Name:  Memory.go
+File name:  Memory.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

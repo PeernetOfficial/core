@@ -1,5 +1,5 @@
 /*
-File Name:  Network IPv6 Multicast.go
+File Username:  Network IPv6 Multicast.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
@@ -63,7 +63,7 @@ func (network *Network) MulticastIPv6Join() (err error) {
 	joinMulticastGroup := func(iface *net.Interface) (err error) {
 		pc := ipv6.NewPacketConn(network.multicastSocket)
 		if err := pc.JoinGroup(iface, &net.UDPAddr{IP: network.multicastIP}); err != nil {
-			//LogError("MulticastIPv6Join", "join multicast group iface '%s' multicast IP '%s' listen on IP '%s' port '%d': %v\n", iface.Name, network.multicastIP.String(), network.address.IP.String(), ipv6MulticastPort, err)
+			//LogError("MulticastIPv6Join", "join multicast group iface '%s' multicast IP '%s' listen on IP '%s' port '%d': %v\n", iface.Username, network.multicastIP.String(), network.address.IP.String(), ipv6MulticastPort, err)
 			return err
 		}
 

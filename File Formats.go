@@ -1,5 +1,5 @@
 /*
-File Name:  File Formats.go
+File Username:  File Formats.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 

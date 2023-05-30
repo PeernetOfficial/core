@@ -1,5 +1,5 @@
 /*
-File Name:  File Detection.go
+File:  File Detection.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */

@@ -1,5 +1,5 @@
 /*
-File Name:  File.go
+File Username:  File.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */
@@ -8,6 +8,7 @@ package webapi
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/PeernetOfficial/core"
@@ -31,24 +32,25 @@ type apiFileMetadata struct {
 
 // apiFile is the metadata of a file published on the blockchain
 type apiFile struct {
-	ID          uuid.UUID         `json:"id"`          // Unique ID.
-	Hash        []byte            `json:"hash"`        // Blake3 hash of the file data
-	Type        uint8             `json:"type"`        // File Type. For example audio or document. See TypeX.
-	Format      uint16            `json:"format"`      // File Format. This is more granular, for example PDF or Word file. See FormatX.
-	Size        uint64            `json:"size"`        // Size of the file
-	Folder      string            `json:"folder"`      // Folder, optional
-	Name        string            `json:"name"`        // Name of the file
-	Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
-	Date        time.Time         `json:"date"`        // Date shared
-	NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file. Read only.
-	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
-	Profile     apiBlockRecordProfile
+	ID             uuid.UUID         `json:"id"`             // Unique ID.
+	Hash           []byte            `json:"hash"`           // Blake3 hash of the file data
+	Type           uint8             `json:"type"`           // File Type. For example audio or document. See TypeX.
+	Format         uint16            `json:"format"`         // File Format. This is more granular, for example PDF or Word file. See FormatX.
+	Size           uint64            `json:"size"`           // Size of the file
+	Folder         string            `json:"folder"`         // Folder, optional
+	Name           string            `json:"name"`           // Name of the file
+	Description    string            `json:"description"`    // Description. This is expected to be multiline and contain hashtags!
+	Date           time.Time         `json:"date"`           // Date shared
+	NodeID         []byte            `json:"nodeid"`         // Node ID, owner of the file. Read only.
+	Metadata       []apiFileMetadata `json:"metadata"`       // Additional metadata.
+	ProfilePicture []byte            `json:"profilepicture"` // The Profile Picture of the user who uploaded the file
+	Username       string            `json:"username"`       // Username of the user who uploaded the file
 }
 
 // --- conversion from core to API data ---
 
 func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
-	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Metadata: []apiFileMetadata{}}
+	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, ProfilePicture: input.ProfileImage, Username: input.Username, Metadata: []apiFileMetadata{}}
 
 	for _, tag := range input.Tags {
 		switch tag.Type {
@@ -193,16 +195,25 @@ func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.R
 /*
 apiBlockchainFileList lists all files stored on the blockchain.
 
-Request:    GET /blockchain/file/list
+Request:    GET /blockchain/file/list?fileFormat=<file format>
 Response:   200 with JSON structure apiBlockAddFiles
 */
 func (api *WebapiInstance) apiBlockchainFileList(w http.ResponseWriter, r *http.Request) {
 	files, status := api.Backend.UserBlockchain.ListFiles()
 
+	r.ParseForm()
+	// filter based on file type
+	fileType, err := strconv.Atoi(r.Form.Get("fileFormat"))
+
 	var result apiBlockAddFiles
 
 	for _, file := range files {
-		result.Files = append(result.Files, blockRecordFileToAPI(file))
+		apiFile := blockRecordFileToAPI(file)
+		if apiFile.Format == uint16(fileType) {
+			result.Files = append(result.Files, apiFile)
+		} else if err != nil {
+			result.Files = append(result.Files, apiFile)
+		}
 	}
 
 	result.Status = status
