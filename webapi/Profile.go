@@ -31,11 +31,21 @@ type apiBlockRecordProfile struct {
 /*
 apiProfileList lists all users profile fields.
 
-Request:    GET /profile/list
+Request:    GET /profile/list?node[nodeid]
 Response:   200 with JSON structure apiProfileData
 */
 func (api *WebapiInstance) apiProfileList(w http.ResponseWriter, r *http.Request) {
-	fields, status := api.Backend.UserBlockchain.ProfileList()
+
+	NodeID, valid := DecodeBlake3Hash(r.Form.Get("node"))
+
+	var fields []blockchain.BlockRecordProfile
+	var status int
+
+	if valid {
+		fields, status = api.Backend.NodelistLookup(NodeID).Backend.UserBlockchain.ProfileList()
+	} else {
+		fields, status = api.Backend.UserBlockchain.ProfileList()
+	}
 
 	result := apiProfileData{Status: status}
 	for n := range fields {
@@ -48,12 +58,13 @@ func (api *WebapiInstance) apiProfileList(w http.ResponseWriter, r *http.Request
 /*
 apiProfileRead reads a specific users profile field. See core.ProfileX for recognized fields.
 
-Request:    GET /profile/read?field=[index]
+Request:    GET /profile/read?field=[index]&node=[nodeid]
 Response:   200 with JSON structure apiProfileData
 */
 func (api *WebapiInstance) apiProfileRead(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	fieldN, err1 := strconv.Atoi(r.Form.Get("field"))
+	NodeID, valid := DecodeBlake3Hash(r.Form.Get("node"))
 
 	if err1 != nil || fieldN < 0 {
 		http.Error(w, "", http.StatusBadRequest)
@@ -61,10 +72,18 @@ func (api *WebapiInstance) apiProfileRead(w http.ResponseWriter, r *http.Request
 	}
 
 	var result apiProfileData
-
 	var data []byte
-	if data, result.Status = api.Backend.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.StatusOK {
-		result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: uint16(fieldN), Data: data}))
+
+	if !valid {
+		if data, result.Status = api.Backend.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.StatusOK {
+			result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: uint16(fieldN), Data: data}))
+		}
+	} else {
+		if api.Backend.NodelistLookup(NodeID) != nil {
+			if data, result.Status = api.Backend.NodelistLookup(NodeID).Backend.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.StatusOK {
+				result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: uint16(fieldN), Data: data}))
+			}
+		}
 	}
 
 	EncodeJSON(api.Backend, w, r, result)

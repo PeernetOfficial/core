@@ -496,7 +496,7 @@ Below is the list of well known profile information. Clients may define addition
 This lists all profile fields.
 
 ```
-Request:    GET /profile/list
+Request:    GET /profile/list&node=[node id<optional>]
 Response:   200 with JSON structure apiProfileData
 ```
 
@@ -538,7 +538,7 @@ Example response:
 This reads a specific profile field. See ProfileX for recognized fields.
 
 ```
-Request:    GET /profile/read?field=[index]
+Request:    GET /profile/read?field=[index]&node=[node id<optional>]
 Response:   200 with JSON structure apiProfileData
 ```
 

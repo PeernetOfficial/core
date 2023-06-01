@@ -44,31 +44,31 @@ func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int
 
 		var filesFromPeer uint64
 
-		var ProfileImage []byte
-		var Name string
+		//var ProfileImage []byte
+		//var Name string
 
-		ProfileNameFound := false
-		ProfilePictureFound := false
-
-		// First iteration of the entire blockchain to search for the profile
-		// image and Username of the user
-		for blockN1 := peer.BlockchainHeight - 1; blockN1 > 0; blockN1-- {
-			blockDecoded, _, found, _ := backend.ReadBlock(peer.PublicKey, peer.BlockchainVersion, blockN1)
-			if !found {
-				continue
-			}
-			// Adding profile image and Username to the output
-			for raw := range blockDecoded.Block.RecordsRaw {
-				if blockDecoded.Block.RecordsRaw[raw].Type == blockchain.ProfilePicture && !ProfilePictureFound {
-					ProfileImage = blockDecoded.Block.RecordsRaw[raw].Data
-					ProfilePictureFound = true
-				}
-				if blockDecoded.Block.RecordsRaw[raw].Type == blockchain.ProfileName && !ProfileNameFound {
-					Name = string(blockDecoded.Block.RecordsRaw[raw].Data[:])
-					ProfileNameFound = true
-				}
-			}
-		}
+		//ProfileNameFound := false
+		//ProfilePictureFound := false
+		//
+		//// First iteration of the entire blockchain to search for the profile
+		//// image and Username of the user
+		//for blockN1 := peer.BlockchainHeight - 1; blockN1 > 0; blockN1-- {
+		//	blockDecoded, _, found, _ := backend.ReadBlock(peer.PublicKey, peer.BlockchainVersion, blockN1)
+		//	if !found {
+		//		continue
+		//	}
+		//	// Adding profile image and Username to the output
+		//	for raw := range blockDecoded.Block.RecordsRaw {
+		//		if blockDecoded.Block.RecordsRaw[raw].Type == blockchain.ProfilePicture && !ProfilePictureFound {
+		//			ProfileImage = blockDecoded.Block.RecordsRaw[raw].Data
+		//			ProfilePictureFound = true
+		//		}
+		//		if blockDecoded.Block.RecordsRaw[raw].Type == blockchain.ProfileName && !ProfileNameFound {
+		//			Name = string(blockDecoded.Block.RecordsRaw[raw].Data[:])
+		//			ProfileNameFound = true
+		//		}
+		//	}
+		//}
 
 		// decode blocks from top down
 	blockLoop:
@@ -87,11 +87,6 @@ func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int
 						sharedByGeoIP := fmt.Sprintf("%.4f", latitude) + "," + fmt.Sprintf("%.4f", longitude)
 						file.Tags = append(file.Tags, blockchain.TagFromText(blockchain.TagSharedByGeoIP, sharedByGeoIP))
 					}
-
-					// Add profile image
-					file.ProfileImage = ProfileImage
-					// Add profile name
-					file.Username = Name
 
 					// found a new file! append.
 					if filesFromPeer < limitPeer {
