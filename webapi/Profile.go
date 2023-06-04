@@ -31,12 +31,12 @@ type apiBlockRecordProfile struct {
 /*
 apiProfileList lists all users profile fields.
 
-Request:    GET /profile/list?node[nodeid]
+Request:    GET /profile/list?node=[nodeid]
 Response:   200 with JSON structure apiProfileData
 */
 func (api *WebapiInstance) apiProfileList(w http.ResponseWriter, r *http.Request) {
 
-	NodeID, valid := DecodeBlake3Hash(r.Form.Get("node"))
+	NodeID, valid := DecodeBlake3Hash(r.URL.Query().Get("node"))
 
 	var fields []blockchain.BlockRecordProfile
 	var status int
@@ -63,8 +63,8 @@ Response:   200 with JSON structure apiProfileData
 */
 func (api *WebapiInstance) apiProfileRead(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	fieldN, err1 := strconv.Atoi(r.Form.Get("field"))
-	NodeID, valid := DecodeBlake3Hash(r.Form.Get("node"))
+	fieldN, err1 := strconv.Atoi(r.URL.Query().Get("field"))
+	NodeID, valid := DecodeBlake3Hash(r.URL.Query().Get("node"))
 
 	if err1 != nil || fieldN < 0 {
 		http.Error(w, "", http.StatusBadRequest)

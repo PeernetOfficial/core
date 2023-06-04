@@ -358,20 +358,20 @@ Result:     200 with JSON structure SearchResult. Check the field status.
 */
 func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	offset, _ := strconv.Atoi(r.Form.Get("offset"))
-	limit, err := strconv.Atoi(r.Form.Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
 	if err != nil {
 		limit = 100
 	}
 
-	fileType, err := strconv.Atoi(r.Form.Get("type"))
+	fileType, err := strconv.Atoi(r.URL.Query().Get("type"))
 	if err != nil {
 		fileType = -1
 	}
 
 	var result *SearchResult
 
-	NodeId, valid := DecodeBlake3Hash(r.Form.Get("node"))
+	NodeId, valid := DecodeBlake3Hash(r.URL.Query().Get("node"))
 	if valid {
 		result = api.ExploreHelper(fileType, limit, offset, NodeId, true)
 	} else {
