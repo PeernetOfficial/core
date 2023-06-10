@@ -48,7 +48,6 @@ type BlockRecordFile struct {
 	Size           uint64               // Size of the file data
 	NodeID         []byte               // Node ID, owner of the file
 	Tags           []BlockRecordFileTag // Tags provide additional metadata
-	ProfileImage   []byte               // ProfileImage of the user who uploaded the file
 	Username       string               // Username of the User who uploaded the file
 }
 

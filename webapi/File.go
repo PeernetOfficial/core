@@ -32,27 +32,29 @@ type apiFileMetadata struct {
 
 // apiFile is the metadata of a file published on the blockchain
 type apiFile struct {
-	ID             uuid.UUID         `json:"id"`             // Unique ID.
-	Hash           []byte            `json:"hash"`           // Blake3 hash of the file data
-	Type           uint8             `json:"type"`           // File Type. For example audio or document. See TypeX.
-	Format         uint16            `json:"format"`         // File Format. This is more granular, for example PDF or Word file. See FormatX.
-	Size           uint64            `json:"size"`           // Size of the file
-	Folder         string            `json:"folder"`         // Folder, optional
-	Name           string            `json:"name"`           // Name of the file
-	Description    string            `json:"description"`    // Description. This is expected to be multiline and contain hashtags!
-	Date           time.Time         `json:"date"`           // Date shared
-	NodeID         []byte            `json:"nodeid"`         // Node ID, owner of the file. Read only.
-	Metadata       []apiFileMetadata `json:"metadata"`       // Additional metadata.
-	ProfilePicture []byte            `json:"profilepicture"` // The Profile Picture of the user who uploaded the file
-	Username       string            `json:"username"`       // Username of the user who uploaded the file
+	ID          uuid.UUID         `json:"id"`          // Unique ID.
+	Hash        []byte            `json:"hash"`        // Blake3 hash of the file data
+	Type        uint8             `json:"type"`        // File Type. For example audio or document. See TypeX.
+	Format      uint16            `json:"format"`      // File Format. This is more granular, for example PDF or Word file. See FormatX.
+	Size        uint64            `json:"size"`        // Size of the file
+	Folder      string            `json:"folder"`      // Folder, optional
+	Name        string            `json:"name"`        // Name of the file
+	Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
+	Date        time.Time         `json:"date"`        // Date shared
+	NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file. Read only.
+	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
+	Username    []byte            `json:"username"`    // Username of the user who uploaded the file
 }
 
 // --- conversion from core to API data ---
 
 func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
-	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, ProfilePicture: input.ProfileImage, Username: input.Username, Metadata: []apiFileMetadata{}}
+	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Username: []byte(input.Username), Metadata: []apiFileMetadata{}}
 
 	for _, tag := range input.Tags {
+		if tag.Type == blockchain.TagSharedByCount && tag.Number() == 0 {
+			return apiFile{}
+		}
 		switch tag.Type {
 		case blockchain.TagName:
 			output.Name = tag.Text()
@@ -208,11 +210,14 @@ func (api *WebapiInstance) apiBlockchainFileList(w http.ResponseWriter, r *http.
 	var result apiBlockAddFiles
 
 	for _, file := range files {
-		apiFile := blockRecordFileToAPI(file)
-		if apiFile.Format == uint16(fileType) {
-			result.Files = append(result.Files, apiFile)
+		ApiFile := blockRecordFileToAPI(file)
+		if ApiFile.NodeID == nil {
+			continue
+		}
+		if ApiFile.Format == uint16(fileType) {
+			result.Files = append(result.Files, ApiFile)
 		} else if err != nil {
-			result.Files = append(result.Files, apiFile)
+			result.Files = append(result.Files, ApiFile)
 		}
 	}
 
