@@ -357,7 +357,7 @@ func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey *btcec.P
 
 	// Send Traverse message if the peer is behind a NAT or firewall and this is the first message. Only for Announcement.
 	if err == nil && isFirstPacket && (c.IsBehindNAT() || c.Firewall) && c.traversePeer != nil && packet.Command == protocol.CommandAnnouncement {
-		c.traversePeer.sendTraverse(packet, receiverPublicKey)
+		err = c.traversePeer.sendTraverse(packet, receiverPublicKey)
 	}
 
 	return err
