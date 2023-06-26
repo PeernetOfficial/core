@@ -25,6 +25,7 @@ type SearchFilter struct {
 	Sort       int       // Sort order. See SortX.
 	SizeMin    int       // Min file size in bytes. -1 = not used.
 	SizeMax    int       // Max file size in bytes. -1 = not used.
+	NodeID     []byte    // Filter based on a NodeID provided
 }
 
 // SearchJob is a collection of search jobs

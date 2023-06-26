@@ -617,7 +617,7 @@ Filters and sort order may be applied when starting the search at `/search`, or 
 These are the available sort options:
 
 | Sort | Constant              | Info                                                                                |
-| ---- | --------------------- | ----------------------------------------------------------------------------------- |
+|------|-----------------------|-------------------------------------------------------------------------------------|
 | 0    | SortNone              | No sorting. Results are returned as they come in.                                   |
 | 1    | SortRelevanceAsc      | Least relevant results first.                                                       |
 | 2    | SortRelevanceDec      | Most relevant results first.                                                        |
@@ -629,6 +629,8 @@ These are the available sort options:
 | 8    | SortSizeDesc          | File size descending. Largest files first.                                          |
 | 9    | SortSharedByCountAsc  | Shared by count ascending. Files that are shared by the least count of peers first. |
 | 10   | SortSharedByCountDesc | Shared by count descending. Files that are shared by the most count of peers first. |
+| 11   | Node                  | Only provide files of a search term based on the NodeID provided                    |
+
 
 The following filters are supported:
 
@@ -658,6 +660,7 @@ type SearchRequest struct {
     FileFormat  int         `json:"fileformat"` // File format such as PDF, Word, Ebook, etc. See core.FormatX. -1 = not used.
     SizeMin     int         `json:"sizemin"`    // Min file size in bytes. -1 = not used.
     SizeMax     int         `json:"sizemax"`    // Max file size in bytes. -1 = not used.
+    NodeID      string      `json:"node"`       // Filter based on the NodeID provided
 }
 
 type SearchRequestResponse struct {
