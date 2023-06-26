@@ -43,13 +43,13 @@ type apiFile struct {
 	Date        time.Time         `json:"date"`        // Date shared
 	NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file. Read only.
 	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
-	Username    []byte            `json:"username"`    // Username of the user who uploaded the file
+	Username    string            `json:"username"`    // Username of the user who uploaded the file
 }
 
 // --- conversion from core to API data ---
 
 func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
-	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Username: []byte(input.Username), Metadata: []apiFileMetadata{}}
+	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Username: input.Username, Metadata: []apiFileMetadata{}}
 
 	for _, tag := range input.Tags {
 		if tag.Type == blockchain.TagSharedByCount && tag.Number() == 0 {

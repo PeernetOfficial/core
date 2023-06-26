@@ -6,12 +6,14 @@ Author:     Peter Kleissner
 
 package blockchain
 
+import "fmt"
+
 // ProfileReadField reads the specified profile field. See ProfileX for the list of recognized fields. The encoding depends on the field type. Status is StatusX.
 func (blockchain *Blockchain) ProfileReadField(index uint16) (data []byte, status int) {
 	found := false
 
 	status = blockchain.Iterate(func(block *Block) (statusI int) {
-		fields, err := decodeBlockRecordProfile(block.RecordsRaw)
+		fields, err := DecodeBlockRecordProfile(block.RecordsRaw)
 		if err != nil {
 			return StatusCorruptBlockRecord
 		} else if len(fields) == 0 {
@@ -42,8 +44,10 @@ func (blockchain *Blockchain) ProfileReadField(index uint16) (data []byte, statu
 func (blockchain *Blockchain) ProfileList() (fields []BlockRecordProfile, status int) {
 	uniqueFields := make(map[uint16][]byte)
 
+	fmt.Println(blockchain.height)
+
 	status = blockchain.Iterate(func(block *Block) (statusI int) {
-		fields, err := decodeBlockRecordProfile(block.RecordsRaw)
+		fields, err := DecodeBlockRecordProfile(block.RecordsRaw)
 		if err != nil {
 			return StatusCorruptBlockRecord
 		}
@@ -103,7 +107,7 @@ func (blockchain *Blockchain) ProfileDelete(fields []uint16) (newHeight, newVers
 			return 0 // no action
 		}
 
-		existingFields, err := decodeBlockRecordProfile([]BlockRecordRaw{*record})
+		existingFields, err := DecodeBlockRecordProfile([]BlockRecordRaw{*record})
 		if err != nil || len(existingFields) != 1 {
 			return 3 // error blockchain corrupt
 		}

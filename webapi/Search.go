@@ -36,7 +36,6 @@ type SearchRequest struct {
 	FileFormat  int         `json:"fileformat"` // File format such as PDF, Word, Ebook, etc. See core.FormatX. -1 = not used.
 	SizeMin     int         `json:"sizemin"`    // Min file size in bytes. -1 = not used.
 	SizeMax     int         `json:"sizemax"`    // Max file size in bytes. -1 = not used.
-	NodeID      string      `json:"node"`       // Filter based on the NodeID provided
 }
 
 // Sort orders
@@ -157,9 +156,9 @@ func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Reques
 		sort, _ := strconv.Atoi(r.Form.Get("sort"))
 		sizeMin, _ := strconv.Atoi(r.Form.Get("sizemin"))
 		sizeMax, _ := strconv.Atoi(r.Form.Get("sizemax"))
-		nodeID, _ := DecodeBlake3Hash(r.Form.Get("node"))
+		//nodeID, _ := DecodeBlake3Hash(r.Form.Get("node"))
 
-		filter := inputToSearchFilter(sort, fileType, fileFormat, dateFrom, dateTo, sizeMin, sizeMax, nodeID)
+		filter := inputToSearchFilter(sort, fileType, fileFormat, dateFrom, dateTo, sizeMin, sizeMax)
 
 		job.RuntimeFilter(filter)
 	}
@@ -420,17 +419,16 @@ func (input *SearchRequest) Parse() (Timeout time.Duration) {
 
 // ToSearchFilter converts the user input to a valid search filter
 func (input *SearchRequest) ToSearchFilter() (output SearchFilter) {
-	hash, _ := DecodeBlake3Hash(input.NodeID)
-	return inputToSearchFilter(input.Sort, input.FileType, input.FileFormat, input.DateFrom, input.DateTo, input.SizeMin, input.SizeMax, hash)
+	//hash, _ := DecodeBlake3Hash(input.NodeID)
+	return inputToSearchFilter(input.Sort, input.FileType, input.FileFormat, input.DateFrom, input.DateTo, input.SizeMin, input.SizeMax)
 }
 
-func inputToSearchFilter(Sort, FileType, FileFormat int, DateFrom, DateTo string, SizeMin, SizeMax int, NodeID []byte) (output SearchFilter) {
+func inputToSearchFilter(Sort, FileType, FileFormat int, DateFrom, DateTo string, SizeMin, SizeMax int) (output SearchFilter) {
 	output.Sort = Sort
 	output.FileType = FileType
 	output.FileFormat = FileFormat
 	output.SizeMin = SizeMin
 	output.SizeMax = SizeMax
-	output.NodeID = NodeID
 
 	dateFrom, errFrom := time.Parse(apiDateFormat, DateFrom)
 	dateTo, errTo := time.Parse(apiDateFormat, DateTo)
