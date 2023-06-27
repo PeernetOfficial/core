@@ -15,7 +15,6 @@ package blockchain
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"math"
 )
 
@@ -39,14 +38,10 @@ func DecodeBlockRecordProfile(recordsRaw []BlockRecordRaw) (fields []BlockRecord
 		}
 
 		fieldType := binary.LittleEndian.Uint16(record.Data[0:2])
-		fmt.Println(record.Data[0:2])
-		fmt.Println(fieldType)
 		fieldMap[fieldType] = record.Data[2:]
 	}
 
 	for fieldType, fieldData := range fieldMap {
-		fmt.Println("type value added")
-		fmt.Println(fieldType)
 		fields = append(fields, BlockRecordProfile{Type: fieldType, Data: fieldData})
 	}
 

@@ -8,10 +8,9 @@ package webapi
 
 import (
 	"encoding/hex"
+	"github.com/PeernetOfficial/core/blockchain"
 	"net/http"
 	"strconv"
-
-	"github.com/PeernetOfficial/core/blockchain"
 )
 
 type apiBlockchainHeader struct {

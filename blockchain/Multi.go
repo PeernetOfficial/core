@@ -16,6 +16,7 @@ package blockchain
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/PeernetOfficial/core/btcec"
@@ -273,17 +274,31 @@ func (multi *MultiStore) IngestBlock(header *MultiBlockchainHeader, blockNumber 
 	// decode it
 	decoded, status, err := DecodeBlockRaw(raw)
 	if failIfInvalid && err != nil {
+		fmt.Println("---- block invalid -----")
 		return nil, err
 	}
 
+	fmt.Println("updated")
+
 	// store the transferred block in the cache
-	multi.WriteBlock(header.PublicKey, header.Version, blockNumber, raw)
+	err = multi.WriteBlock(header.PublicKey, header.Version, blockNumber, raw)
+	if err != nil {
+		fmt.Println(err)
+	}
+
 	header.ListBlocks = append(header.ListBlocks, blockNumber)
 
 	// update blockchain header stats if records were decoded
 	if status == StatusOK {
 		multi.UpdateBlockchainStatistics(header, decoded.RecordsDecoded)
 	}
+
+	for _, recordRaw := range decoded.RecordsRaw {
+		if recordRaw.Type == 0 {
+			fmt.Println("Profile update detected")
+		}
+	}
+	fmt.Println("---------")
 
 	// update the blockchain header
 	multi.WriteBlockchainHeader(header)

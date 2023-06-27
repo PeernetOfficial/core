@@ -98,26 +98,6 @@ func (api *WebapiInstance) GreedySearchMergeDirection(nodeID *[][]byte, fileType
 
 		var filesFromPeer uint64
 
-		//var Name string
-		//
-		//ProfileNameFound := false
-		//
-		//// First iteration of the entire blockchain to search for the profile
-		//// image and Username of the user
-		//for blockN1 := peer.BlockchainHeight - 1; blockN1 > 0; blockN1-- {
-		//	blockDecoded, _, found, _ := api.Backend.ReadBlock(peer.PublicKey, peer.BlockchainVersion, blockN1)
-		//	if !found {
-		//		continue
-		//	}
-		//	// Adding profile image and Username to the output
-		//	for raw := range blockDecoded.Block.RecordsRaw {
-		//		if blockDecoded.Block.RecordsRaw[raw].Type == blockchain.ProfileName && !ProfileNameFound {
-		//			Name = string(blockDecoded.Block.RecordsRaw[raw].Data[:])
-		//			ProfileNameFound = true
-		//		}
-		//	}
-		//}
-
 		// decode blocks from top down
 		for blockN := peer.BlockchainHeight - 1; blockN > 0; blockN-- {
 			blockDecoded, _, found, _ := api.Backend.ReadBlock(peer.PublicKey, peer.BlockchainVersion, blockN)

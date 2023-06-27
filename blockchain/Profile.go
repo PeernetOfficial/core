@@ -6,8 +6,6 @@ Author:     Peter Kleissner
 
 package blockchain
 
-import "fmt"
-
 // ProfileReadField reads the specified profile field. See ProfileX for the list of recognized fields. The encoding depends on the field type. Status is StatusX.
 func (blockchain *Blockchain) ProfileReadField(index uint16) (data []byte, status int) {
 	found := false
@@ -43,8 +41,6 @@ func (blockchain *Blockchain) ProfileReadField(index uint16) (data []byte, statu
 // ProfileList lists all profile fields. Status is StatusX.
 func (blockchain *Blockchain) ProfileList() (fields []BlockRecordProfile, status int) {
 	uniqueFields := make(map[uint16][]byte)
-
-	fmt.Println(blockchain.height)
 
 	status = blockchain.Iterate(func(block *Block) (statusI int) {
 		fields, err := DecodeBlockRecordProfile(block.RecordsRaw)

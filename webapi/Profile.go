@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/PeernetOfficial/core/blockchain"
 )
@@ -47,33 +48,26 @@ func (api *WebapiInstance) apiProfileList(w http.ResponseWriter, r *http.Request
 	if valid && !bytes.Equal(NodeID, api.Backend.SelfNodeID()) {
 		//_, node, _ := api.Backend.FindNode(NodeID, 100)
 
-		peers := api.Backend.PeerlistGet()
+		_, peers, _ := api.Backend.FindNode(NodeID, time.Second*5)
+		// First iteration of the entire blockchain to search for the profile
+		// image and Username of the user
 
-		for i, _ := range peers {
-			if bytes.Equal(peers[i].NodeID, NodeID) {
-				// First iteration of the entire blockchain to search for the profile
-				// image and Username of the user
+		for blockN1 := peers.BlockchainHeight; blockN1 > 0; blockN1-- {
+			blockDecoded, _, found, _ := api.Backend.ReadBlock(peers.PublicKey, peers.BlockchainVersion, blockN1)
+			if !found {
+				continue
+			}
 
-				for blockN1 := peers[i].BlockchainHeight - 1; blockN1 > 0; blockN1-- {
-					blockDecoded, _, found, _ := peers[i].Backend.ReadBlock(peers[i].PublicKey, peers[i].BlockchainVersion, blockN1)
-					if !found {
-						continue
-					}
+			profile, _ := blockchain.DecodeBlockRecordProfile(blockDecoded.Block.RecordsRaw)
+			// Adding profile image and Username to the output
+			for raw, _ := range profile {
 
-					profile, _ := blockchain.DecodeBlockRecordProfile(blockDecoded.Block.RecordsRaw)
-					// Adding profile image and Username to the output
-					for raw, _ := range profile {
-
-						if profile[raw].Type == blockchain.ProfileName {
-							result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: profile[raw].Type, Data: profile[raw].Data[:]}))
-						}
-						if profile[raw].Type == blockchain.ProfilePicture {
-							result.Status = 0
-							result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: profile[raw].Type, Data: profile[raw].Data[:]}))
-						}
-					}
+				if profile[raw].Type == blockchain.ProfileName {
+					result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: profile[raw].Type, Data: profile[raw].Data[:]}))
 				}
-
+				if profile[raw].Type == blockchain.ProfilePicture {
+					result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: profile[raw].Type, Data: profile[raw].Data[:]}))
+				}
 			}
 		}
 
@@ -135,10 +129,6 @@ func (api *WebapiInstance) apiProfileWrite(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	for _, field := range input.Fields {
-		api.Backend.LogError("apiProfileWrite(", "Upload type: %v\n", field.Type)
-	}
-
 	var fields []blockchain.BlockRecordProfile
 
 	for n := range input.Fields {
@@ -146,6 +136,8 @@ func (api *WebapiInstance) apiProfileWrite(w http.ResponseWriter, r *http.Reques
 	}
 
 	newHeight, newVersion, status := api.Backend.UserBlockchain.ProfileWrite(fields)
+
+	api.Backend.LogError("apiProfileWrite", "Height: %v, Version %v", newHeight, newVersion)
 
 	EncodeJSON(api.Backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
