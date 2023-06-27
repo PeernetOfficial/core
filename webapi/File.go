@@ -74,6 +74,10 @@ func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
 
 		case blockchain.TagSharedByCount:
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Shared By Count", Number: tag.Number()})
+			// if a file has 0 peers sharing then do not add it to the list.
+			if tag.Number() == 0 {
+				return apiFile{}
+			}
 
 		case blockchain.TagSharedByGeoIP:
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Shared By GeoIP", Text: tag.Text()})
