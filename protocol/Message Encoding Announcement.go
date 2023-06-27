@@ -1,5 +1,5 @@
 /*
-File Name:  Message Encoding Announcement.go
+File Username:  Message Encoding Announcement.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

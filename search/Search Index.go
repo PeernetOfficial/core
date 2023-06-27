@@ -1,5 +1,5 @@
 /*
-File Name:  Search Index.go
+File name:  Search Index.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

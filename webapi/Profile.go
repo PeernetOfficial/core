@@ -1,5 +1,5 @@
 /*
-File Name:  Profile.go
+File Username:  Profile.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */
@@ -7,8 +7,10 @@ Author:     Peter Kleissner
 package webapi
 
 import (
+	"bytes"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/PeernetOfficial/core/blockchain"
 )
@@ -31,15 +33,50 @@ type apiBlockRecordProfile struct {
 /*
 apiProfileList lists all users profile fields.
 
-Request:    GET /profile/list
+Request:    GET /profile/list?node=[nodeid]
 Response:   200 with JSON structure apiProfileData
 */
 func (api *WebapiInstance) apiProfileList(w http.ResponseWriter, r *http.Request) {
-	fields, status := api.Backend.UserBlockchain.ProfileList()
+
+	NodeID, valid := DecodeBlake3Hash(r.URL.Query().Get("node"))
+
+	var fields []blockchain.BlockRecordProfile
+	var status int
 
 	result := apiProfileData{Status: status}
-	for n := range fields {
-		result.Fields = append(result.Fields, blockRecordProfileToAPI(fields[n]))
+
+	if valid && !bytes.Equal(NodeID, api.Backend.SelfNodeID()) {
+		//_, node, _ := api.Backend.FindNode(NodeID, 100)
+
+		_, peers, _ := api.Backend.FindNode(NodeID, time.Second*5)
+		// First iteration of the entire blockchain to search for the profile
+		// image and Username of the user
+
+		for blockN1 := peers.BlockchainHeight; blockN1 > 0; blockN1-- {
+			blockDecoded, _, found, _ := api.Backend.ReadBlock(peers.PublicKey, peers.BlockchainVersion, blockN1)
+			if !found {
+				continue
+			}
+
+			profile, _ := blockchain.DecodeBlockRecordProfile(blockDecoded.Block.RecordsRaw)
+			// Adding profile image and Username to the output
+			for raw, _ := range profile {
+
+				if profile[raw].Type == blockchain.ProfileName {
+					result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: profile[raw].Type, Data: profile[raw].Data[:]}))
+				}
+				if profile[raw].Type == blockchain.ProfilePicture {
+					result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: profile[raw].Type, Data: profile[raw].Data[:]}))
+				}
+			}
+		}
+
+	} else {
+		fields, status = api.Backend.UserBlockchain.ProfileList()
+		result.Status = status
+		for n := range fields {
+			result.Fields = append(result.Fields, blockRecordProfileToAPI(fields[n]))
+		}
 	}
 
 	EncodeJSON(api.Backend, w, r, result)
@@ -48,12 +85,13 @@ func (api *WebapiInstance) apiProfileList(w http.ResponseWriter, r *http.Request
 /*
 apiProfileRead reads a specific users profile field. See core.ProfileX for recognized fields.
 
-Request:    GET /profile/read?field=[index]
+Request:    GET /profile/read?field=[index]&node=[nodeid]
 Response:   200 with JSON structure apiProfileData
 */
 func (api *WebapiInstance) apiProfileRead(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	fieldN, err1 := strconv.Atoi(r.Form.Get("field"))
+	fieldN, err1 := strconv.Atoi(r.URL.Query().Get("field"))
+	NodeID, valid := DecodeBlake3Hash(r.URL.Query().Get("node"))
 
 	if err1 != nil || fieldN < 0 {
 		http.Error(w, "", http.StatusBadRequest)
@@ -61,10 +99,19 @@ func (api *WebapiInstance) apiProfileRead(w http.ResponseWriter, r *http.Request
 	}
 
 	var result apiProfileData
-
 	var data []byte
-	if data, result.Status = api.Backend.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.StatusOK {
-		result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: uint16(fieldN), Data: data}))
+
+	if !valid {
+		_, node, _ := api.Backend.FindNode(NodeID, 100)
+		if data, result.Status = node.Backend.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.StatusOK {
+			result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: uint16(fieldN), Data: data}))
+		}
+	} else {
+		if api.Backend.NodelistLookup(NodeID) != nil {
+			if data, result.Status = api.Backend.NodelistLookup(NodeID).Backend.UserBlockchain.ProfileReadField(uint16(fieldN)); result.Status == blockchain.StatusOK {
+				result.Fields = append(result.Fields, blockRecordProfileToAPI(blockchain.BlockRecordProfile{Type: uint16(fieldN), Data: data}))
+			}
+		}
 	}
 
 	EncodeJSON(api.Backend, w, r, result)
@@ -89,6 +136,8 @@ func (api *WebapiInstance) apiProfileWrite(w http.ResponseWriter, r *http.Reques
 	}
 
 	newHeight, newVersion, status := api.Backend.UserBlockchain.ProfileWrite(fields)
+
+	api.Backend.LogError("apiProfileWrite", "Height: %v, Version %v", newHeight, newVersion)
 
 	EncodeJSON(api.Backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }

@@ -1,5 +1,5 @@
 /*
-File Name:  Read Package.go
+File Username:  Read Package.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

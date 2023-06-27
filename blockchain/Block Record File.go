@@ -1,5 +1,5 @@
 /*
-File Name:  Block Record File.go
+File Username:  Block Record File.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
@@ -48,6 +48,7 @@ type BlockRecordFile struct {
 	Size           uint64               // Size of the file data
 	NodeID         []byte               // Node ID, owner of the file
 	Tags           []BlockRecordFileTag // Tags provide additional metadata
+	Username       string               // Username of the User who uploaded the file
 }
 
 // BlockRecordFileTag provides metadata about the file.

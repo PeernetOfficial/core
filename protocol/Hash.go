@@ -1,5 +1,5 @@
 /*
-File Name:  Hash.go
+File Username:  Hash.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

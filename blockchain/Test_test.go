@@ -167,7 +167,7 @@ func printFile(file BlockRecordFile) {
 	for _, tag := range file.Tags {
 		switch tag.Type {
 		case TagName:
-			fmt.Printf("  Name                %s\n", tag.Text())
+			fmt.Printf("  Username                %s\n", tag.Text())
 		case TagFolder:
 			fmt.Printf("  Folder              %s\n", tag.Text())
 		case TagDescription:

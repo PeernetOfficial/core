@@ -1,5 +1,5 @@
 /*
-File Name:  Transfer Virtual Connection.go
+File Username:  Transfer Virtual Connection.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 

@@ -1,5 +1,5 @@
 /*
-File Name:  Blockchain.go
+File Username:  Blockchain.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */
@@ -8,10 +8,9 @@ package webapi
 
 import (
 	"encoding/hex"
+	"github.com/PeernetOfficial/core/blockchain"
 	"net/http"
 	"strconv"
-
-	"github.com/PeernetOfficial/core/blockchain"
 )
 
 type apiBlockchainHeader struct {

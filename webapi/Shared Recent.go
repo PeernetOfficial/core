@@ -1,5 +1,5 @@
 /*
-File Name:  Shared Recent.go
+File Username:  Shared Recent.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */
@@ -18,7 +18,6 @@ func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int
 	if limitPeer == 0 {
 		limitPeer = 1
 	}
-
 	// Assign peer list as an empty array
 	var peerList []*core.PeerInfo
 
@@ -44,11 +43,31 @@ func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int
 		}
 
 		var filesFromPeer uint64
+		var Name string
+
+		ProfileNameFound := false
+
+		// First iteration of the entire blockchain to search for the profile
+		// image and Username of the user
+		for blockN1 := peer.BlockchainHeight - 1; blockN1 > 0; blockN1-- {
+			blockDecoded, _, found, _ := backend.ReadBlock(peer.PublicKey, peer.BlockchainVersion, blockN1)
+			if !found {
+				continue
+			}
+			// Adding profile image and Username to the output
+			for raw := range blockDecoded.Block.RecordsRaw {
+				if blockDecoded.Block.RecordsRaw[raw].Type == blockchain.ProfileName && !ProfileNameFound {
+					Name = string(blockDecoded.Block.RecordsRaw[raw].Data[:])
+					ProfileNameFound = true
+				}
+			}
+		}
 
 		// decode blocks from top down
 	blockLoop:
 		for blockN := peer.BlockchainHeight - 1; blockN > 0; blockN-- {
 			blockDecoded, _, found, _ := backend.ReadBlock(peer.PublicKey, peer.BlockchainVersion, blockN)
+
 			if !found {
 				continue
 			}
@@ -61,6 +80,8 @@ func (api *WebapiInstance) queryRecentShared(backend *core.Backend, fileType int
 						sharedByGeoIP := fmt.Sprintf("%.4f", latitude) + "," + fmt.Sprintf("%.4f", longitude)
 						file.Tags = append(file.Tags, blockchain.TagFromText(blockchain.TagSharedByGeoIP, sharedByGeoIP))
 					}
+
+					file.Username = Name
 
 					// found a new file! append.
 					if filesFromPeer < limitPeer {

@@ -1,5 +1,5 @@
 /*
-File Name:  Node.go
+File Username:  Node.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

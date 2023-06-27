@@ -1,5 +1,5 @@
 /*
-File Name:  Search.go
+File Username:  Search.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 
@@ -156,6 +156,7 @@ func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Reques
 		sort, _ := strconv.Atoi(r.Form.Get("sort"))
 		sizeMin, _ := strconv.Atoi(r.Form.Get("sizemin"))
 		sizeMax, _ := strconv.Atoi(r.Form.Get("sizemax"))
+		//nodeID, _ := DecodeBlake3Hash(r.Form.Get("node"))
 
 		filter := inputToSearchFilter(sort, fileType, fileFormat, dateFrom, dateTo, sizeMin, sizeMax)
 
@@ -353,23 +354,30 @@ func (api *WebapiInstance) apiSearchStatistic(w http.ResponseWriter, r *http.Req
 apiExplore returns recently shared files in Peernet. Results are returned in real-time. The file type is an optional filter. See TypeX.
 Special type -2 = Binary, Compressed, Container, Executable. This special type includes everything except Documents, Video, Audio, Ebooks, Picture, Text.
 
-Request:    GET /explore?limit=[max records]&type=[file type]&offset=[offset]
+Request:    GET /explore?limit=[max records]&type=[file type]&offset=[offset]&node=[nodeID]
 Result:     200 with JSON structure SearchResult. Check the field status.
 */
 func (api *WebapiInstance) apiExplore(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	offset, _ := strconv.Atoi(r.Form.Get("offset"))
-	limit, err := strconv.Atoi(r.Form.Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
 	if err != nil {
 		limit = 100
 	}
 
-	fileType, err := strconv.Atoi(r.Form.Get("type"))
+	fileType, err := strconv.Atoi(r.URL.Query().Get("type"))
 	if err != nil {
 		fileType = -1
 	}
 
-	result := api.ExploreHelper(fileType, limit, offset, []byte{}, false)
+	var result *SearchResult
+
+	NodeId, valid := DecodeBlake3Hash(r.URL.Query().Get("node"))
+	if valid {
+		result = api.ExploreHelper(fileType, limit, offset, NodeId, true)
+	} else {
+		result = api.ExploreHelper(fileType, limit, offset, []byte{}, false)
+	}
 
 	EncodeJSON(api.Backend, w, r, result)
 }
@@ -383,7 +391,11 @@ func (api *WebapiInstance) ExploreHelper(fileType int, limit, offset int, nodeID
 
 	// loop over results
 	for n := range resultFiles {
-		result.Files = append(result.Files, blockRecordFileToAPI(resultFiles[n]))
+		ApiFile := blockRecordFileToAPI(resultFiles[n])
+		if ApiFile.NodeID == nil {
+			continue
+		}
+		result.Files = append(result.Files, ApiFile)
 	}
 
 	if len(result.Files) == 0 {
@@ -407,6 +419,7 @@ func (input *SearchRequest) Parse() (Timeout time.Duration) {
 
 // ToSearchFilter converts the user input to a valid search filter
 func (input *SearchRequest) ToSearchFilter() (output SearchFilter) {
+	//hash, _ := DecodeBlake3Hash(input.NodeID)
 	return inputToSearchFilter(input.Sort, input.FileType, input.FileFormat, input.DateFrom, input.DateTo, input.SizeMin, input.SizeMax)
 }
 

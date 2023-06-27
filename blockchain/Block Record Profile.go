@@ -1,5 +1,5 @@
 /*
-File Name:  Block Record Profile.go
+File Username:  Block Record Profile.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
@@ -24,8 +24,8 @@ type BlockRecordProfile struct {
 	Data []byte // Data
 }
 
-// decodeBlockRecordProfile decodes only profile records. Other records are ignored.
-func decodeBlockRecordProfile(recordsRaw []BlockRecordRaw) (fields []BlockRecordProfile, err error) {
+// DecodeBlockRecordProfile decodes only profile records. Other records are ignored.
+func DecodeBlockRecordProfile(recordsRaw []BlockRecordRaw) (fields []BlockRecordProfile, err error) {
 	fieldMap := make(map[uint16][]byte)
 
 	for _, record := range recordsRaw {

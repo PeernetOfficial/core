@@ -1,5 +1,5 @@
 /*
-File Name:  Download.go
+File Username:  Download.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */
@@ -78,6 +78,8 @@ func (api *WebapiInstance) apiDownloadStart(w http.ResponseWriter, r *http.Reque
 
 	info := &downloadInfo{backend: api.Backend, api: api, id: uuid.New(), created: time.Now(), hash: hash, nodeID: nodeID}
 
+	api.Backend.LogError("Download.DownloadStart", "output %v", downloadInfo{backend: api.Backend, api: api, id: uuid.New(), created: time.Now(), hash: hash, nodeID: nodeID})
+
 	// create the file immediately
 	if info.initDiskFile(filePath) != nil {
 		EncodeJSON(api.Backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseFileInvalid})
@@ -89,6 +91,8 @@ func (api *WebapiInstance) apiDownloadStart(w http.ResponseWriter, r *http.Reque
 
 	// start the download!
 	go info.Start()
+
+	api.Backend.LogError("Download.DownloadStart", "output %v", apiResponseDownloadStatus{APIStatus: DownloadResponseSuccess, ID: info.id, DownloadStatus: DownloadWaitMetadata})
 
 	EncodeJSON(api.Backend, w, r, apiResponseDownloadStatus{APIStatus: DownloadResponseSuccess, ID: info.id, DownloadStatus: DownloadWaitMetadata})
 }
@@ -131,6 +135,8 @@ func (api *WebapiInstance) apiDownloadStatus(w http.ResponseWriter, r *http.Requ
 	}
 
 	info.RUnlock()
+
+	api.Backend.LogError("Download.DownloadStatus", "output %v", response)
 
 	EncodeJSON(api.Backend, w, r, response)
 }

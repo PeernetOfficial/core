@@ -1,5 +1,5 @@
 /*
-File Name:  File Tag.go
+File Username:  File Tag.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
@@ -16,7 +16,7 @@ import (
 
 // List of defined file tags. Virtual tags are generated at runtime and are read-only. They cannot be stored on the blockchain.
 const (
-	TagName          = 0 // Name of file.
+	TagName          = 0 // Username of file.
 	TagFolder        = 1 // Folder name.
 	TagDescription   = 2 // Arbitrary description of the file. May contain hashtags.
 	TagDateShared    = 3 // When the file was published on the blockchain. Virtual.

@@ -1,5 +1,5 @@
 /*
-File Name:  Message Send.go
+File Username:  Message Send.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

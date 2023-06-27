@@ -75,6 +75,11 @@ These are the functions provided by the API:
 
 /merge/directory                List all recent files shared by peers based 
                                 on the similar file shared
+/warehouse/create/uploadID      Generates a UUID to track upload status 
+/warehouse/create/track/uploadID Tracks upload status when a upload is 
+                                 ongoing to the warehaouse (Triggers after 
+                                 the route "/warehouse/create" is called).
+
 ```
 
 # API Documentation
@@ -277,29 +282,30 @@ The file type is an indication what type of content the file's data is:
 
 The file format is a more granular indicator about the content of a file:
 
-| Type | Constant         | Info                                                |
-| ---- | ---------------- | --------------------------------------------------- |
-| 0    | FormatBinary     | Binary/unspecified                                  |
-| 1    | FormatPDF        | PDF document                                        |
-| 2    | FormatWord       | Word document                                       |
-| 3    | FormatExcel      | Excel                                               |
-| 4    | FormatPowerpoint | Powerpoint                                          |
-| 5    | FormatPicture    | Pictures (including GIF, excluding icons)           |
-| 6    | FormatAudio      | Audio files                                         |
-| 7    | FormatVideo      | Video files                                         |
+| Type | Constant         | Info                                               |
+|------| ---------------- |----------------------------------------------------|
+| 0    | FormatBinary     | Binary/unspecified                                 |
+| 1    | FormatPDF        | PDF document                                       |
+| 2    | FormatWord       | Word document                                      |
+| 3    | FormatExcel      | Excel                                              |
+| 4    | FormatPowerpoint | Powerpoint                                         |
+| 5    | FormatPicture    | Pictures (including GIF, excluding icons)          |
+| 6    | FormatAudio      | Audio files                                        |
+| 7    | FormatVideo      | Video files                                        |
 | 8    | FormatContainer  | Compressed files including ZIP, RAR, TAR and others |
-| 9    | FormatHTML       | HTML file                                           |
-| 10   | FormatText       | Text file                                           |
-| 11   | FormatEbook      | Ebook file                                          |
-| 12   | FormatCompressed | Compressed file                                     |
-| 13   | FormatDatabase   | Database file                                       |
-| 14   | FormatEmail      | Single email                                        |
-| 15   | FormatCSV        | CSV file                                            |
-| 16   | FormatFolder     | Virtual folder                                      |
-| 17   | FormatExecutable | Executable file                                     |
-| 18   | FormatInstaller  | Installer                                           |
-| 19   | FormatAPK        | APK                                                 |
-| 20   | FormatISO        | ISO                                                 |
+| 9    | FormatHTML       | HTML file                                          |
+| 10   | FormatText       | Text file                                          |
+| 11   | FormatEbook      | Ebook file                                         |
+| 12   | FormatCompressed | Compressed file                                    |
+| 13   | FormatDatabase   | Database file                                      |
+| 14   | FormatEmail      | Single email                                       |
+| 15   | FormatCSV        | CSV file                                           |
+| 16   | FormatFolder     | Virtual folder                                     |
+| 17   | FormatExecutable | Executable file                                    |
+| 18   | FormatInstaller  | Installer                                          |
+| 19   | FormatAPK        | APK                                                |
+| 20   | FormatISO        | ISO                                                |
+| 21   | FormatPeernetSearch       | File type to store peernet search history          |
 
 ### Add File
 
@@ -496,7 +502,7 @@ Below is the list of well known profile information. Clients may define addition
 This lists all profile fields.
 
 ```
-Request:    GET /profile/list
+Request:    GET /profile/list&node=[node id<optional>]
 Response:   200 with JSON structure apiProfileData
 ```
 
@@ -538,7 +544,7 @@ Example response:
 This reads a specific profile field. See ProfileX for recognized fields.
 
 ```
-Request:    GET /profile/read?field=[index]
+Request:    GET /profile/read?field=[index]&node=[node id<optional>]
 Response:   200 with JSON structure apiProfileData
 ```
 
@@ -617,7 +623,7 @@ Filters and sort order may be applied when starting the search at `/search`, or 
 These are the available sort options:
 
 | Sort | Constant              | Info                                                                                |
-| ---- | --------------------- | ----------------------------------------------------------------------------------- |
+|------|-----------------------|-------------------------------------------------------------------------------------|
 | 0    | SortNone              | No sorting. Results are returned as they come in.                                   |
 | 1    | SortRelevanceAsc      | Least relevant results first.                                                       |
 | 2    | SortRelevanceDec      | Most relevant results first.                                                        |
@@ -629,6 +635,7 @@ These are the available sort options:
 | 8    | SortSizeDesc          | File size descending. Largest files first.                                          |
 | 9    | SortSharedByCountAsc  | Shared by count ascending. Files that are shared by the least count of peers first. |
 | 10   | SortSharedByCountDesc | Shared by count descending. Files that are shared by the most count of peers first. |
+
 
 The following filters are supported:
 
@@ -658,6 +665,7 @@ type SearchRequest struct {
     FileFormat  int         `json:"fileformat"` // File format such as PDF, Word, Ebook, etc. See core.FormatX. -1 = not used.
     SizeMin     int         `json:"sizemin"`    // Min file size in bytes. -1 = not used.
     SizeMax     int         `json:"sizemax"`    // Max file size in bytes. -1 = not used.
+    NodeID      string      `json:"node"`       // Filter based on the NodeID provided
 }
 
 type SearchRequestResponse struct {
@@ -1028,7 +1036,8 @@ type WarehouseResult struct {
 Example POST request to `http://127.0.0.1:112/warehouse/create`:
 
 ```
-Test file.
+--form 'id="<uuid>"' \
+--form 'File=@"<file path>"'
 ```
 
 Example response:

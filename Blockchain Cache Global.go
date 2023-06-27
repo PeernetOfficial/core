@@ -1,5 +1,5 @@
 /*
-File Name:  Blockchain Cache Global.go
+File Username:  Blockchain Cache Global.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

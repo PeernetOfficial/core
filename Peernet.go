@@ -1,5 +1,5 @@
 /*
-File Name:  Peernet.go
+File Username:  Peernet.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */
@@ -19,7 +19,7 @@ import (
 )
 
 // Init initializes the client. If the config file does not exist or is empty, a default one will be created.
-// The User Agent must be provided in the form "Application Name/1.0".
+// The User Agent must be provided in the form "Application Username/1.0".
 // The returned status is of type ExitX. Anything other than ExitSuccess indicates a fatal failure.
 func Init(UserAgent string, ConfigFilename string, Filters *Filters, ConfigOut interface{}) (backend *Backend, status int, err error) {
 	if UserAgent == "" {

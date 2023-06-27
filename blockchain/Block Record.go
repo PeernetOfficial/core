@@ -1,5 +1,5 @@
 /*
-File Name:  Block Record.go
+File Username:  Block Record.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
@@ -45,7 +45,7 @@ func decodeBlockRecords(block *Block) (decoded *BlockDecoded, err error) {
 		decoded.RecordsDecoded = append(decoded.RecordsDecoded, file)
 	}
 
-	if profileFields, err := decodeBlockRecordProfile(block.RecordsRaw); err != nil {
+	if profileFields, err := DecodeBlockRecordProfile(block.RecordsRaw); err != nil {
 		return nil, err
 	} else if len(profileFields) > 0 {
 		decoded.RecordsDecoded = append(decoded.RecordsDecoded, profileFields)

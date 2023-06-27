@@ -1,5 +1,5 @@
 /*
-File Name:  File Detection.go
+File:  File Detection.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */
@@ -93,6 +93,9 @@ func FileTranslateExtension(extension string) (fileType, fileFormat uint16) {
 
 	case "iso":
 		return core.TypeContainer, core.FormatISO
+
+	case "pnsearch":
+		return core.TypeText, core.FormatPeernetSearch
 
 	default:
 		return core.TypeBinary, core.FormatBinary

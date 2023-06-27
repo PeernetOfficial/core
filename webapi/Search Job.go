@@ -1,5 +1,5 @@
 /*
-File Name:  Search Job.go
+File Username:  Search Job.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */
@@ -25,6 +25,7 @@ type SearchFilter struct {
 	Sort       int       // Sort order. See SortX.
 	SizeMin    int       // Min file size in bytes. -1 = not used.
 	SizeMax    int       // Max file size in bytes. -1 = not used.
+	NodeID     []byte    // Filter based on a NodeID provided
 }
 
 // SearchJob is a collection of search jobs
@@ -257,7 +258,7 @@ func (job *SearchJob) isFileFiltered(file *apiFile) bool {
 	return true
 }
 
-// SortFiles sorts a list of files. It returns a sorted list. 0 = no sorting, 1 = Relevance ASC, 2 = Relevance DESC, 3 = Date ASC, 4 = Date DESC, 5 = Name ASC, 6 = Name DESC
+// SortFiles sorts a list of files. It returns a sorted list. 0 = no sorting, 1 = Relevance ASC, 2 = Relevance DESC, 3 = Date ASC, 4 = Date DESC, 5 = Username ASC, 6 = Username DESC
 func SortFiles(files []*apiFile, Sort int) (sorted []*apiFile) {
 	switch Sort {
 	case SortRelevanceAsc:

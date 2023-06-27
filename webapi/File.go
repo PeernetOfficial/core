@@ -1,5 +1,5 @@
 /*
-File Name:  File.go
+File Username:  File.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */
@@ -8,6 +8,7 @@ package webapi
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/PeernetOfficial/core"
@@ -42,14 +43,18 @@ type apiFile struct {
 	Date        time.Time         `json:"date"`        // Date shared
 	NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file. Read only.
 	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
+	Username    string            `json:"username"`    // Username of the user who uploaded the file
 }
 
 // --- conversion from core to API data ---
 
 func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
-	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Metadata: []apiFileMetadata{}}
+	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Username: input.Username, Metadata: []apiFileMetadata{}}
 
 	for _, tag := range input.Tags {
+		if tag.Type == blockchain.TagSharedByCount && tag.Number() == 0 {
+			return apiFile{}
+		}
 		switch tag.Type {
 		case blockchain.TagName:
 			output.Name = tag.Text()
@@ -69,6 +74,10 @@ func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
 
 		case blockchain.TagSharedByCount:
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Shared By Count", Number: tag.Number()})
+			// if a file has 0 peers sharing then do not add it to the list.
+			if tag.Number() == 0 {
+				return apiFile{}
+			}
 
 		case blockchain.TagSharedByGeoIP:
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Shared By GeoIP", Text: tag.Text()})
@@ -136,6 +145,7 @@ Response:   200 with JSON structure apiBlockchainBlockStatus
 func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.Request) {
 	var input apiBlockAddFiles
 	if err := DecodeJSON(w, r, &input); err != nil {
+		api.Backend.LogError("blockchain.AddFile", "error: %v", "error decoding JSON")
 		return
 	}
 
@@ -143,6 +153,8 @@ func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.R
 
 	for _, file := range input.Files {
 		if len(file.Hash) != protocol.HashSize {
+			api.Backend.LogError("blockchain.AddFile", "error: %v", "file length is not the same length as "+
+				"the protocol hash size.")
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
@@ -153,6 +165,7 @@ func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.R
 		// Verify that the file exists in the warehouse. Folders are exempt from this check as they are only virtual.
 		if !file.IsVirtualFolder() {
 			if _, err := warehouse.ValidateHash(file.Hash); err != nil {
+				api.Backend.LogError("blockchain.AddFile", "error: %v", err)
 				http.Error(w, "", http.StatusBadRequest)
 				return
 			} else if _, fileSize, status, _ := api.Backend.UserWarehouse.FileExists(file.Hash); status != warehouse.StatusOK {
@@ -179,22 +192,37 @@ func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.R
 
 	newHeight, newVersion, status := api.Backend.UserBlockchain.AddFiles(filesAdd)
 
+	// Temporary log to check the output for warehouse API
+	api.Backend.LogError("blockchain.AddFile", "output %v", apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
+
 	EncodeJSON(api.Backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
 /*
 apiBlockchainFileList lists all files stored on the blockchain.
 
-Request:    GET /blockchain/file/list
+Request:    GET /blockchain/file/list?fileFormat=<file format>
 Response:   200 with JSON structure apiBlockAddFiles
 */
 func (api *WebapiInstance) apiBlockchainFileList(w http.ResponseWriter, r *http.Request) {
 	files, status := api.Backend.UserBlockchain.ListFiles()
 
+	r.ParseForm()
+	// filter based on file type
+	fileType, err := strconv.Atoi(r.Form.Get("fileFormat"))
+
 	var result apiBlockAddFiles
 
 	for _, file := range files {
-		result.Files = append(result.Files, blockRecordFileToAPI(file))
+		ApiFile := blockRecordFileToAPI(file)
+		if ApiFile.NodeID == nil {
+			continue
+		}
+		if ApiFile.Format == uint16(fileType) {
+			result.Files = append(result.Files, ApiFile)
+		} else if err != nil {
+			result.Files = append(result.Files, ApiFile)
+		}
 	}
 
 	result.Status = status

@@ -1,5 +1,5 @@
 /*
-File Name:  Message Encoding Transfer.go
+File Username:  Message Encoding Transfer.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 

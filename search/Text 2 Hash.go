@@ -1,5 +1,5 @@
 /*
-File Name:  Text 2 Hash.go
+File name:  Text 2 Hash.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

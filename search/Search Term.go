@@ -1,5 +1,5 @@
 /*
-File Name:  Search Term.go
+File name:  Search Term.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */

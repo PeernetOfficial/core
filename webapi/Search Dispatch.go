@@ -1,5 +1,5 @@
 /*
-File Name:  Search Dispatch.go
+File Username:  Search Dispatch.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */
@@ -9,6 +9,7 @@ package webapi
 import (
 	"bytes"
 	"fmt"
+	"github.com/PeernetOfficial/core/protocol"
 	"time"
 
 	"github.com/PeernetOfficial/core/blockchain"
@@ -43,6 +44,12 @@ func (job *SearchJob) localSearch(api *WebapiInstance, term string) {
 
 resultLoop:
 	for _, result := range results {
+
+		// check if the NodeID filter is provided
+		if job.filtersStart.NodeID != nil && !(bytes.Equal(job.filtersStart.NodeID, protocol.PublicKey2NodeID(result.PublicKey))) {
+			continue
+		}
+
 		file, _, found, err := api.Backend.ReadFile(result.PublicKey, result.BlockchainVersion, result.BlockNumber, result.FileID)
 		if err != nil || !found {
 			continue

@@ -1,5 +1,5 @@
 /*
-File Name:  Blockchain.go
+File Username:  Blockchain.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 

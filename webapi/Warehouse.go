@@ -1,5 +1,5 @@
 /*
-File Name:  Warehouse.go
+File Username:  Warehouse.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */
@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package webapi
 
 import (
+	"github.com/google/uuid"
 	"net/http"
 	"strconv"
 
@@ -20,17 +21,62 @@ type WarehouseResult struct {
 }
 
 /*
-apiWarehouseCreateFile creates a file in the warehouse.
+ApiWarehouseCreateFile creates a file in the warehouse.
 
 Request:    POST /warehouse/create with raw data to create as new file
 Response:   200 with JSON structure WarehouseResult
 */
-func (api *WebapiInstance) apiWarehouseCreateFile(w http.ResponseWriter, r *http.Request) {
-	hash, status, err := api.Backend.UserWarehouse.CreateFile(r.Body, 0)
+func (api *WebapiInstance) ApiWarehouseCreateFile(w http.ResponseWriter, r *http.Request) {
+	// changing parameter to take ID as a parameter for upload and file itself
+	ID := r.FormValue("id")
+	file, handler, err := r.FormFile("File")
+	if err != nil {
+		api.Backend.LogError("warehouse.CreateFile", "error: %v", err)
+		EncodeJSON(api.Backend, w, r, errorResponse{function: "warehouse.CreateFile", error: err.Error()})
+		return
+	}
+
+	var hash []byte
+	var status int
+
+	// checks if there is a new upload and then
+	if ID != "" {
+		IDUUID, err := uuid.Parse(ID)
+		if err != nil {
+			api.Backend.LogError("warehouse.CreateFile", "error: %v", err)
+			EncodeJSON(api.Backend, w, r, errorResponse{function: "warehouse.CreateFile", error: err.Error()})
+			return
+		}
+
+		info := api.uploadLookup(IDUUID)
+		if info == nil {
+			var newInfo UploadStatus
+			newInfo.ID = IDUUID
+			newInfo.Progress.TotalSize = uint64(handler.Size)
+			api.Backend.LogError("warehouse.CreateFile", "%v", newInfo)
+			api.uploadAdd(&newInfo)
+			hash, status, err = api.Backend.UserWarehouse.CreateFile(file, uint64(handler.Size), &newInfo)
+		} else {
+			info.Progress.TotalSize = uint64(handler.Size)
+			api.Backend.LogError("warehouse.CreateFile", "%v", info)
+			hash, status, err = api.Backend.UserWarehouse.CreateFile(file, uint64(handler.Size), info)
+		}
+
+		api.Backend.LogError("warehouse.CreateFile", "outside Create file: %v", info)
+
+	} else {
+		// File := r.
+		hash, status, err = api.Backend.UserWarehouse.CreateFile(file, uint64(handler.Size), nil)
+	}
 
 	if err != nil {
 		api.Backend.LogError("warehouse.CreateFile", "status %d error: %v", status, err)
+		EncodeJSON(api.Backend, w, r, errorResponse{function: "warehouse.CreateFile", error: err.Error()})
+		return
 	}
+
+	// Temporary log to check the output for warehouse API
+	api.Backend.LogError("warehouse.CreateFile", "output %v", WarehouseResult{Status: status, Hash: hash})
 
 	EncodeJSON(api.Backend, w, r, WarehouseResult{Status: status, Hash: hash})
 }

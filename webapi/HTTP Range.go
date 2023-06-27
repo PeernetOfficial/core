@@ -1,5 +1,5 @@
 /*
-File Name:  HTTP Range.go
+File Username:  HTTP Range.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 */

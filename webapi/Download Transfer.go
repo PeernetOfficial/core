@@ -1,5 +1,5 @@
 /*
-File Name:  Download Transfer.go
+File Username:  Download Transfer.go
 Copyright:  2021 Peernet Foundation s.r.o.
 Author:     Peter Kleissner
 

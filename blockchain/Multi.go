@@ -1,5 +1,5 @@
 /*
-File Name:  Multi.go
+File Username:  Multi.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 
@@ -16,6 +16,7 @@ package blockchain
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/PeernetOfficial/core/btcec"
@@ -277,7 +278,11 @@ func (multi *MultiStore) IngestBlock(header *MultiBlockchainHeader, blockNumber 
 	}
 
 	// store the transferred block in the cache
-	multi.WriteBlock(header.PublicKey, header.Version, blockNumber, raw)
+	err = multi.WriteBlock(header.PublicKey, header.Version, blockNumber, raw)
+	if err != nil {
+		fmt.Println(err)
+	}
+
 	header.ListBlocks = append(header.ListBlocks, blockNumber)
 
 	// update blockchain header stats if records were decoded

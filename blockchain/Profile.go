@@ -1,5 +1,5 @@
 /*
-File Name:  Profile.go
+File Username:  Profile.go
 Copyright:  2021 Peernet s.r.o.
 Author:     Peter Kleissner
 */
@@ -11,7 +11,7 @@ func (blockchain *Blockchain) ProfileReadField(index uint16) (data []byte, statu
 	found := false
 
 	status = blockchain.Iterate(func(block *Block) (statusI int) {
-		fields, err := decodeBlockRecordProfile(block.RecordsRaw)
+		fields, err := DecodeBlockRecordProfile(block.RecordsRaw)
 		if err != nil {
 			return StatusCorruptBlockRecord
 		} else if len(fields) == 0 {
@@ -43,7 +43,7 @@ func (blockchain *Blockchain) ProfileList() (fields []BlockRecordProfile, status
 	uniqueFields := make(map[uint16][]byte)
 
 	status = blockchain.Iterate(func(block *Block) (statusI int) {
-		fields, err := decodeBlockRecordProfile(block.RecordsRaw)
+		fields, err := DecodeBlockRecordProfile(block.RecordsRaw)
 		if err != nil {
 			return StatusCorruptBlockRecord
 		}
@@ -103,7 +103,7 @@ func (blockchain *Blockchain) ProfileDelete(fields []uint16) (newHeight, newVers
 			return 0 // no action
 		}
 
-		existingFields, err := decodeBlockRecordProfile([]BlockRecordRaw{*record})
+		existingFields, err := DecodeBlockRecordProfile([]BlockRecordRaw{*record})
 		if err != nil || len(existingFields) != 1 {
 			return 3 // error blockchain corrupt
 		}
