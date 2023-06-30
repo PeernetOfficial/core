@@ -9,13 +9,12 @@ package webapi
 import (
 	"bytes"
 	"fmt"
-	"github.com/PeernetOfficial/core/protocol"
 	"time"
 
 	"github.com/PeernetOfficial/core/blockchain"
 )
 
-func (api *WebapiInstance) dispatchSearch(input SearchRequest) (job *SearchJob) {
+func (api *WebapiInstance) dispatchSearch(input SearchRequest, NodeID []byte) (job *SearchJob) {
 	Timeout := input.Parse()
 	Filter := input.ToSearchFilter()
 
@@ -25,14 +24,14 @@ func (api *WebapiInstance) dispatchSearch(input SearchRequest) (job *SearchJob) 
 	// todo: create actual search clients!
 	job.Status = SearchStatusLive
 
-	go job.localSearch(api, input.Term)
+	go job.localSearch(api, input.Term, NodeID)
 
 	api.RemoveJobDefer(job, job.timeout+time.Minute*10)
 
 	return job
 }
 
-func (job *SearchJob) localSearch(api *WebapiInstance, term string) {
+func (job *SearchJob) localSearch(api *WebapiInstance, term string, NodeID []byte) {
 	if api.Backend.SearchIndex == nil {
 		job.Status = SearchStatusNoIndex
 		return
@@ -44,11 +43,6 @@ func (job *SearchJob) localSearch(api *WebapiInstance, term string) {
 
 resultLoop:
 	for _, result := range results {
-
-		// check if the NodeID filter is provided
-		if job.filtersStart.NodeID != nil && !(bytes.Equal(job.filtersStart.NodeID, protocol.PublicKey2NodeID(result.PublicKey))) {
-			continue
-		}
 
 		file, _, found, err := api.Backend.ReadFile(result.PublicKey, result.BlockchainVersion, result.BlockNumber, result.FileID)
 		if err != nil || !found {
@@ -62,25 +56,33 @@ resultLoop:
 			}
 		}
 
-		if bytes.Equal(file.NodeID, api.Backend.SelfNodeID()) {
-			// Indicates data from the current user.
-			file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
-		} else if peer := api.Backend.NodelistLookup(file.NodeID); peer != nil {
-			// add the tags 'Shared By Count' and 'Shared By GeoIP'
-			file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
-			if latitude, longitude, valid := api.Peer2GeoIP(peer); valid {
-				sharedByGeoIP := fmt.Sprintf("%.4f", latitude) + "," + fmt.Sprintf("%.4f", longitude)
-				file.Tags = append(file.Tags, blockchain.TagFromText(blockchain.TagSharedByGeoIP, sharedByGeoIP))
+		// if the NodeID filter is provided
+		if bytes.Equal(file.NodeID, NodeID) || bytes.Equal(NodeID, nil) {
+			if bytes.Equal(file.NodeID, api.Backend.SelfNodeID()) {
+				// Indicates data from the current user.
+				file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
+			} else if peer := api.Backend.NodelistLookup(file.NodeID); peer != nil {
+				// Get current active connections
+				if len(peer.GetConnections(true)) > 0 {
+					// add the tags 'Shared By Count' and 'Shared By GeoIP'
+					file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
+					if latitude, longitude, valid := api.Peer2GeoIP(peer); valid {
+						sharedByGeoIP := fmt.Sprintf("%.4f", latitude) + "," + fmt.Sprintf("%.4f", longitude)
+						file.Tags = append(file.Tags, blockchain.TagFromText(blockchain.TagSharedByGeoIP, sharedByGeoIP))
+					}
+				}
 			}
 		}
 
 		// new result
-		newFile := blockRecordFileToAPI(file)
+		newFile := blockRecordFileToAPI(file, false)
 
-		job.Files = append(job.Files, &newFile)
-		job.AllFiles = append(job.AllFiles, &newFile)
-		job.requireSort = true
-		job.statsAdd(&newFile)
+		if newFile.NodeID != nil {
+			job.Files = append(job.Files, &newFile)
+			job.AllFiles = append(job.AllFiles, &newFile)
+			job.requireSort = true
+			job.statsAdd(&newFile)
+		}
 	}
 
 	job.Status = SearchStatusTerminated

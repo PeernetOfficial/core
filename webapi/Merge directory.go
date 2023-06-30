@@ -69,7 +69,7 @@ func (api *WebapiInstance) ExploreFileSharedByNodeThatSharedSimilarFile(fileType
 
 		// loop over results
 		for n := range resultFiles {
-			ApiFile := blockRecordFileToAPI(resultFiles[n])
+			ApiFile := blockRecordFileToAPI(resultFiles[n], false)
 			if ApiFile.NodeID == nil {
 				continue
 			}

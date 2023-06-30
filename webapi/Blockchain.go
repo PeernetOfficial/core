@@ -108,7 +108,7 @@ func (api *WebapiInstance) apiBlockchainRead(w http.ResponseWriter, r *http.Requ
 		for _, record := range block.RecordsDecoded {
 			switch v := record.(type) {
 			case blockchain.BlockRecordFile:
-				result.RecordsDecoded = append(result.RecordsDecoded, blockRecordFileToAPI(v))
+				result.RecordsDecoded = append(result.RecordsDecoded, blockRecordFileToAPI(v, true))
 
 			case blockchain.BlockRecordProfile:
 				result.RecordsDecoded = append(result.RecordsDecoded, blockRecordProfileToAPI(v))

@@ -47,14 +47,13 @@ type apiFile struct {
 }
 
 // --- conversion from core to API data ---
-
-func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
+// Currently in a Hacky way for quick generalised filters
+func blockRecordFileToAPI(input blockchain.BlockRecordFile, localNode bool) (output apiFile) {
 	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Username: input.Username, Metadata: []apiFileMetadata{}}
 
+	NumberOfNodesShared := false
+
 	for _, tag := range input.Tags {
-		if tag.Type == blockchain.TagSharedByCount && tag.Number() == 0 {
-			return apiFile{}
-		}
 		switch tag.Type {
 		case blockchain.TagName:
 			output.Name = tag.Text()
@@ -75,9 +74,7 @@ func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
 		case blockchain.TagSharedByCount:
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Shared By Count", Number: tag.Number()})
 			// if a file has 0 peers sharing then do not add it to the list.
-			if tag.Number() == 0 {
-				return apiFile{}
-			}
+			NumberOfNodesShared = true
 
 		case blockchain.TagSharedByGeoIP:
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Name: "Shared By GeoIP", Text: tag.Text()})
@@ -85,6 +82,10 @@ func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
 		default:
 			output.Metadata = append(output.Metadata, apiFileMetadata{Type: tag.Type, Blob: tag.Data})
 		}
+	}
+
+	if !NumberOfNodesShared && !localNode {
+		return apiFile{}
 	}
 
 	return output
@@ -214,7 +215,7 @@ func (api *WebapiInstance) apiBlockchainFileList(w http.ResponseWriter, r *http.
 	var result apiBlockAddFiles
 
 	for _, file := range files {
-		ApiFile := blockRecordFileToAPI(file)
+		ApiFile := blockRecordFileToAPI(file, true)
 		if ApiFile.NodeID == nil {
 			continue
 		}

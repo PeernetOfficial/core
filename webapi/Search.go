@@ -16,6 +16,7 @@ Author:     Peter Kleissner
 package webapi
 
 import (
+	"bytes"
 	"net/http"
 	"strconv"
 	"time"
@@ -36,6 +37,7 @@ type SearchRequest struct {
 	FileFormat  int         `json:"fileformat"` // File format such as PDF, Word, Ebook, etc. See core.FormatX. -1 = not used.
 	SizeMin     int         `json:"sizemin"`    // Min file size in bytes. -1 = not used.
 	SizeMax     int         `json:"sizemax"`    // Max file size in bytes. -1 = not used.
+	NodeID      string      `json:"node"`
 }
 
 // Sort orders
@@ -89,6 +91,8 @@ func (api *WebapiInstance) apiSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	NodeId, _ := DecodeBlake3Hash(r.URL.Query().Get("node"))
+
 	if input.Timeout <= 0 {
 		input.Timeout = 20
 	}
@@ -104,7 +108,7 @@ func (api *WebapiInstance) apiSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	job := api.dispatchSearch(input)
+	job := api.dispatchSearch(input, NodeId)
 
 	EncodeJSON(api.Backend, w, r, SearchRequestResponse{Status: 0, ID: job.id})
 }
@@ -391,11 +395,21 @@ func (api *WebapiInstance) ExploreHelper(fileType int, limit, offset int, nodeID
 
 	// loop over results
 	for n := range resultFiles {
-		ApiFile := blockRecordFileToAPI(resultFiles[n])
-		if ApiFile.NodeID == nil {
-			continue
+		if nodeIDState {
+			if bytes.Equal(resultFiles[n].NodeID, nodeID) {
+				ApiFile := blockRecordFileToAPI(resultFiles[n], false)
+				if ApiFile.NodeID == nil {
+					continue
+				}
+				result.Files = append(result.Files, ApiFile)
+			}
+		} else {
+			ApiFile := blockRecordFileToAPI(resultFiles[n], false)
+			if ApiFile.NodeID == nil {
+				continue
+			}
+			result.Files = append(result.Files, ApiFile)
 		}
-		result.Files = append(result.Files, ApiFile)
 	}
 
 	if len(result.Files) == 0 {
