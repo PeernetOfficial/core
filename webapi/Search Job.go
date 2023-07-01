@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package webapi
 
 import (
+	"bytes"
 	"sort"
 	"sync"
 	"time"
@@ -252,6 +253,10 @@ func (job *SearchJob) isFileFiltered(file *apiFile) bool {
 	}
 
 	if job.filtersRuntime.SizeMin >= 0 && file.Size < uint64(job.filtersRuntime.SizeMin) || job.filtersRuntime.SizeMax >= 0 && file.Size > uint64(job.filtersRuntime.SizeMax) {
+		return false
+	}
+
+	if job.filtersRuntime.NodeID != nil && !bytes.Equal(job.filtersRuntime.NodeID, file.NodeID) {
 		return false
 	}
 

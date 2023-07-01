@@ -160,9 +160,12 @@ func (api *WebapiInstance) apiSearchResult(w http.ResponseWriter, r *http.Reques
 		sort, _ := strconv.Atoi(r.Form.Get("sort"))
 		sizeMin, _ := strconv.Atoi(r.Form.Get("sizemin"))
 		sizeMax, _ := strconv.Atoi(r.Form.Get("sizemax"))
-		//nodeID, _ := DecodeBlake3Hash(r.Form.Get("node"))
+		nodeID, valid := DecodeBlake3Hash(r.Form.Get("node"))
+		if !valid {
+			nodeID = nil
+		}
 
-		filter := inputToSearchFilter(sort, fileType, fileFormat, dateFrom, dateTo, sizeMin, sizeMax)
+		filter := inputToSearchFilter(sort, fileType, fileFormat, dateFrom, dateTo, sizeMin, sizeMax, nodeID)
 
 		job.RuntimeFilter(filter)
 	}
@@ -433,11 +436,14 @@ func (input *SearchRequest) Parse() (Timeout time.Duration) {
 
 // ToSearchFilter converts the user input to a valid search filter
 func (input *SearchRequest) ToSearchFilter() (output SearchFilter) {
-	//hash, _ := DecodeBlake3Hash(input.NodeID)
-	return inputToSearchFilter(input.Sort, input.FileType, input.FileFormat, input.DateFrom, input.DateTo, input.SizeMin, input.SizeMax)
+	hash, valid := DecodeBlake3Hash(input.NodeID)
+	if !valid {
+		hash = nil
+	}
+	return inputToSearchFilter(input.Sort, input.FileType, input.FileFormat, input.DateFrom, input.DateTo, input.SizeMin, input.SizeMax, hash)
 }
 
-func inputToSearchFilter(Sort, FileType, FileFormat int, DateFrom, DateTo string, SizeMin, SizeMax int) (output SearchFilter) {
+func inputToSearchFilter(Sort, FileType, FileFormat int, DateFrom, DateTo string, SizeMin, SizeMax int, NodeID []byte) (output SearchFilter) {
 	output.Sort = Sort
 	output.FileType = FileType
 	output.FileFormat = FileFormat
@@ -450,6 +456,10 @@ func inputToSearchFilter(Sort, FileType, FileFormat int, DateFrom, DateTo string
 		output.DateFrom = dateFrom
 		output.DateTo = dateTo
 		output.IsDates = true
+	}
+
+	if NodeID != nil {
+		output.NodeID = NodeID
 	}
 
 	return

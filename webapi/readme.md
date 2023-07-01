@@ -635,6 +635,7 @@ These are the available sort options:
 | 8    | SortSizeDesc          | File size descending. Largest files first.                                          |
 | 9    | SortSharedByCountAsc  | Shared by count ascending. Files that are shared by the least count of peers first. |
 | 10   | SortSharedByCountDesc | Shared by count descending. Files that are shared by the most count of peers first. |
+| 11   | Node                  | Filter files based on the NodeID provided                                           |
 
 
 The following filters are supported:
