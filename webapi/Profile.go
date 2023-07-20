@@ -137,8 +137,6 @@ func (api *WebapiInstance) apiProfileWrite(w http.ResponseWriter, r *http.Reques
 
 	newHeight, newVersion, status := api.Backend.UserBlockchain.ProfileWrite(fields)
 
-	api.Backend.LogError("apiProfileWrite", "Height: %v, Version %v", newHeight, newVersion)
-
 	EncodeJSON(api.Backend, w, r, apiBlockchainBlockStatus{Status: status, Height: newHeight, Version: newVersion})
 }
 
