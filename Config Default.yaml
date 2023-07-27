@@ -43,6 +43,6 @@ LocalFirewall:  false   # Indicates that a local firewall may drop unsolicited i
 PortForward: 0          # Default not set.
 
 # Global blockchain cache limits
-CacheMaxBlockSize:    4096  # Max block size to accept in bytes.
+CacheMaxBlockSize:    50096  # Max block size to accept in bytes.
 CacheMaxBlockCount:   256   # Max block count to cache per peer.
 LimitTotalRecords:    0     # Record count limit. 0 = unlimited. Max Records * Max Block Size = Size Limit.
