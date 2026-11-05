@@ -1,6 +1,6 @@
 # Peernet Core
 
-The core library which is needed for any Peernet application. It provides connectivity to the network and all basic functions. For details about Peernet see https://peernet.org/.
+The core library which is needed for any Peernet client. It provides connectivity to the network and all basic functions. It is developed according to the Peernet protocol specified in the [whitepaper](https://peernet.org/whitepaper). For details about Peernet see [peernet.org](https://peernet.org/).
 
 Current version: Alpha 6
 
@@ -122,6 +122,6 @@ ARM32 is not supported due to a [Go compiler bug](https://github.com/golang/go/i
 
 ## Contributing
 
-Please note that by contributing code, documentation, ideas, snippets, or any other intellectual property you agree that you have all the necessary rights and you agree that we, the Peernet organization, may use it for any purpose.
+Please note that by contributing code, documentation, ideas, snippets, or any other intellectual property you agree that you have all the necessary rights and you agree that we, Kleissner Ventures Ltd, may use it for any purpose, without compensation or attribution.
 
-&copy; 2021 Peernet s.r.o.
+&copy; 2021-2026 Kleissner Ventures Ltd
