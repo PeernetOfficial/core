@@ -118,8 +118,6 @@ Unless specified in the config via `Listen`, it will listen on all network adapt
 
 The code is compatible and tested on Windows, Linux, Mac, and Android.
 
-ARM32 is not supported due to a [Go compiler bug](https://github.com/golang/go/issues/36606) affecting [64-bit atomic access](https://pkg.go.dev/sync/atomic#pkg-note-BUG). This may affect old Raspberry Pis.
-
 ## Contributing
 
 Please note that by contributing code, documentation, ideas, snippets, or any other intellectual property you agree that you have all the necessary rights and you agree that we, Kleissner Ventures Ltd, may use it for any purpose, without compensation or attribution.
