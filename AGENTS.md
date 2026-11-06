@@ -12,7 +12,7 @@ Rules for AI agents working in this repository.
 2. **One logical change per commit.** Message = what + why. Push immediately after committing.
 3. **Master is live.** Every commit on master builds, passes `go vet` and `go test`, and has been exercised. Nothing half-done, no stubs, no `TODO` that papers over a problem, no silenced errors. Report what real execution returned, never what it should return.
 4. **Public repo.** No credentials, hostnames, server names, infrastructure details or internal roadmap. The root peer seed list in `Config Default.yaml` is protocol data (bootstrap), not infrastructure detail.
-5. **No third-party contributions.** PRs are not accepted and not merged; the history stays single-author.
+5. **No third-party contributions.** Pull requests from outside are not accepted and not merged; the history stays single-author.
 6. **Simplicity wins.** If a change grows a feature nobody asked for, cut it. Prefer the simplest design that fully meets the spec.
 7. **Underspecified or wrong is reported, not worked around.** Say so plainly, document it, solve it with the owner.
 
@@ -67,4 +67,5 @@ All three must be clean before a diff is shown. A change to networking, DHT, tra
 
 - Remote: `https://github.com/PeernetOfficial/core.git`, branch `master`. Wrap git network calls as `GIT_TERMINAL_PROMPT=0 timeout 60 git …`.
 - `git pull --ff-only` at session start and again right before every commit; `git status --short` before editing — an unexpectedly dirty tree is reported, never stashed over.
+- **Large changes go through an issue and a pull request.** A change that cannot land as one reviewable commit on master — multi-commit work, anything touching the wire format, cryptography or on-disk compatibility, or a diff too big to review in chat — is done on a branch and merged via a pull request. Before the branch is created, an issue describes what changes, why, and the scope; the pull request references it (`Closes #N`). Commits on the branch follow the same rules as master (one logical change each, builds, `go vet` and `go test` clean). Merge with a merge commit, never squash, so the step-by-step history is kept. The merge needs the owner's approval like any commit. Small changes stay as they are: diff in chat, commit on approval, straight to master.
 - Version bumps (`Version` in `Config.go`, "Current version" in README) are their own commit, on the owner's call.
