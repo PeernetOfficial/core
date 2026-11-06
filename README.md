@@ -108,10 +108,6 @@ Unless specified in the config via `Listen`, it will listen on all network adapt
 * Traffic between link-local unicast IPs and non link-local IPs is not allowed.
 * UPnP is supported on IPv4 only for now.
 
-## OS Support
-
-The code is compatible and tested on Windows, Linux, Mac, and Android.
-
 ## Contributing
 
 Please note that by contributing code, documentation, ideas, snippets, or any other intellectual property you agree that you have all the necessary rights and you agree that we, Kleissner Ventures Ltd, may use it for any purpose, without compensation or attribution.
