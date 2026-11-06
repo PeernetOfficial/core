@@ -6,19 +6,19 @@ Author:     Peter Kleissner
 Multi-blockchain store implementation.
 
 Keys used in the key-value store:
-1. Key: Public key compressed, Value: Header
-2. Key: Public key compressed + version + block number, Value: Block
+1. Key: Public key, Value: Header
+2. Key: Public key + version + block number, Value: Block
 
 */
 
 package blockchain
 
 import (
+	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
 	"time"
 
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/store"
 )
 
@@ -74,7 +74,7 @@ const multiBlockchainHeaderSize = 56
 
 // This is a header for a single blockchain stored in a multi store.
 type MultiBlockchainHeader struct {
-	PublicKey           *btcec.PublicKey // Public Key of the blockchain
+	PublicKey           ed25519.PublicKey // Public Key of the blockchain
 	Height              uint64           // Height is exchanged as uint32 in the protocol, but stored as uint64.
 	Version             uint64           // Version is always uint64.
 	DateFirstBlockAdded time.Time        // Date the first block was added
@@ -89,7 +89,7 @@ type BlockchainStats struct {
 	SizeAllFiles     uint64 // Size of all files combined in stored blocks
 }
 
-func decodeBlockchainHeader(publicKey *btcec.PublicKey, buffer []byte) (header *MultiBlockchainHeader, err error) {
+func decodeBlockchainHeader(publicKey ed25519.PublicKey, buffer []byte) (header *MultiBlockchainHeader, err error) {
 	if len(buffer) < multiBlockchainHeaderSize {
 		return nil, errors.New("header length too small")
 	}
@@ -119,8 +119,8 @@ func decodeBlockchainHeader(publicKey *btcec.PublicKey, buffer []byte) (header *
 }
 
 // Reads a blockchains header if available.
-func (multi *MultiStore) ReadBlockchainHeader(publicKey *btcec.PublicKey) (header *MultiBlockchainHeader, found bool, err error) {
-	buffer, found := multi.Database.Get(publicKey.SerializeCompressed())
+func (multi *MultiStore) ReadBlockchainHeader(publicKey ed25519.PublicKey) (header *MultiBlockchainHeader, found bool, err error) {
+	buffer, found := multi.Database.Get(publicKey)
 	if !found {
 		return nil, false, nil
 	}
@@ -148,32 +148,32 @@ func (multi *MultiStore) WriteBlockchainHeader(header *MultiBlockchainHeader) (e
 		index += 8
 	}
 
-	return multi.Database.Set(header.PublicKey.SerializeCompressed(), raw)
+	return multi.Database.Set(header.PublicKey, raw)
 }
 
-func lookupKeyForBlock(publicKey *btcec.PublicKey, version, blockNumber uint64) (key []byte) {
+func lookupKeyForBlock(publicKey ed25519.PublicKey, version, blockNumber uint64) (key []byte) {
 	var buffer [16]byte
 	binary.LittleEndian.PutUint64(buffer[0:8], version)
 	binary.LittleEndian.PutUint64(buffer[8:16], blockNumber)
 
-	key = append(key, publicKey.SerializeCompressed()...)
+	key = append(key, publicKey...)
 	key = append(key, buffer[:]...)
 
 	return key
 }
 
 // ReadBlock reads a raw block
-func (multi *MultiStore) ReadBlock(publicKey *btcec.PublicKey, version, blockNumber uint64) (raw []byte, found bool) {
+func (multi *MultiStore) ReadBlock(publicKey ed25519.PublicKey, version, blockNumber uint64) (raw []byte, found bool) {
 	return multi.Database.Get(lookupKeyForBlock(publicKey, version, blockNumber))
 }
 
 // WriteBlock writes a raw block. It does not update the blockchain header.
-func (multi *MultiStore) WriteBlock(publicKey *btcec.PublicKey, version, blockNumber uint64, raw []byte) (err error) {
+func (multi *MultiStore) WriteBlock(publicKey ed25519.PublicKey, version, blockNumber uint64, raw []byte) (err error) {
 	return multi.Database.Set(lookupKeyForBlock(publicKey, version, blockNumber), raw)
 }
 
 // AssessBlockchainHeader reads the blockchain header, if available, and assesses the status.
-func (multi *MultiStore) AssessBlockchainHeader(publicKey *btcec.PublicKey, version, height uint64) (header *MultiBlockchainHeader, status int, err error) {
+func (multi *MultiStore) AssessBlockchainHeader(publicKey ed25519.PublicKey, version, height uint64) (header *MultiBlockchainHeader, status int, err error) {
 	// check if there is an existing header for the blockchain
 	header, found, err := multi.ReadBlockchainHeader(publicKey)
 	if err != nil {
@@ -207,14 +207,14 @@ func (multi *MultiStore) DeleteBlockchain(header *MultiBlockchainHeader) {
 	}
 
 	// delete the header
-	multi.Database.Delete(header.PublicKey.SerializeCompressed())
+	multi.Database.Delete(header.PublicKey)
 
 	if multi.FilterBlockchainDelete != nil {
 		multi.FilterBlockchainDelete(multi, header)
 	}
 }
 
-func (multi *MultiStore) NewBlockchainHeader(publicKey *btcec.PublicKey, version, height uint64) (header *MultiBlockchainHeader, err error) {
+func (multi *MultiStore) NewBlockchainHeader(publicKey ed25519.PublicKey, version, height uint64) (header *MultiBlockchainHeader, err error) {
 	timeN := time.Now().UTC()
 	header = &MultiBlockchainHeader{
 		PublicKey:           publicKey,
@@ -251,12 +251,12 @@ func (multi *MultiStore) UpdateBlockchainStatistics(header *MultiBlockchainHeade
 // Iterates over all blockchains stored in the cache
 func (multi *MultiStore) IterateBlockchains(callback func(header *MultiBlockchainHeader)) {
 	multi.Database.Iterate(func(key, value []byte) {
-		if len(key) == 33 {
-			// Length 33 indicates key = Public key compressed, value = Header
-			if blockchainPublicKey, err := btcec.ParsePubKey(key, btcec.S256()); err == nil {
-				if header, err := decodeBlockchainHeader(blockchainPublicKey, value); err == nil {
-					callback(header)
-				}
+		if len(key) == ed25519.PublicKeySize {
+			// Length 32 indicates key = Public key, value = Header
+			blockchainPublicKey := make(ed25519.PublicKey, ed25519.PublicKeySize)
+			copy(blockchainPublicKey, key)
+			if header, err := decodeBlockchainHeader(blockchainPublicKey, value); err == nil {
+				callback(header)
 			}
 		}
 	})
@@ -271,7 +271,7 @@ func (multi *MultiStore) IngestBlock(header *MultiBlockchainHeader, blockNumber 
 	}
 
 	// decode it
-	decoded, status, err := DecodeBlockRaw(raw)
+	decoded, status, err := DecodeBlockRaw(raw, header.PublicKey)
 	if failIfInvalid && err != nil {
 		return nil, err
 	}

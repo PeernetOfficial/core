@@ -18,11 +18,11 @@ Offset  Size   Info
 package blockchain
 
 import (
+	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
 	"sync"
 
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/store"
 )
@@ -42,20 +42,19 @@ type Blockchain struct {
 	format  uint16 // Format is only locally used.
 
 	// internals
-	publicKey  *btcec.PublicKey  // Public Key of the owner. This must match the ones used on disk.
-	privateKey *btcec.PrivateKey // Private Key of the owner. This must match the ones used on disk.
-	path       string            // Path of the blockchain on disk. Depends on key-value store whether a filename or folder.
-	database   store.Store       // The database storing the blockchain.
-	sync.Mutex                   // synchronized access to the header
+	publicKey  ed25519.PublicKey  // Public Key of the owner. This must match the ones used on disk.
+	privateKey ed25519.PrivateKey // Private Key of the owner. This must match the ones used on disk.
+	path       string             // Path of the blockchain on disk. Depends on key-value store whether a filename or folder.
+	database   store.Store        // The database storing the blockchain.
+	sync.Mutex                    // synchronized access to the header
 
 	// callback
 	BlockchainUpdate func(blockchain *Blockchain, oldHeight, oldVersion, newHeight, newVersion uint64)
 }
 
 // Init initializes the given blockchain. It creates the blockchain file if it does not exist already.
-func Init(privateKey *btcec.PrivateKey, path string) (blockchain *Blockchain, err error) {
-	blockchain = &Blockchain{privateKey: privateKey, path: path}
-	publicKey := privateKey.PubKey()
+func Init(privateKey ed25519.PrivateKey, path string) (blockchain *Blockchain, err error) {
+	blockchain = &Blockchain{privateKey: privateKey, publicKey: privateKey.Public().(ed25519.PublicKey), path: path}
 
 	// open existing blockchain file or create new one
 	if blockchain.database, err = store.NewPogrebStore(path); err != nil {
@@ -70,13 +69,9 @@ func Init(privateKey *btcec.PrivateKey, path string) (blockchain *Blockchain, er
 		return blockchain, err // likely corrupt blockchain database
 	} else if !found {
 		// First run: create header signature!
-		blockchain.publicKey = publicKey
-
 		if err := blockchain.headerWrite(0, 0); err != nil {
 			return blockchain, err
 		}
-	} else if !blockchain.publicKey.IsEqual(publicKey) {
-		return blockchain, errors.New("corrupt user blockchain database. Public key mismatch")
 	}
 
 	return blockchain, nil
@@ -85,29 +80,31 @@ func Init(privateKey *btcec.PrivateKey, path string) (blockchain *Blockchain, er
 // the key names in the key-value database are constant and must not collide with block numbers (i.e. they must be >64 bit)
 const keyHeader = "header blockchain"
 
-// headerRead reads the header from the blockchain and decodes it.
+// headerRead reads the header from the blockchain, decodes it and verifies its signature against the owner's public key.
 func (blockchain *Blockchain) headerRead() (found bool, err error) {
 	buffer, found := blockchain.database.Get([]byte(keyHeader))
 	if !found {
 		return false, nil
 	}
 
-	if len(buffer) != 83 {
+	if len(buffer) != 18+ed25519.SignatureSize {
 		return true, errors.New("blockchain header size mismatch")
 	}
 
 	blockchain.height = binary.LittleEndian.Uint64(buffer[0:8])
 	blockchain.version = binary.LittleEndian.Uint64(buffer[8:16])
 	blockchain.format = binary.LittleEndian.Uint16(buffer[16:18])
-	signature := buffer[18 : 18+65]
+	signature := buffer[18 : 18+ed25519.SignatureSize]
 
 	if blockchain.format != 0 {
 		return true, errors.New("future blockchain format not supported. You must go back to the future!")
 	}
 
-	blockchain.publicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, protocol.HashData(buffer[0:18]))
+	if !ed25519.Verify(blockchain.publicKey, buffer[0:18], signature) {
+		return true, errors.New("corrupt user blockchain database. Header signature does not match the public key")
+	}
 
-	return
+	return true, nil
 }
 
 // headerWrite writes the header to the blockchain and signs it.
@@ -118,20 +115,12 @@ func (blockchain *Blockchain) headerWrite(height, version uint64) (err error) {
 	blockchain.height = height
 	blockchain.version = version
 
-	var buffer [83]byte
+	var buffer [18 + ed25519.SignatureSize]byte
 	binary.LittleEndian.PutUint64(buffer[0:8], height)
 	binary.LittleEndian.PutUint64(buffer[8:16], version)
 	binary.LittleEndian.PutUint16(buffer[16:18], 0) // Current format is 0
 
-	signature, err := btcec.SignCompact(btcec.S256(), blockchain.privateKey, protocol.HashData(buffer[0:18]), true)
-
-	if err != nil {
-		return err
-	} else if len(signature) != 65 {
-		return errors.New("signature length invalid")
-	}
-
-	copy(buffer[18:18+65], signature)
+	copy(buffer[18:], ed25519.Sign(blockchain.privateKey, buffer[0:18]))
 
 	err = blockchain.database.Set([]byte(keyHeader), buffer[:])
 
@@ -173,7 +162,7 @@ func (blockchain *Blockchain) Iterate(callback func(block *Block) int) (status i
 			return StatusBlockNotFound
 		}
 
-		block, err := decodeBlock(blockRaw)
+		block, err := decodeBlock(blockRaw, blockchain.publicKey)
 		if err != nil {
 			return StatusCorruptBlock
 		}
@@ -207,7 +196,7 @@ func (blockchain *Blockchain) IterateDeleteRecord(callbackFile func(file *BlockR
 			return 0, 0, StatusBlockNotFound
 		}
 
-		block, err := decodeBlock(blockRaw)
+		block, err := decodeBlock(blockRaw, blockchain.publicKey)
 		if err != nil {
 			return 0, 0, StatusCorruptBlock
 		}
@@ -329,7 +318,7 @@ func (blockchain *Blockchain) IterateDeleteRecord(callbackFile func(file *BlockR
 // ---- blockchain manipulation functions ----
 
 // Header returns the users blockchain header which stores the height and version number.
-func (blockchain *Blockchain) Header() (publicKey *btcec.PublicKey, height uint64, version uint64) {
+func (blockchain *Blockchain) Header() (publicKey ed25519.PublicKey, height uint64, version uint64) {
 	blockchain.Lock()
 	defer blockchain.Unlock()
 
@@ -385,7 +374,7 @@ func (blockchain *Blockchain) Read(number uint64) (decoded *BlockDecoded, status
 		return nil, StatusBlockNotFound, errors.New("block not found")
 	}
 
-	block, err := decodeBlock(blockRaw)
+	block, err := decodeBlock(blockRaw, blockchain.publicKey)
 	if err != nil {
 		return nil, StatusCorruptBlock, err
 	}
@@ -427,9 +416,9 @@ func (blockchain *Blockchain) GetBlockRaw(number uint64) (data []byte, status in
 	return blockRaw, StatusOK, nil
 }
 
-// DecodeBlockRaw decodes the raw block. Status is StatusX.
-func DecodeBlockRaw(blockRaw []byte) (decoded *BlockDecoded, status int, err error) {
-	block, err := decodeBlock(blockRaw)
+// DecodeBlockRaw decodes the raw block and verifies its signature against the blockchain owner's public key. Status is StatusX.
+func DecodeBlockRaw(blockRaw []byte, ownerPublicKey ed25519.PublicKey) (decoded *BlockDecoded, status int, err error) {
+	block, err := decodeBlock(blockRaw, ownerPublicKey)
 	if err != nil {
 		return nil, StatusCorruptBlock, err
 	}

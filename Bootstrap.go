@@ -13,6 +13,7 @@ Strategy for sending our IPv6 Multicast and IPv4 Broadcast messages:
 package core
 
 import (
+	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
 	"net"
@@ -20,25 +21,24 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 )
 
 // rootPeer is a single root peer info
 type rootPeer struct {
 	peer      *PeerInfo        // loaded PeerInfo
-	publicKey *btcec.PublicKey // Public key
+	publicKey ed25519.PublicKey // Public key
 	addresses []*net.UDPAddr   // IP:Port addresses
 	backend   *Backend
 }
 
-var rootPeers map[[btcec.PubKeyBytesLenCompressed]byte]*rootPeer
+var rootPeers map[[ed25519.PublicKeySize]byte]*rootPeer
 
 // initSeedList loads the seed list from the config
 // Note: This should be called before any network listening function so that incoming root peers are properly recognized.
 func (backend *Backend) initSeedList() {
-	rootPeers = make(map[[btcec.PubKeyBytesLenCompressed]byte]*rootPeer)
-	recentContacts = make(map[[btcec.PubKeyBytesLenCompressed]byte]*recentContactInfo)
+	rootPeers = make(map[[ed25519.PublicKeySize]byte]*rootPeer)
+	recentContacts = make(map[[ed25519.PublicKeySize]byte]*recentContactInfo)
 
 loopSeedList:
 	for _, seed := range backend.Config.SeedList {
@@ -51,12 +51,13 @@ loopSeedList:
 			continue
 		}
 
-		if peer.publicKey, err = btcec.ParsePubKey(publicKeyB, btcec.S256()); err != nil {
-			backend.LogError("initSeedList", "public key '%s': %v\n", seed.PublicKey, err.Error())
+		if len(publicKeyB) != ed25519.PublicKeySize {
+			backend.LogError("initSeedList", "public key '%s': invalid length\n", seed.PublicKey)
 			continue
 		}
+		peer.publicKey = publicKeyB
 
-		if peer.publicKey.IsEqual(backend.peerPublicKey) { // skip if self
+		if peer.publicKey.Equal(backend.peerPublicKey) { // skip if self
 			continue
 		}
 
@@ -71,7 +72,7 @@ loopSeedList:
 			peer.addresses = append(peer.addresses, address)
 		}
 
-		rootPeers[publicKey2Compressed(peer.publicKey)] = peer
+		rootPeers[publicKey2Array(peer.publicKey)] = peer
 	}
 }
 
@@ -206,7 +207,7 @@ func (nets *Networks) autoMulticastBroadcast() {
 }
 
 // contactArbitraryPeer contacts a new arbitrary peer for the first time.
-func (backend *Backend) contactArbitraryPeer(publicKey *btcec.PublicKey, address *net.UDPAddr, receiverPortInternal uint16, receiverFirewall bool) (contacted bool) {
+func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, address *net.UDPAddr, receiverPortInternal uint16, receiverFirewall bool) (contacted bool) {
 	findSelf := ShouldSendFindSelf()
 	_, blockchainHeight, blockchainVersion := backend.UserBlockchain.Header()
 	packets := protocol.EncodeAnnouncement(true, findSelf, nil, nil, nil, backend.FeatureSupport(), blockchainHeight, blockchainVersion, backend.userAgent)
@@ -282,12 +283,12 @@ func (backend *Backend) isReturnedPeerBadQuality(record *protocol.PeerRecord) bo
 
 	// Internal port must be provided. Otherwise the external port is likely not provided either, and checking the NAT and port forwarded status is not possible.
 	if isIPv4 && record.IPv4PortReportedInternal == 0 || isIPv6 && record.IPv6PortReportedInternal == 0 {
-		//fmt.Printf("IsReturnedPeerBadQuality port internal not available for target %s port %d, peer %s\n", record.IP.String(), record.Port, hex.EncodeToString(record.PublicKey.SerializeCompressed()))
+		//fmt.Printf("IsReturnedPeerBadQuality port internal not available for target %s port %d, peer %s\n", record.IP.String(), record.Port, hex.EncodeToString(record.PublicKey))
 		return true
 	}
 
 	// Must not be self. There is no point that a remote peer would return self
-	if record.PublicKey.IsEqual(backend.peerPublicKey) {
+	if record.PublicKey.Equal(backend.peerPublicKey) {
 		//fmt.Printf("IsReturnedPeerBadQuality received self peer\n")
 		return true
 	}
@@ -332,7 +333,7 @@ type recentContactInfo struct {
 }
 
 var (
-	recentContacts      map[[btcec.PubKeyBytesLenCompressed]byte]*recentContactInfo
+	recentContacts      map[[ed25519.PublicKeySize]byte]*recentContactInfo
 	recentContactsMutex sync.RWMutex
 )
 
@@ -355,7 +356,7 @@ func resetRecentContacts() {
 
 // isReturnedPeerRecent checks if the peer is blacklisted related to the origin peer due to recent contact. It will create a "recent contact" if none exists.
 func isReturnedPeerRecent(record *protocol.PeerRecord, originNodeID []byte) (recent *recentContactInfo, blacklisted bool) {
-	key := publicKey2Compressed(record.PublicKey)
+	key := publicKey2Array(record.PublicKey)
 
 	recentContactsMutex.Lock()
 	defer recentContactsMutex.Unlock()

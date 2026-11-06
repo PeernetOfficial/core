@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package protocol
 
 import (
+	"crypto/ed25519"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -14,7 +15,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/PeernetOfficial/core/btcec"
 )
 
 // MessageResponse is the decoded response message.
@@ -35,7 +35,7 @@ type MessageResponse struct {
 
 // PeerRecord informs about a peer
 type PeerRecord struct {
-	PublicKey                *btcec.PublicKey // Public Key
+	PublicKey                ed25519.PublicKey // Public Key
 	NodeID                   []byte           // Kademlia Node ID
 	IPv4                     net.IP           // IPv4 address. 0 if not set.
 	IPv4Port                 uint16           // Port (actual one used for connection)
@@ -156,7 +156,7 @@ func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 }
 
 // Length of peer record in bytes
-const peerRecordSize = 70
+const peerRecordSize = 69
 
 // decodePeerRecord decodes the response data for FIND_SELF, FIND_PEER and FIND_VALUE messages
 func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int, valid bool) {
@@ -183,40 +183,35 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 
 			peer := PeerRecord{}
 
-			peerIDcompressed := make([]byte, 33)
-			copy(peerIDcompressed[:], data[index:index+33])
+			peer.PublicKey = make(ed25519.PublicKey, ed25519.PublicKeySize)
+			copy(peer.PublicKey, data[index:index+32])
 
 			// IPv4
 			ipv4B := make([]byte, 4)
-			copy(ipv4B[:], data[index+33:index+33+4])
+			copy(ipv4B[:], data[index+32:index+32+4])
 
 			peer.IPv4 = ipv4B
-			peer.IPv4Port = binary.LittleEndian.Uint16(data[index+37 : index+37+2])
-			peer.IPv4PortReportedInternal = binary.LittleEndian.Uint16(data[index+39 : index+39+2])
-			peer.IPv4PortReportedExternal = binary.LittleEndian.Uint16(data[index+41 : index+41+2])
+			peer.IPv4Port = binary.LittleEndian.Uint16(data[index+36 : index+36+2])
+			peer.IPv4PortReportedInternal = binary.LittleEndian.Uint16(data[index+38 : index+38+2])
+			peer.IPv4PortReportedExternal = binary.LittleEndian.Uint16(data[index+40 : index+40+2])
 
 			// IPv6
 			ipv6B := make([]byte, 16)
-			copy(ipv6B[:], data[index+43:index+43+16])
+			copy(ipv6B[:], data[index+42:index+42+16])
 
 			peer.IPv6 = ipv6B
-			peer.IPv6Port = binary.LittleEndian.Uint16(data[index+59 : index+59+2])
-			peer.IPv6PortReportedInternal = binary.LittleEndian.Uint16(data[index+61 : index+61+2])
-			peer.IPv6PortReportedExternal = binary.LittleEndian.Uint16(data[index+63 : index+63+2])
+			peer.IPv6Port = binary.LittleEndian.Uint16(data[index+58 : index+58+2])
+			peer.IPv6PortReportedInternal = binary.LittleEndian.Uint16(data[index+60 : index+60+2])
+			peer.IPv6PortReportedExternal = binary.LittleEndian.Uint16(data[index+62 : index+62+2])
 
 			if peer.IPv6.To4() != nil { // IPv6 address mismatch
 				return nil, 0, false
 			}
 
-			peer.LastContact = binary.LittleEndian.Uint32(data[index+65 : index+65+4])
+			peer.LastContact = binary.LittleEndian.Uint32(data[index+64 : index+64+4])
 			peer.LastContactT = time.Now().Add(-time.Second * time.Duration(peer.LastContact))
-			peer.Features = data[index+69] & 0x7F
-			reason := data[index+69] >> 7
-
-			var err error
-			if peer.PublicKey, err = btcec.ParsePubKey(peerIDcompressed, btcec.S256()); err != nil {
-				return nil, 0, false
-			}
+			peer.Features = data[index+68] & 0x7F
+			reason := data[index+68] >> 7
 
 			peer.NodeID = PublicKey2NodeID(peer.PublicKey)
 
@@ -422,21 +417,21 @@ createPacketLoop:
 
 // encodePeerRecord encodes a single peer record and stores it into raw
 func encodePeerRecord(raw []byte, peer *PeerRecord, reason uint8) {
-	copy(raw[0:0+33], peer.PublicKey.SerializeCompressed())
-	binary.LittleEndian.PutUint32(raw[65:65+4], peer.LastContact)
-	raw[69] = peer.Features | reason<<7
+	copy(raw[0:0+32], peer.PublicKey)
+	binary.LittleEndian.PutUint32(raw[64:64+4], peer.LastContact)
+	raw[68] = peer.Features | reason<<7
 
 	// IPv4
-	copy(raw[33:33+4], peer.IPv4.To4())
-	binary.LittleEndian.PutUint16(raw[37:37+2], peer.IPv4Port)
-	binary.LittleEndian.PutUint16(raw[39:39+2], peer.IPv4PortReportedInternal)
-	binary.LittleEndian.PutUint16(raw[41:41+2], peer.IPv4PortReportedExternal)
+	copy(raw[32:32+4], peer.IPv4.To4())
+	binary.LittleEndian.PutUint16(raw[36:36+2], peer.IPv4Port)
+	binary.LittleEndian.PutUint16(raw[38:38+2], peer.IPv4PortReportedInternal)
+	binary.LittleEndian.PutUint16(raw[40:40+2], peer.IPv4PortReportedExternal)
 
 	// IPv6
-	copy(raw[43:43+16], peer.IPv6.To16())
-	binary.LittleEndian.PutUint16(raw[59:59+2], peer.IPv6Port)
-	binary.LittleEndian.PutUint16(raw[61:61+2], peer.IPv6PortReportedInternal)
-	binary.LittleEndian.PutUint16(raw[63:63+2], peer.IPv6PortReportedExternal)
+	copy(raw[42:42+16], peer.IPv6.To16())
+	binary.LittleEndian.PutUint16(raw[58:58+2], peer.IPv6Port)
+	binary.LittleEndian.PutUint16(raw[60:60+2], peer.IPv6PortReportedInternal)
+	binary.LittleEndian.PutUint16(raw[62:62+2], peer.IPv6PortReportedExternal)
 }
 
 // IsLast checks if the incoming message is the last expected response in this sequence.

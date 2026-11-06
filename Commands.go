@@ -216,7 +216,7 @@ func (peer *PeerInfo) cmdPong(msg *protocol.MessageRaw, connection *Connection) 
 
 // cmdChat handles a chat message [debug]
 func (peer *PeerInfo) cmdChat(msg *protocol.MessageRaw, connection *Connection) {
-	fmt.Fprintf(peer.Backend.Stdout, "Chat from %s '%s': %s\n", hex.EncodeToString(peer.PublicKey.SerializeCompressed()), connection.Address.String(), string(msg.PacketRaw.Payload))
+	fmt.Fprintf(peer.Backend.Stdout, "Chat from %s '%s': %s\n", hex.EncodeToString(peer.PublicKey), connection.Address.String(), string(msg.PacketRaw.Payload))
 }
 
 // cmdLocalDiscovery handles an incoming announcement via local discovery
@@ -225,7 +225,7 @@ func (peer *PeerInfo) cmdLocalDiscovery(msg *protocol.MessageAnnouncement, conne
 	// only accept local discovery message from private IPs for IPv4
 	// IPv6 DHCP routers typically assign public IPv6s and they can join multicast in the local network.
 	//if connection.IsIPv4() && !connection.IsLocal() {
-	//	LogError("cmdLocalDiscovery", "message received from non-local IP %s peer ID %s\n", connection.Address.String(), hex.EncodeToString(msg.SenderPublicKey.SerializeCompressed()))
+	//	LogError("cmdLocalDiscovery", "message received from non-local IP %s peer ID %s\n", connection.Address.String(), hex.EncodeToString(msg.SenderPublicKey))
 	//	return
 	//}
 
@@ -288,7 +288,7 @@ func (peer *PeerInfo) cmdGetBlock(msg *protocol.MessageGetBlock, connection *Con
 	switch msg.Control {
 	case protocol.GetBlockControlRequestStart:
 		// Currently only support the local blockchain.
-		if !msg.BlockchainPublicKey.IsEqual(peer.Backend.peerPublicKey) {
+		if !msg.BlockchainPublicKey.Equal(peer.Backend.peerPublicKey) {
 			peer.sendGetBlock(nil, protocol.GetBlockControlNotAvailable, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence, uuid.UUID{}, false)
 			return
 		} else if _, height, _ := peer.Backend.UserBlockchain.Header(); height == 0 {

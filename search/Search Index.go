@@ -7,12 +7,12 @@ Author:     Peter Kleissner
 package search
 
 import (
+	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
 	"sync"
 
 	"github.com/PeernetOfficial/core/blockchain"
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/store"
 	"github.com/google/uuid"
 )
@@ -31,7 +31,7 @@ type SearchIndexRecord struct {
 
 	// result data
 	FileID            uuid.UUID
-	PublicKey         *btcec.PublicKey
+	PublicKey         ed25519.PublicKey
 	BlockchainVersion uint64
 	BlockNumber       uint64
 }
@@ -56,13 +56,13 @@ func InitSearchIndexStore(DatabaseDirectory string) (searchIndex *SearchIndexSto
 	return searchIndex, nil
 }
 
-func (index *SearchIndexStore) IndexNewBlock(publicKey *btcec.PublicKey, blockchainVersion, blockNumber uint64, raw []byte) {
+func (index *SearchIndexStore) IndexNewBlock(publicKey ed25519.PublicKey, blockchainVersion, blockNumber uint64, raw []byte) {
 	if index == nil {
 		return
 	}
 
 	// decode all files from the block
-	decoded, status, err := blockchain.DecodeBlockRaw(raw)
+	decoded, status, err := blockchain.DecodeBlockRaw(raw, publicKey)
 	if err != nil || status != blockchain.StatusOK {
 		return
 	}
@@ -71,7 +71,7 @@ func (index *SearchIndexStore) IndexNewBlock(publicKey *btcec.PublicKey, blockch
 }
 
 // Indexes a new decoded block. Currently it only indexes file records.
-func (index *SearchIndexStore) IndexNewBlockDecoded(publicKey *btcec.PublicKey, blockchainVersion, blockNumber uint64, recordsDecoded []interface{}) {
+func (index *SearchIndexStore) IndexNewBlockDecoded(publicKey ed25519.PublicKey, blockchainVersion, blockNumber uint64, recordsDecoded []interface{}) {
 	if index == nil {
 		return
 	}
@@ -102,13 +102,13 @@ func (index *SearchIndexStore) IndexNewBlockDecoded(publicKey *btcec.PublicKey, 
 }
 
 // UnindexBlockchain deletes all index for a given blockchain. This is intentionally not done on a version/block level, because it could easily lead to orphans.
-func (index *SearchIndexStore) UnindexBlockchain(publicKey *btcec.PublicKey) {
+func (index *SearchIndexStore) UnindexBlockchain(publicKey ed25519.PublicKey) {
 	if index == nil {
 		return
 	}
 
 	// get the reverse record
-	key := publicKey.SerializeCompressed()
+	key := publicKey
 	raw, found := index.Database.Get(key)
 
 	if !found || len(raw)%reverseIndexRecordSize != 0 { // corrupt record
@@ -131,7 +131,7 @@ func (index *SearchIndexStore) UnindexBlockchain(publicKey *btcec.PublicKey) {
 }
 
 // IndexHash indexes a new hash
-func (index *SearchIndexStore) IndexHash(publicKey *btcec.PublicKey, blockchainVersion, blockNumber uint64, fileID uuid.UUID, hash []byte) (err error) {
+func (index *SearchIndexStore) IndexHash(publicKey ed25519.PublicKey, blockchainVersion, blockNumber uint64, fileID uuid.UUID, hash []byte) (err error) {
 	if index == nil {
 		return
 	}
@@ -232,12 +232,12 @@ Structure for each index record:
 
 Offset   Size    Info
 0        16      File ID
-16       33      Public Key compressed
-49       8       Blockchain Version
-57       8       Block Number
+16       32      Public Key
+48       8       Blockchain Version
+56       8       Block Number
 */
 
-const indexRecordSize = 65
+const indexRecordSize = 64
 
 // decodeIndexRecord decodes the index record and sets the fields File ID, Public Key, and Block Number.
 func decodeIndexRecord(raw []byte) (record *SearchIndexRecord) {
@@ -248,24 +248,22 @@ func decodeIndexRecord(raw []byte) (record *SearchIndexRecord) {
 	record = &SearchIndexRecord{}
 	copy(record.FileID[:], raw[0:16])
 
-	var err error
-	if record.PublicKey, err = btcec.ParsePubKey(raw[16:16+33], btcec.S256()); err != nil {
-		return nil
-	}
+	record.PublicKey = make(ed25519.PublicKey, ed25519.PublicKeySize)
+	copy(record.PublicKey, raw[16:16+32])
 
-	record.BlockchainVersion = binary.LittleEndian.Uint64(raw[49 : 49+8])
-	record.BlockNumber = binary.LittleEndian.Uint64(raw[57 : 57+8])
+	record.BlockchainVersion = binary.LittleEndian.Uint64(raw[48 : 48+8])
+	record.BlockNumber = binary.LittleEndian.Uint64(raw[56 : 56+8])
 
 	return record
 }
 
-func encodeIndexRecord(publicKey *btcec.PublicKey, blockchainVersion, blockNumber uint64, fileID uuid.UUID) (raw []byte) {
+func encodeIndexRecord(publicKey ed25519.PublicKey, blockchainVersion, blockNumber uint64, fileID uuid.UUID) (raw []byte) {
 	raw = make([]byte, indexRecordSize)
 
 	copy(raw[0:16], fileID[:])
-	copy(raw[16:16+33], publicKey.SerializeCompressed())
-	binary.LittleEndian.PutUint64(raw[49:49+8], blockchainVersion)
-	binary.LittleEndian.PutUint64(raw[57:57+8], blockNumber)
+	copy(raw[16:16+32], publicKey)
+	binary.LittleEndian.PutUint64(raw[48:48+8], blockchainVersion)
+	binary.LittleEndian.PutUint64(raw[56:56+8], blockNumber)
 
 	return raw
 }
@@ -275,8 +273,8 @@ const reverseIndexRecordSize = 32 + 16
 
 // This creates a reverse index record. It uses the blockchain and block number as key, and provides the hash and file ID as value.
 // This function must be called in a RW locked database state. The caller must ensure that this does not result in a duplicate.
-func (index *SearchIndexStore) createReverseIndexRecord(publicKey *btcec.PublicKey, blockchainVersion, blockNumber uint64, fileID uuid.UUID, hash []byte) (err error) {
-	key := publicKey.SerializeCompressed()
+func (index *SearchIndexStore) createReverseIndexRecord(publicKey ed25519.PublicKey, blockchainVersion, blockNumber uint64, fileID uuid.UUID, hash []byte) (err error) {
+	key := publicKey
 	raw, _ := index.Database.Get(key)
 
 	// each record is only hash + file ID

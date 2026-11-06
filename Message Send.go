@@ -7,9 +7,9 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"crypto/ed25519"
 	"time"
 
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/google/uuid"
 )
@@ -85,7 +85,7 @@ func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []pr
 }
 
 // sendTraverse sends a traverse message
-func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd *btcec.PublicKey) (err error) {
+func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd ed25519.PublicKey) (err error) {
 	packet.Protocol = protocol.ProtocolVersion
 	// self-reported ports are not set, as this isn't sent via a specific network but a relay
 	//packet.SetSelfReportedPorts(c.Network.SelfReportedPorts())
@@ -131,7 +131,7 @@ func (peer *PeerInfo) sendTransfer(data []byte, control, transferProtocol uint8,
 }
 
 // sendGetBlock sends a get block message
-func (peer *PeerInfo) sendGetBlock(data []byte, control uint8, blockchainPublicKey *btcec.PublicKey, limitBlockCount, maxBlockSize uint64, targetBlocks []protocol.BlockRange, sequenceNumber uint32, transferID uuid.UUID, isLite bool) (err error) {
+func (peer *PeerInfo) sendGetBlock(data []byte, control uint8, blockchainPublicKey ed25519.PublicKey, limitBlockCount, maxBlockSize uint64, targetBlocks []protocol.BlockRange, sequenceNumber uint32, transferID uuid.UUID, isLite bool) (err error) {
 	// Send optionally as lite packet. This bypasses the signing overhead of regular Peernet packets which is CPU intensive and a bottleneck.
 	if control == protocol.GetBlockControlActive && isLite {
 		raw, err := protocol.PacketLiteEncode(transferID, data)

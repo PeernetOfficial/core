@@ -29,7 +29,7 @@ Result:     200 with JSON structure apiResponsePeerSelf
 func (api *WebapiInstance) apiBlockchainHeaderFunc(w http.ResponseWriter, r *http.Request) {
 	publicKey, height, version := api.backend.UserBlockchain.Header()
 
-	EncodeJSON(api.backend, w, r, apiBlockchainHeader{Version: version, Height: height, PeerID: hex.EncodeToString(publicKey.SerializeCompressed())})
+	EncodeJSON(api.backend, w, r, apiBlockchainHeader{Version: version, Height: height, PeerID: hex.EncodeToString(publicKey)})
 }
 
 type apiBlockRecordRaw struct {
@@ -104,7 +104,7 @@ func (api *WebapiInstance) apiBlockchainRead(w http.ResponseWriter, r *http.Requ
 			result.RecordsRaw = append(result.RecordsRaw, apiBlockRecordRaw{Type: record.Type, Data: record.Data})
 		}
 
-		result.PeerID = hex.EncodeToString(block.OwnerPublicKey.SerializeCompressed())
+		result.PeerID = hex.EncodeToString(block.OwnerPublicKey)
 
 		for _, record := range block.RecordsDecoded {
 			switch v := record.(type) {

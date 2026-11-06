@@ -2,19 +2,18 @@
 package protocol
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"fmt"
 	"testing"
-
-	"github.com/PeernetOfficial/core/btcec"
 )
 
 func TestMessageEncodingAnnouncement(t *testing.T) {
-	privateKey, err := btcec.NewPrivateKey(btcec.S256())
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
 		return
 	}
-	publicKey := (*btcec.PublicKey)(&privateKey.PublicKey)
 
 	// encode and decode announcement
 	packetR := PacketRaw{Protocol: 0, Command: CommandAnnouncement, Sequence: 123}
@@ -43,12 +42,11 @@ func TestMessageEncodingAnnouncement(t *testing.T) {
 }
 
 func TestMessageEncodingResponse(t *testing.T) {
-	privateKey, err := btcec.NewPrivateKey(btcec.S256())
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
 		return
 	}
-	publicKey := (*btcec.PublicKey)(&privateKey.PublicKey)
 
 	// encode and decode response
 	packetR := PacketRaw{Protocol: 0, Command: CommandResponse}

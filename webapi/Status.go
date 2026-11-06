@@ -59,7 +59,7 @@ func (api *WebapiInstance) apiAccountInfo(w http.ResponseWriter, r *http.Request
 	response.NodeID = hex.EncodeToString(api.backend.SelfNodeID())
 
 	_, publicKey := api.backend.ExportPrivateKey()
-	response.PeerID = hex.EncodeToString(publicKey.SerializeCompressed())
+	response.PeerID = hex.EncodeToString(publicKey)
 
 	EncodeJSON(api.backend, w, r, response)
 }
@@ -97,7 +97,7 @@ func (api *WebapiInstance) apiStatusPeers(w http.ResponseWriter, r *http.Request
 	// query all nodes
 	for _, peer := range api.backend.PeerlistGet() {
 		peerInfo := apiResponsePeerInfo{
-			PeerID:            peer.PublicKey.SerializeCompressed(),
+			PeerID:            peer.PublicKey,
 			NodeID:            peer.NodeID,
 			UserAgent:         peer.UserAgent,
 			IsRoot:            peer.IsRootPeer,

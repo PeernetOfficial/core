@@ -7,10 +7,10 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"crypto/ed25519"
 	"os"
 
 	"github.com/PeernetOfficial/core/blockchain"
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/google/uuid"
 )
 
@@ -62,9 +62,9 @@ func (backend *Backend) userBlockchainUpdateSearchIndex() {
 }
 
 // ReadBlock reads a block and decodes the records. This may be a block of the user's blockchain, or any other that is cached in the global blockchain cache.
-func (backend *Backend) ReadBlock(PublicKey *btcec.PublicKey, Version, BlockNumber uint64) (decoded *blockchain.BlockDecoded, raw []byte, found bool, err error) {
+func (backend *Backend) ReadBlock(PublicKey ed25519.PublicKey, Version, BlockNumber uint64) (decoded *blockchain.BlockDecoded, raw []byte, found bool, err error) {
 	// requesting a block from the user's blockchain?
-	if PublicKey.IsEqual(backend.peerPublicKey) {
+	if PublicKey.Equal(backend.peerPublicKey) {
 		_, _, version := backend.UserBlockchain.Header()
 		if Version != version {
 			return nil, nil, false, nil
@@ -85,7 +85,7 @@ func (backend *Backend) ReadBlock(PublicKey *btcec.PublicKey, Version, BlockNumb
 	}
 
 	// decode the entire block
-	blockDecoded, status, err := blockchain.DecodeBlockRaw(raw)
+	blockDecoded, status, err := blockchain.DecodeBlockRaw(raw, PublicKey)
 	if err != nil || status != blockchain.StatusOK {
 		return nil, raw, false, err
 	}
@@ -94,7 +94,7 @@ func (backend *Backend) ReadBlock(PublicKey *btcec.PublicKey, Version, BlockNumb
 }
 
 // ReadFile decodes a file from the given blockchain (the user or any other cached). The block number must be provided.
-func (backend *Backend) ReadFile(PublicKey *btcec.PublicKey, Version, BlockNumber uint64, FileID uuid.UUID) (file blockchain.BlockRecordFile, raw []byte, found bool, err error) {
+func (backend *Backend) ReadFile(PublicKey ed25519.PublicKey, Version, BlockNumber uint64, FileID uuid.UUID) (file blockchain.BlockRecordFile, raw []byte, found bool, err error) {
 	blockDecoded, raw, found, err := backend.ReadBlock(PublicKey, Version, BlockNumber)
 	if !found {
 		return file, raw, found, err

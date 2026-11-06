@@ -17,13 +17,13 @@ The Multicast listener opens port 12912 with SO_REUSEADDR to allow multiple proc
 package core
 
 import (
+	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
 	"net"
 	"strconv"
 	"time"
 
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/reuseport"
 	"golang.org/x/net/ipv6"
@@ -34,14 +34,15 @@ const ipv6MulticastGroup = "ff05::112"
 const ipv6MulticastPort = 12912
 
 // special Public-Private Key pair for local discovery
-var ipv6MulticastPrivateKey *btcec.PrivateKey
-var ipv6MulticastPublicKey *btcec.PublicKey
+var ipv6MulticastPrivateKey ed25519.PrivateKey
+var ipv6MulticastPublicKey ed25519.PublicKey
 
 const ipv6MulticastPrivateKeyH = "016ad30bfb369926523bf18d136298b6c31d0817e9fb6c21feed89ae22cad788"
 
 func initMulticastIPv6() {
-	if configPK, err := hex.DecodeString(ipv6MulticastPrivateKeyH); err == nil {
-		ipv6MulticastPrivateKey, ipv6MulticastPublicKey = btcec.PrivKeyFromBytes(btcec.S256(), configPK)
+	if configPK, err := hex.DecodeString(ipv6MulticastPrivateKeyH); err == nil && len(configPK) == ed25519.SeedSize {
+		ipv6MulticastPrivateKey = ed25519.NewKeyFromSeed(configPK)
+		ipv6MulticastPublicKey = ipv6MulticastPrivateKey.Public().(ed25519.PublicKey)
 	}
 }
 

@@ -60,8 +60,8 @@ func (backend *Backend) initBlockchainCache() {
 // SeenBlockchainVersion shall be called with information about another peer's blockchain.
 // If the reported version number is newer, all existing blocks are immediately deleted.
 func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
-	cache.peerLock.Lock(string(peer.PublicKey.SerializeCompressed()))
-	defer cache.peerLock.Unlock(string(peer.PublicKey.SerializeCompressed()))
+	cache.peerLock.Lock(string(peer.PublicKey))
+	defer cache.peerLock.Unlock(string(peer.PublicKey))
 
 	// intermediate function to download and process blocks
 	downloadAndProcessBlocks := func(peer *PeerInfo, header *blockchain.MultiBlockchainHeader, offset, limit uint64) {
