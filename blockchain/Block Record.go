@@ -36,7 +36,7 @@ type BlockDecoded struct {
 func decodeBlockRecords(block *Block) (decoded *BlockDecoded, err error) {
 	decoded = &BlockDecoded{Block: *block}
 
-	files, err := decodeBlockRecordFiles(block.RecordsRaw, block.NodeID)
+	files, err := decodeBlockRecordFiles(block.RecordsRaw, block.OwnerPublicKey)
 	if err != nil {
 		return nil, err
 	}

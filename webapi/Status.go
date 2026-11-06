@@ -45,8 +45,7 @@ func (api *WebapiInstance) apiStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 type apiResponsePeerSelf struct {
-	PeerID string `json:"peerid"` // Peer ID. This is derived from the public in compressed form.
-	NodeID string `json:"nodeid"` // Node ID. This is the blake3 hash of the peer ID and used in the DHT.
+	PeerID string `json:"peerid"` // Peer ID. This is the public key.
 }
 
 /*
@@ -55,11 +54,7 @@ Request:    GET /account/info
 Result:     200 with JSON structure apiResponsePeerSelf
 */
 func (api *WebapiInstance) apiAccountInfo(w http.ResponseWriter, r *http.Request) {
-	response := apiResponsePeerSelf{}
-	response.NodeID = hex.EncodeToString(api.backend.SelfNodeID())
-
-	_, publicKey := api.backend.ExportPrivateKey()
-	response.PeerID = hex.EncodeToString(publicKey)
+	response := apiResponsePeerSelf{PeerID: hex.EncodeToString(api.backend.SelfPublicKey())}
 
 	EncodeJSON(api.backend, w, r, response)
 }
@@ -98,7 +93,6 @@ func (api *WebapiInstance) apiStatusPeers(w http.ResponseWriter, r *http.Request
 	for _, peer := range api.backend.PeerlistGet() {
 		peerInfo := apiResponsePeerInfo{
 			PeerID:            peer.PublicKey,
-			NodeID:            peer.NodeID,
 			UserAgent:         peer.UserAgent,
 			IsRoot:            peer.IsRootPeer,
 			BlockchainHeight:  peer.BlockchainHeight,
@@ -116,8 +110,7 @@ func (api *WebapiInstance) apiStatusPeers(w http.ResponseWriter, r *http.Request
 }
 
 type apiResponsePeerInfo struct {
-	PeerID            []byte `json:"peerid"`            // Peer ID. This is derived from the public in compressed form.
-	NodeID            []byte `json:"nodeid"`            // Node ID. This is the blake3 hash of the peer ID and used in the DHT.
+	PeerID            []byte `json:"peerid"`            // Peer ID. This is the public key.
 	GeoIP             string `json:"geoip"`             // GeoIP location as "Latitude,Longitude" CSV format. Empty if location not available.
 	UserAgent         string `json:"useragent"`         // User Agent.
 	IsRoot            bool   `json:"isroot"`            // If the peer is a root peer.

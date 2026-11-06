@@ -111,12 +111,11 @@ Request:    GET /account/info
 Response:   200 with JSON structure apiResponsePeerSelf
 ```
 
-The peer and node IDs are encoded as hex encoded strings.
+The peer ID is encoded as hex encoded string.
 
 ```go
 type apiResponsePeerSelf struct {
     PeerID string `json:"peerid"` // Peer ID. This is the public key.
-    NodeID string `json:"nodeid"` // Node ID. This is the blake3 hash of the peer ID and used in the DHT.
 }
 ```
 
@@ -216,7 +215,7 @@ The array `RecordsDecoded` will contain any present record of the following:
 
 ## File Functions
 
-These functions allow adding, deleting, and listing files stored on the users blockchain. Only metadata is actually stored on the blockchain. To download a remote file both the file hash and the node ID are required. The node ID specifies the owner of the file.
+These functions allow adding, deleting, and listing files stored on the users blockchain. Only metadata is actually stored on the blockchain. To download a remote file both the file hash and the peer ID are required. The peer ID specifies the owner of the file.
 
 ```go
 type apiFile struct {
@@ -229,7 +228,7 @@ type apiFile struct {
     Name        string            `json:"name"`        // Name of the file
     Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
     Date        time.Time         `json:"date"`        // Date shared
-    NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file. Read only.
+    PeerID      []byte            `json:"peerid"`      // Peer ID, owner of the file. Read only.
     Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
 }
 
@@ -387,7 +386,7 @@ Example response:
         "name": "Test.txt",
         "description": "",
         "date": "2021-08-27T14:59:13Z",
-        "nodeid": "0Zo9QHCF06Nrbxgg9s4Q4wYpcHzsQhSMsmftQqjanVI=",
+        "peerid": "SS9FWBnG5kP7/OGxvfCAVNIGiJIW6CeCU5O6D5Ejcdw=",
         "metadata": []
     }, {
         "id": "bc32cbae-011d-4f0b-80a8-281ca9369211",
@@ -399,7 +398,7 @@ Example response:
         "name": "Test 2.txt",
         "description": "Example description\nThis can be any text #newfile #2021.",
         "date": "2021-09-27T23:33:37Z",
-        "nodeid": "0Zo9QHCF06Nrbxgg9s4Q4wYpcHzsQhSMsmftQqjanVI=",
+        "peerid": "SS9FWBnG5kP7/OGxvfCAVNIGiJIW6CeCU5O6D5Ejcdw=",
         "metadata": [{
             "type": 2,
             "name": "Date Created",
@@ -725,7 +724,7 @@ Example response with dummy data:
         "name": "88d8cc57d5c2a5fea881ceea09503ee4.txt",
         "description": "",
         "date": "2021-09-23T00:00:00Z",
-        "nodeid": "j4yHzmCXiXqg4DPhowj0DIOuuyJxQflo2QSNG3yhCK8=",
+        "peerid": "c3TSnomMHMJImEq/vcvc2lkUQjc/WnxI30irAljbI0g=",
         "metadata": [{
             "type": 5,
             "name": "Shared By Count",
@@ -826,10 +825,10 @@ The API response codes for download functions are:
 ### Start Download
 
 This starts the download of a file. The path is the full path on disk to store the file.
-The hash parameter identifies the file to download. The node ID identifies the blockchain (i.e., the "owner" of the file). The hash and node must be hex-encoded.
+The hash parameter identifies the file to download. The peer ID identifies the blockchain (i.e., the "owner" of the file). The hash and peer must be hex-encoded.
 
 ```
-Request:    GET /download/start?path=[target path on disk]&hash=[file hash to download]&node=[node ID]
+Request:    GET /download/start?path=[target path on disk]&hash=[file hash to download]&peer=[peer ID]
 Result:     200 with JSON structure apiResponseDownloadStatus
 ```
 
@@ -850,7 +849,7 @@ type apiResponseDownloadStatus struct {
 }
 ```
 
-Example request: `http://127.0.0.1:112/download/start?path=test.bin&hash=cde13a55f41e387480391c47238acfe9c0136dd56bf365b01416aec03eec7dc4&node=5a0f712822ddc49633d27df6009d3efa27f19cb371319837f04160bdbda38544`
+Example request: `http://127.0.0.1:112/download/start?path=test.bin&hash=cde13a55f41e387480391c47238acfe9c0136dd56bf365b01416aec03eec7dc4&peer=492f455819c6e643fbfce1b1bdf08054d206889216e827825393ba0f912371dc`
 
 Example response (only apistatus, id, and downloadstatus are used):
 
@@ -888,7 +887,7 @@ Example request: `http://127.0.0.1:112/download/status?id=a6107122-9e31-42d3-b66
         "name": "a96dc7b6a4a7a401c48f93c442f01de9.bin",
         "description": "",
         "date": "2021-10-04T04:37:17Z",
-        "nodeid": "lMP3/nYMjoE/PfGKRDZi+ms5h7jWUrdIZaKSvLAAq6A=",
+        "peerid": "eIjZCVQ8BtgPvVhGgtc9sHSgKl8zPchBFaH8LYlsHoQ=",
         "metadata": []
     },
     "progress": {

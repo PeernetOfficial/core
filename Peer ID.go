@@ -71,6 +71,11 @@ func (backend *Backend) ExportPrivateKey() (privateKey ed25519.PrivateKey, publi
 	return backend.peerPrivateKey, backend.peerPublicKey
 }
 
+// SelfPublicKey returns the public key (= peer ID) of this peer
+func (backend *Backend) SelfPublicKey() ed25519.PublicKey {
+	return backend.peerPublicKey
+}
+
 // SelfNodeID returns the node ID used for DHT
 func (backend *Backend) SelfNodeID() []byte {
 	return backend.nodeID
