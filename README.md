@@ -35,10 +35,6 @@ func main() {
 * Ed25519 is used for peer IDs (public keys) and signatures.
 * blake3 is used as hashing algorithm for the DHT and for the block hashes.
 
-## Dependencies
-
-Go 1.16 or higher is required. All dependencies are automatically downloaded via Go modules.
-
 ## Configuration
 
 Peernet follows a "zeroconf" approach, meaning there is no manual configuration required. However, in certain cases such as providing root peers that shall listen on a fixed IP and port, it is desirable to create a config file. See inline documentation in the file [Config Default.yaml](Config%20Default.yaml).
