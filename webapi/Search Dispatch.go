@@ -50,15 +50,15 @@ resultLoop:
 
 		// Deduplicate based on file hash from the same peer.
 		for n := range job.AllFiles {
-			if bytes.Equal(job.AllFiles[n].Hash, file.Hash) && bytes.Equal(job.AllFiles[n].NodeID, file.NodeID) {
+			if bytes.Equal(job.AllFiles[n].Hash, file.Hash) && bytes.Equal(job.AllFiles[n].PeerID, file.OwnerPublicKey) {
 				continue resultLoop
 			}
 		}
 
-		if bytes.Equal(file.NodeID, api.backend.SelfNodeID()) {
+		if file.OwnerPublicKey.Equal(api.backend.SelfPublicKey()) {
 			// Indicates data from the current user.
 			file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
-		} else if peer := api.backend.NodelistLookup(file.NodeID); peer != nil {
+		} else if peer := api.backend.PeerlistLookup(file.OwnerPublicKey); peer != nil {
 			// add the tags 'Shared By Count' and 'Shared By GeoIP'
 			file.Tags = append(file.Tags, blockchain.TagFromNumber(blockchain.TagSharedByCount, 1))
 			if latitude, longitude, valid := api.Peer2GeoIP(peer); valid {

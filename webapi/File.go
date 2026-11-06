@@ -40,14 +40,14 @@ type apiFile struct {
 	Name        string            `json:"name"`        // Name of the file
 	Description string            `json:"description"` // Description. This is expected to be multiline and contain hashtags!
 	Date        time.Time         `json:"date"`        // Date shared
-	NodeID      []byte            `json:"nodeid"`      // Node ID, owner of the file. Read only.
+	PeerID      []byte            `json:"peerid"`      // Peer ID, owner of the file. Read only.
 	Metadata    []apiFileMetadata `json:"metadata"`    // Additional metadata.
 }
 
 // --- conversion from core to API data ---
 
 func blockRecordFileToAPI(input blockchain.BlockRecordFile) (output apiFile) {
-	output = apiFile{ID: input.ID, Hash: input.Hash, NodeID: input.NodeID, Type: input.Type, Format: input.Format, Size: input.Size, Metadata: []apiFileMetadata{}}
+	output = apiFile{ID: input.ID, Hash: input.Hash, PeerID: input.OwnerPublicKey, Type: input.Type, Format: input.Format, Size: input.Size, Metadata: []apiFileMetadata{}}
 
 	for _, tag := range input.Tags {
 		switch tag.Type {

@@ -205,7 +205,7 @@ func (blockchain *Blockchain) IterateDeleteRecord(callbackFile func(file *BlockR
 
 		// Decode all file records at once. This is needed due to potential referenced tags.
 		// If a file is deleted or referenced tag data changed, it would corrupt the blockchain if the other records were not updated.
-		filesD, err := decodeBlockRecordFiles(block.RecordsRaw, block.NodeID)
+		filesD, err := decodeBlockRecordFiles(block.RecordsRaw, block.OwnerPublicKey)
 		if err != nil {
 			return 0, 0, StatusCorruptBlock
 		}

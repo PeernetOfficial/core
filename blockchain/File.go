@@ -53,7 +53,7 @@ func (blockchain *Blockchain) AddFiles(files []BlockRecordFile) (newHeight, newV
 // If there is a corruption in the blockchain it will stop reading but return the files parsed so far.
 func (blockchain *Blockchain) ListFiles() (files []BlockRecordFile, status int) {
 	status = blockchain.Iterate(func(block *Block) (statusI int) {
-		filesMore, err := decodeBlockRecordFiles(block.RecordsRaw, block.NodeID)
+		filesMore, err := decodeBlockRecordFiles(block.RecordsRaw, block.OwnerPublicKey)
 		if err != nil {
 			return StatusCorruptBlockRecord
 		}
@@ -69,7 +69,7 @@ func (blockchain *Blockchain) ListFiles() (files []BlockRecordFile, status int) 
 // If there is a corruption in the blockchain it will stop reading but return the files found so far.
 func (blockchain *Blockchain) FileExists(hash []byte) (files []BlockRecordFile, status int) {
 	status = blockchain.Iterate(func(block *Block) (statusI int) {
-		filesD, err := decodeBlockRecordFiles(block.RecordsRaw, block.NodeID)
+		filesD, err := decodeBlockRecordFiles(block.RecordsRaw, block.OwnerPublicKey)
 		if err != nil {
 			return StatusCorruptBlockRecord
 		}

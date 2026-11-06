@@ -233,21 +233,6 @@ func PeerConnectPublicKey(backend *core.Backend, publicKey ed25519.PublicKey, ti
 	return nil, errors.New("peer not found")
 }
 
-// PeerConnectNode tries to connect via the node ID
-func PeerConnectNode(backend *core.Backend, nodeID []byte, timeout time.Duration) (peer *core.PeerInfo, err error) {
-	if len(nodeID) != 256/8 {
-		return nil, errors.New("invalid node ID")
-	}
-
-	// Try to connect via DHT.
-	if _, peer, _ = backend.FindNode(nodeID, timeout); peer != nil {
-		return peer, nil
-	}
-
-	// otherwise not found :(
-	return nil, errors.New("peer not found")
-}
-
 // FileStartReader providers a reader to a remote file. The reader must be closed by the caller.
 // File Size is the full file size reported by the remote peer, regardless of the requested offset and limit. Limit is optional (0 means the entire file).
 // Transfer Size is the size in bytes that is actually going to be transferred. The reader should be closed after reading that amount.

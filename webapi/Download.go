@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package webapi
 
 import (
+	"crypto/ed25519"
 	"encoding/hex"
 	"math"
 	"net/http"
@@ -54,9 +55,9 @@ const (
 
 /*
 apiDownloadStart starts the download of a file. The path is the full path on disk to store the file.
-The hash parameter identifies the file to download. The node ID identifies the blockchain (i.e., the "owner" of the file).
+The hash parameter identifies the file to download. The peer ID identifies the blockchain (i.e., the "owner" of the file).
 
-Request:    GET /download/start?path=[target path on disk]&hash=[file hash to download]&node=[node ID]
+Request:    GET /download/start?path=[target path on disk]&hash=[file hash to download]&peer=[peer ID]
 Result:     200 with JSON structure apiResponseDownloadStatus
 */
 func (api *WebapiInstance) apiDownloadStart(w http.ResponseWriter, r *http.Request) {
@@ -64,8 +65,8 @@ func (api *WebapiInstance) apiDownloadStart(w http.ResponseWriter, r *http.Reque
 
 	// validate hashes, must be blake3
 	hash, valid1 := DecodeBlake3Hash(r.Form.Get("hash"))
-	nodeID, valid2 := DecodeBlake3Hash(r.Form.Get("node"))
-	if !valid1 || !valid2 {
+	publicKey, errPeer := core.PublicKeyFromPeerID(r.Form.Get("peer"))
+	if !valid1 || errPeer != nil {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
@@ -76,7 +77,7 @@ func (api *WebapiInstance) apiDownloadStart(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	info := &downloadInfo{backend: api.backend, api: api, id: uuid.New(), created: time.Now(), hash: hash, nodeID: nodeID}
+	info := &downloadInfo{backend: api.backend, api: api, id: uuid.New(), created: time.Now(), hash: hash, publicKey: publicKey}
 
 	// create the file immediately
 	if info.initDiskFile(filePath) != nil {
@@ -182,8 +183,8 @@ type downloadInfo struct {
 	sync.RWMutex           // Mutext for changing the status
 
 	// input
-	hash   []byte // File hash
-	nodeID []byte // Node ID of the owner
+	hash      []byte            // File hash
+	publicKey ed25519.PublicKey // Peer ID of the owner
 
 	// runtime data
 	created time.Time // When the download was created.

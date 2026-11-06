@@ -29,6 +29,7 @@ This is a basic embedded way of compression when tags are repetitive in multiple
 package blockchain
 
 import (
+	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
 	"math"
@@ -46,7 +47,7 @@ type BlockRecordFile struct {
 	Type           uint8                // File Type
 	Format         uint16               // File Format
 	Size           uint64               // Size of the file data
-	NodeID         []byte               // Node ID, owner of the file
+	OwnerPublicKey ed25519.PublicKey    // Peer ID of the owner of the file. Set from the block at decode time, not stored in the record.
 	Tags           []BlockRecordFileTag // Tags provide additional metadata
 }
 
@@ -62,7 +63,7 @@ type BlockRecordFileTag struct {
 const blockRecordFileMinSize = 101
 
 // decodeBlockRecordFiles decodes only file records. Other records are ignored.
-func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw, nodeID []byte) (files []BlockRecordFile, err error) {
+func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw, ownerPublicKey ed25519.PublicKey) (files []BlockRecordFile, err error) {
 	for i, record := range recordsRaw {
 		switch record.Type {
 		case RecordTypeFile:
@@ -70,7 +71,7 @@ func decodeBlockRecordFiles(recordsRaw []BlockRecordRaw, nodeID []byte) (files [
 				return nil, errors.New("file record invalid size")
 			}
 
-			file := BlockRecordFile{NodeID: nodeID}
+			file := BlockRecordFile{OwnerPublicKey: ownerPublicKey}
 			file.Hash = make([]byte, protocol.HashSize)
 			copy(file.Hash, record.Data[0:0+protocol.HashSize])
 			copy(file.ID[:], record.Data[32:32+16])

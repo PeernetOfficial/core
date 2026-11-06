@@ -9,7 +9,6 @@ Temporary download code to provide dummy results for testing. To be replaced!
 package webapi
 
 import (
-	"bytes"
 	"os"
 	"time"
 
@@ -19,13 +18,13 @@ import (
 // Starts the download.
 func (info *downloadInfo) Start() {
 	// current user?
-	if bytes.Equal(info.nodeID, info.backend.SelfNodeID()) {
+	if info.publicKey.Equal(info.backend.SelfPublicKey()) {
 		info.DownloadSelf()
 		return
 	}
 
 	for n := 0; n < 3 && info.peer == nil; n++ {
-		_, info.peer, _ = info.backend.FindNode(info.nodeID, time.Second*5)
+		info.peer, _ = PeerConnectPublicKey(info.backend, info.publicKey, time.Second*5)
 
 		if info.status == DownloadCanceled {
 			return
