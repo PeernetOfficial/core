@@ -5,12 +5,12 @@ Author:     Peter Kleissner
 
 Encoding of a block (it is the same stored in the database and shared in a message):
 Offset  Size   Info
-0       65     Signature of entire block
-65      32     Hash (blake3) of last block. 0 for first one.
-97      8      Blockchain version number
-105     8      Block number
-113     4      Size of entire block including this header
-117     2      Count of records that follow
+0       64     Signature of entire block by the blockchain owner
+64      32     Hash (blake3) of last block. 0 for first one.
+96      8      Blockchain version number
+104     8      Block number
+112     4      Size of entire block including this header
+116     2      Count of records that follow
 
 */
 
@@ -18,23 +18,23 @@ package blockchain
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
 	"time"
 
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 )
 
 // Block is a single block containing a set of records (metadata).
 // It has no upper size limit, although a soft limit of 64 KB - overhead is encouraged for efficiency.
 type Block struct {
-	OwnerPublicKey    *btcec.PublicKey // Owner Public Key, ECDSA (secp256k1) 257-bit
-	NodeID            []byte           // Node ID of the owner (derived from the public key)
-	LastBlockHash     []byte           // Hash of the last block. Blake3.
-	BlockchainVersion uint64           // Blockchain version
-	Number            uint64           // Block number
-	RecordsRaw        []BlockRecordRaw // Block records raw
+	OwnerPublicKey    ed25519.PublicKey // Owner Public Key
+	NodeID            []byte            // Node ID of the owner (derived from the public key)
+	LastBlockHash     []byte            // Hash of the last block. Blake3.
+	BlockchainVersion uint64            // Blockchain version
+	Number            uint64            // Block number
+	RecordsRaw        []BlockRecordRaw  // Block records raw
 }
 
 // BlockRecordRaw is a single block record (not decoded)
@@ -44,39 +44,36 @@ type BlockRecordRaw struct {
 	Data []byte    // Data according to the type
 }
 
-const blockHeaderSize = 119
+const blockHeaderSize = 118
 const blockRecordHeaderSize = 13
 
-// decodeBlock decodes a single block
-func decodeBlock(raw []byte) (block *Block, err error) {
+// decodeBlock decodes a single block and verifies its signature against the blockchain owner's public key.
+func decodeBlock(raw []byte, ownerPublicKey ed25519.PublicKey) (block *Block, err error) {
 	if len(raw) < blockHeaderSize {
 		return nil, errors.New("decodeBlock invalid block size")
 	}
 
-	block = &Block{}
-
-	signature := raw[0 : 0+65]
-
-	block.OwnerPublicKey, _, err = btcec.RecoverCompact(btcec.S256(), signature, protocol.HashData(raw[65:]))
-	if err != nil {
-		return nil, err
+	if !ed25519.Verify(ownerPublicKey, raw[64:], raw[0:64]) {
+		return nil, errors.New("decodeBlock invalid signature")
 	}
+
+	block = &Block{OwnerPublicKey: ownerPublicKey}
 
 	block.NodeID = protocol.PublicKey2NodeID(block.OwnerPublicKey)
 
 	block.LastBlockHash = make([]byte, protocol.HashSize)
-	copy(block.LastBlockHash, raw[65:65+protocol.HashSize])
+	copy(block.LastBlockHash, raw[64:64+protocol.HashSize])
 
-	block.BlockchainVersion = binary.LittleEndian.Uint64(raw[97 : 97+8])
-	block.Number = binary.LittleEndian.Uint64(raw[105 : 105+8])
+	block.BlockchainVersion = binary.LittleEndian.Uint64(raw[96 : 96+8])
+	block.Number = binary.LittleEndian.Uint64(raw[104 : 104+8])
 
-	blockSize := binary.LittleEndian.Uint32(raw[113 : 113+4])
+	blockSize := binary.LittleEndian.Uint32(raw[112 : 112+4])
 	if blockSize != uint32(len(raw)) {
 		return nil, errors.New("decodeBlock invalid block size")
 	}
 
 	// decode on a low-level all block records
-	countRecords := binary.LittleEndian.Uint16(raw[117 : 117+2])
+	countRecords := binary.LittleEndian.Uint16(raw[116 : 116+2])
 	index := blockHeaderSize
 
 	for n := uint16(0); n < countRecords; n++ {
@@ -101,9 +98,9 @@ func decodeBlock(raw []byte) (block *Block, err error) {
 	return block, nil
 }
 
-func encodeBlock(block *Block, ownerPrivateKey *btcec.PrivateKey) (raw []byte, err error) {
+func encodeBlock(block *Block, ownerPrivateKey ed25519.PrivateKey) (raw []byte, err error) {
 	var buffer bytes.Buffer
-	buffer.Write(make([]byte, 65)) // Signature, filled at the end
+	buffer.Write(make([]byte, 64)) // Signature, filled at the end
 
 	if block.Number > 0 && len(block.LastBlockHash) != protocol.HashSize {
 		return nil, errors.New("encodeBlock invalid last block hash")
@@ -148,15 +145,11 @@ func encodeBlock(block *Block, ownerPrivateKey *btcec.PrivateKey) (raw []byte, e
 		return nil, errors.New("encodeBlock invalid block size")
 	}
 
-	binary.LittleEndian.PutUint32(raw[113:113+4], uint32(len(raw))) // Size of block
-	binary.LittleEndian.PutUint16(raw[117:117+2], countRecords)     // Count of records
+	binary.LittleEndian.PutUint32(raw[112:112+4], uint32(len(raw))) // Size of block
+	binary.LittleEndian.PutUint16(raw[116:116+2], countRecords)     // Count of records
 
 	// signature is last
-	signature, err := btcec.SignCompact(btcec.S256(), ownerPrivateKey, protocol.HashData(raw[65:]), true)
-	if err != nil {
-		return nil, err
-	}
-	copy(raw[0:0+65], signature)
+	copy(raw[0:0+64], ed25519.Sign(ownerPrivateKey, raw[64:]))
 
 	return raw, nil
 }

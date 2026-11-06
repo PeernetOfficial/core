@@ -21,13 +21,13 @@ Advantages:
 package protocol
 
 import (
+	"crypto/ed25519"
 	"math/rand"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/PeernetOfficial/core/btcec"
 )
 
 // SequenceManager stores all message sequence numbers that are valid at the moment
@@ -88,17 +88,17 @@ func (manager *SequenceManager) autoDeleteExpired() {
 
 // sequence2Key creates the lookup key of a sequence for a peer.
 // Since bidirectional sequence numbers may be created from either side (remote or local peer), it does not share a namespace with unidirectional sequence numbers.
-func sequence2Key(bidirectional bool, publicKey *btcec.PublicKey, sequenceNumber uint32) (key string) {
+func sequence2Key(bidirectional bool, publicKey ed25519.PublicKey, sequenceNumber uint32) (key string) {
 	if !bidirectional {
-		return "u" + string(publicKey.SerializeCompressed()) + strconv.FormatUint(uint64(sequenceNumber), 10)
+		return "u" + string(publicKey) + strconv.FormatUint(uint64(sequenceNumber), 10)
 	} else {
-		return "b" + string(publicKey.SerializeCompressed()) + strconv.FormatUint(uint64(sequenceNumber), 10)
+		return "b" + string(publicKey) + strconv.FormatUint(uint64(sequenceNumber), 10)
 	}
 }
 
 // NewSequence returns a new sequence and registers it. messageSequence must point to the variable holding the continuous next sequence number.
 // Use only for Announcement and Ping messages.
-func (manager *SequenceManager) NewSequence(publicKey *btcec.PublicKey, messageSequence *uint32, data interface{}) (info *SequenceExpiry) {
+func (manager *SequenceManager) NewSequence(publicKey ed25519.PublicKey, messageSequence *uint32, data interface{}) (info *SequenceExpiry) {
 	info = &SequenceExpiry{
 		SequenceNumber: atomic.AddUint32(messageSequence, 1),
 		created:        time.Now(),
@@ -116,7 +116,7 @@ func (manager *SequenceManager) NewSequence(publicKey *btcec.PublicKey, messageS
 }
 
 // ArbitrarySequence returns an arbitrary sequence to be used for uncontacted peers
-func (manager *SequenceManager) ArbitrarySequence(publicKey *btcec.PublicKey, data interface{}) (info *SequenceExpiry) {
+func (manager *SequenceManager) ArbitrarySequence(publicKey ed25519.PublicKey, data interface{}) (info *SequenceExpiry) {
 	info = &SequenceExpiry{
 		SequenceNumber: rand.Uint32(),
 		created:        time.Now(),
@@ -134,7 +134,7 @@ func (manager *SequenceManager) ArbitrarySequence(publicKey *btcec.PublicKey, da
 }
 
 // ValidateSequence validates the sequence number of an incoming message. It will set raw.sequence if valid.
-func (manager *SequenceManager) ValidateSequence(publicKey *btcec.PublicKey, sequenceNumber uint32, invalidate, extendValidity bool) (sequenceInfo *SequenceExpiry, valid bool, rtt time.Duration) {
+func (manager *SequenceManager) ValidateSequence(publicKey ed25519.PublicKey, sequenceNumber uint32, invalidate, extendValidity bool) (sequenceInfo *SequenceExpiry, valid bool, rtt time.Duration) {
 	key := sequence2Key(false, publicKey, sequenceNumber)
 
 	manager.Lock()
@@ -166,7 +166,7 @@ func (manager *SequenceManager) ValidateSequence(publicKey *btcec.PublicKey, seq
 }
 
 // InvalidateSequence invalidates the sequence number. It does not call invalidateFunc.
-func (manager *SequenceManager) InvalidateSequence(publicKey *btcec.PublicKey, sequenceNumber uint32, bidirectional bool) {
+func (manager *SequenceManager) InvalidateSequence(publicKey ed25519.PublicKey, sequenceNumber uint32, bidirectional bool) {
 	key := sequence2Key(bidirectional, publicKey, sequenceNumber)
 
 	manager.Lock()
@@ -178,7 +178,7 @@ func (manager *SequenceManager) InvalidateSequence(publicKey *btcec.PublicKey, s
 
 // RegisterSequenceBi registers a bidirectional sequence initiated by a remote peer. The caller must specify the timeout (which will be reset every time a new message appears in this sequence).
 // This is needed for bidirectional responses to accept subsequent incoming messages from the remote peer.
-func (manager *SequenceManager) RegisterSequenceBi(publicKey *btcec.PublicKey, sequenceNumber uint32, data interface{}, timeout time.Duration, invalidateFunc func()) (info *SequenceExpiry) {
+func (manager *SequenceManager) RegisterSequenceBi(publicKey ed25519.PublicKey, sequenceNumber uint32, data interface{}, timeout time.Duration, invalidateFunc func()) (info *SequenceExpiry) {
 	info = &SequenceExpiry{
 		SequenceNumber: sequenceNumber,
 		created:        time.Now(),
@@ -204,7 +204,7 @@ func (manager *SequenceManager) RegisterSequenceBi(publicKey *btcec.PublicKey, s
 }
 
 // NewSequenceBi returns a new bidirectional sequence and registers it. messageSequence must point to the variable holding the continuous next sequence number.
-func (manager *SequenceManager) NewSequenceBi(publicKey *btcec.PublicKey, messageSequence *uint32, data interface{}, timeout time.Duration, invalidateFunc func()) (info *SequenceExpiry) {
+func (manager *SequenceManager) NewSequenceBi(publicKey ed25519.PublicKey, messageSequence *uint32, data interface{}, timeout time.Duration, invalidateFunc func()) (info *SequenceExpiry) {
 	info = &SequenceExpiry{
 		created:        time.Now(),
 		expires:        time.Now().Add(timeout),
@@ -232,7 +232,7 @@ func (manager *SequenceManager) NewSequenceBi(publicKey *btcec.PublicKey, messag
 }
 
 // ValidateSequenceBi validates the sequence number of an incoming message. It will set raw.sequence if valid.
-func (manager *SequenceManager) ValidateSequenceBi(publicKey *btcec.PublicKey, sequenceNumber uint32, isLast bool) (sequenceInfo *SequenceExpiry, valid bool, rtt time.Duration) {
+func (manager *SequenceManager) ValidateSequenceBi(publicKey ed25519.PublicKey, sequenceNumber uint32, isLast bool) (sequenceInfo *SequenceExpiry, valid bool, rtt time.Duration) {
 	key := sequence2Key(true, publicKey, sequenceNumber)
 
 	manager.Lock()

@@ -115,7 +115,7 @@ The peer and node IDs are encoded as hex encoded strings.
 
 ```go
 type apiResponsePeerSelf struct {
-    PeerID string `json:"peerid"` // Peer ID. This is derived from the public in compressed form.
+    PeerID string `json:"peerid"` // Peer ID. This is the public key.
     NodeID string `json:"nodeid"` // Node ID. This is the blake3 hash of the peer ID and used in the DHT.
 }
 ```

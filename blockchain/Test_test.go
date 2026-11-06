@@ -2,18 +2,19 @@ package blockchain
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"testing"
 
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/merkle"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/google/uuid"
 )
 
 func TestBlockEncoding(t *testing.T) {
-	privateKey, err := btcec.NewPrivateKey(btcec.S256())
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
 		return
@@ -40,7 +41,7 @@ func TestBlockEncoding(t *testing.T) {
 		return
 	}
 
-	block, err := decodeBlock(raw)
+	block, err := decodeBlock(raw, publicKey)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
 		return
@@ -53,7 +54,7 @@ func TestBlockEncoding(t *testing.T) {
 	}
 
 	// output the block details
-	fmt.Printf("Block details:\n----------------\nNumber: %d\nVersion: %d\nLast Hash: %s\nPublic Key: %s\n", block.Number, block.BlockchainVersion, hex.EncodeToString(block.LastBlockHash), hex.EncodeToString(block.OwnerPublicKey.SerializeCompressed()))
+	fmt.Printf("Block details:\n----------------\nNumber: %d\nVersion: %d\nLast Hash: %s\nPublic Key: %s\n", block.Number, block.BlockchainVersion, hex.EncodeToString(block.LastBlockHash), hex.EncodeToString(block.OwnerPublicKey))
 
 	for _, decodedR := range decoded.RecordsDecoded {
 		switch record := decodedR.(type) {
@@ -87,9 +88,9 @@ func initTestPrivateKey() (blockchain *Blockchain, err error) {
 	// use static test key, otherwise tests will be inconsistent (would otherwise fail to open blockchain database)
 	privateKeyTestA := "d65da474861d826edd29c1307f1250d79e9dbf84e3a2449022658445c8d8ed63"
 	privateKeyB, _ := hex.DecodeString(privateKeyTestA)
-	peerPrivateKey, peerPublicKey := btcec.PrivKeyFromBytes(btcec.S256(), privateKeyB)
+	peerPrivateKey := ed25519.NewKeyFromSeed(privateKeyB)
 
-	fmt.Printf("Loaded public key: %s\n", hex.EncodeToString(peerPublicKey.SerializeCompressed()))
+	fmt.Printf("Loaded public key: %s\n", hex.EncodeToString(peerPrivateKey.Public().(ed25519.PublicKey)))
 
 	return Init(peerPrivateKey, "test.blockchain")
 }

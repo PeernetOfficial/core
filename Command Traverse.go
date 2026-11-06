@@ -16,8 +16,8 @@ import (
 
 // cmdTraverseForward handles an incoming traverse message that should be forwarded to another peer
 func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse) {
-	// Verify the signature. This makes sure that a fowarded message cannot be replayed by others.
-	if !msg.SignerPublicKey.IsEqual(peer.PublicKey) || !msg.SignerPublicKey.IsEqual(msg.SenderPublicKey) {
+	// Verify the signature against the sender of this message. This makes sure that a forwarded message cannot be replayed by others.
+	if !peer.PublicKey.Equal(msg.SenderPublicKey) || !msg.VerifySignature(msg.SenderPublicKey) {
 		return
 	}
 
@@ -70,9 +70,26 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse) {
 		return
 	}
 
+	// ---- fork packetWorker to decode and validate embedded packet ---
+	// Due to missing connection and other embedded details in the message (such as ports), the packet is not just simply queued to rawPacketsIncoming.
+	// The sender of the embedded packet is the original sender; the traverse message must be signed by it.
+	decoded, senderPublicKey, err := protocol.PacketDecrypt(msg.EmbeddedPacketRaw, peer.Backend.peerPublicKey)
+	if err != nil {
+		return
+	}
+	if !msg.VerifySignature(senderPublicKey) {
+		return
+	} else if senderPublicKey.Equal(peer.Backend.peerPublicKey) {
+		return
+	} else if decoded.Protocol != 0 {
+		return
+	} else if decoded.Command != protocol.CommandAnnouncement {
+		return
+	}
+
 	// Already an active connection established? The relayed message should not be needed in this case.
 	// This could be changed in the future if it turns out that there are 1-way connection issues.
-	if peerTarget := peer.Backend.PeerlistLookup(msg.SignerPublicKey); peerTarget != nil {
+	if peerTarget := peer.Backend.PeerlistLookup(senderPublicKey); peerTarget != nil {
 		return
 	}
 
@@ -94,22 +111,6 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse) {
 		addresses = append(addresses, &peerAddress{IP: msg.IPv6, Port: port, PortInternal: 0})
 	}
 	if len(addresses) == 0 {
-		return
-	}
-
-	// ---- fork packetWorker to decode and validate embedded packet ---
-	// Due to missing connection and other embedded details in the message (such as ports), the packet is not just simply queued to rawPacketsIncoming.
-	decoded, senderPublicKey, err := protocol.PacketDecrypt(msg.EmbeddedPacketRaw, peer.Backend.peerPublicKey)
-	if err != nil {
-		return
-	}
-	if !senderPublicKey.IsEqual(msg.SignerPublicKey) {
-		return
-	} else if senderPublicKey.IsEqual(peer.Backend.peerPublicKey) {
-		return
-	} else if decoded.Protocol != 0 {
-		return
-	} else if decoded.Command != protocol.CommandAnnouncement {
 		return
 	}
 

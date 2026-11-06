@@ -7,11 +7,11 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"time"
 
 	"github.com/PeernetOfficial/core/blockchain"
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/udt"
 	"github.com/google/uuid"
@@ -24,7 +24,7 @@ var blockSequenceTimeout = time.Second * 10
 const blockTransferLite = true
 
 // startBlockTransfer starts the transfer of blocks. Currently it only serves the user's blockchain.
-func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey *btcec.PublicKey, LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange, sequenceNumber uint32, transferID uuid.UUID) (err error) {
+func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey ed25519.PublicKey, LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange, sequenceNumber uint32, transferID uuid.UUID) (err error) {
 	virtualConn := newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32, transferID uuid.UUID) {
 		peer.sendGetBlock(data, protocol.GetBlockControlActive, BlockchainPublicKey, 0, 0, nil, sequenceNumber, transferID, blockTransferLite)
 	})
@@ -88,7 +88,7 @@ func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey *btcec.PublicKey, L
 
 // BlockTransferRequest requests blocks from the peer.
 // The caller must call udtConn.Close() when done. Do not use any of the closing functions of virtualConn.
-func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey *btcec.PublicKey, LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange) (udtConn *udt.UDTSocket, virtualConn *VirtualPacketConn, err error) {
+func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey ed25519.PublicKey, LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange) (udtConn *udt.UDTSocket, virtualConn *VirtualPacketConn, err error) {
 	virtualConn = newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32, transferID uuid.UUID) {
 		peer.sendGetBlock(data, protocol.GetBlockControlActive, BlockchainPublicKey, 0, 0, nil, sequenceNumber, transferID, blockTransferLite)
 	})
@@ -133,7 +133,7 @@ func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey *btcec.PublicKey,
 }
 
 // Downloads the requested blocks for the selected blockchain from the remote peer. The callback is called for each result.
-func (peer *PeerInfo) BlockDownload(BlockchainPublicKey *btcec.PublicKey, LimitBlockCount, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange, callback func(data []byte, targetBlock protocol.BlockRange, blockSize uint64, availability uint8)) (err error) {
+func (peer *PeerInfo) BlockDownload(BlockchainPublicKey ed25519.PublicKey, LimitBlockCount, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange, callback func(data []byte, targetBlock protocol.BlockRange, blockSize uint64, availability uint8)) (err error) {
 	conn, _, err := peer.BlockTransferRequest(BlockchainPublicKey, LimitBlockCount, MaxBlockSize, TargetBlocks)
 	if err != nil {
 		return err
@@ -174,7 +174,7 @@ func isTargetInRange(targets []protocol.BlockRange, offset, limit uint64) (valid
 }
 
 type BlockTransferStats struct {
-	BlockchainPublicKey *btcec.PublicKey      // Target blockchain
+	BlockchainPublicKey ed25519.PublicKey      // Target blockchain
 	Direction           int                   // Direction of the data transfer
 	LimitBlockCount     uint64                // Max count of blocks to be transferred
 	MaxBlockSize        uint64                // Max single block size to transfer

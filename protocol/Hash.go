@@ -7,7 +7,8 @@ Author:     Peter Kleissner
 package protocol
 
 import (
-	"github.com/PeernetOfficial/core/btcec"
+	"crypto/ed25519"
+
 	"lukechampine.com/blake3"
 )
 
@@ -22,6 +23,6 @@ const HashSize = 32
 
 // PublicKey2NodeID translates the Public Key into the node ID used in the Kademlia network.
 // It is also referenced in various other places including blockchain data at runtime. The node ID identifies the owner.
-func PublicKey2NodeID(publicKey *btcec.PublicKey) (nodeID []byte) {
-	return HashData(publicKey.SerializeCompressed())
+func PublicKey2NodeID(publicKey ed25519.PublicKey) (nodeID []byte) {
+	return HashData(publicKey)
 }

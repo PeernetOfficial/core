@@ -10,6 +10,7 @@ IPv6 is always preferred.
 package core
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"math/rand"
 	"net"
@@ -18,14 +19,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PeernetOfficial/core/btcec"
 )
 
 // networkWire is an incoming packet
 type networkWire struct {
 	network           *Network         // network which received the packet
 	sender            *net.UDPAddr     // sender of the packet
-	receiverPublicKey *btcec.PublicKey // public key associated with the receiver
+	receiverPublicKey ed25519.PublicKey // public key associated with the receiver
 	raw               []byte           // buffer
 	unicast           bool             // True if the message was sent via unicast. False if sent via IPv4 broadcast or IPv6 multicast.
 }

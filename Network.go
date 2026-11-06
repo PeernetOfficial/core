@@ -149,7 +149,7 @@ func (nets *Networks) packetWorker() {
 		}
 
 		// immediately discard message if sender = self
-		if senderPublicKey.IsEqual(nets.backend.peerPublicKey) {
+		if senderPublicKey.Equal(nets.backend.peerPublicKey) {
 			continue
 		}
 
@@ -283,9 +283,9 @@ func (nets *Networks) packetWorker() {
 		case protocol.CommandTraverse:
 			if traverse, _ := protocol.DecodeTraverse(raw); traverse != nil {
 				nets.backend.Filters.MessageIn(peer, raw, traverse)
-				if traverse.TargetPeer.IsEqual(nets.backend.peerPublicKey) && traverse.AuthorizedRelayPeer.IsEqual(peer.PublicKey) {
+				if traverse.TargetPeer.Equal(nets.backend.peerPublicKey) && traverse.AuthorizedRelayPeer.Equal(peer.PublicKey) {
 					peer.cmdTraverseReceive(traverse)
-				} else if traverse.AuthorizedRelayPeer.IsEqual(nets.backend.peerPublicKey) {
+				} else if traverse.AuthorizedRelayPeer.Equal(nets.backend.peerPublicKey) {
 					peer.cmdTraverseForward(traverse)
 				}
 			}

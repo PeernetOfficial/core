@@ -7,28 +7,33 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"math/rand"
+	mathrand "math/rand"
 	"net"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
 )
 
 func (backend *Backend) initPeerID() {
-	backend.peerList = make(map[[btcec.PubKeyBytesLenCompressed]byte]*PeerInfo)
+	backend.peerList = make(map[[ed25519.PublicKeySize]byte]*PeerInfo)
 	backend.nodeList = make(map[[protocol.HashSize]byte]*PeerInfo)
 
 	// load existing key from config, if available
 	if len(backend.Config.PrivateKey) > 0 {
 		configPK, err := hex.DecodeString(backend.Config.PrivateKey)
+		if err == nil && len(configPK) != ed25519.SeedSize {
+			err = errors.New("invalid length")
+		}
 		if err == nil {
-			backend.peerPrivateKey, backend.peerPublicKey = btcec.PrivKeyFromBytes(btcec.S256(), configPK)
+			backend.peerPrivateKey = ed25519.NewKeyFromSeed(configPK)
+			backend.peerPublicKey = backend.peerPrivateKey.Public().(ed25519.PublicKey)
 			backend.nodeID = protocol.PublicKey2NodeID(backend.peerPublicKey)
 
 			if backend.Config.AutoUpdateSeedList {
@@ -43,7 +48,7 @@ func (backend *Backend) initPeerID() {
 
 	// if the peer ID is empty, create a new user public-private key pair
 	var err error
-	backend.peerPrivateKey, backend.peerPublicKey, err = Secp256k1NewPrivateKey()
+	backend.peerPublicKey, backend.peerPrivateKey, err = NewPrivateKey()
 	if err != nil {
 		backend.LogError("initPeerID", "generating public-private key pairs: %s\n", err.Error())
 		os.Exit(ExitPrivateKeyCreate)
@@ -51,23 +56,18 @@ func (backend *Backend) initPeerID() {
 	backend.nodeID = protocol.PublicKey2NodeID(backend.peerPublicKey)
 
 	// save the newly generated private key into the config
-	backend.Config.PrivateKey = hex.EncodeToString(backend.peerPrivateKey.Serialize())
+	backend.Config.PrivateKey = hex.EncodeToString(backend.peerPrivateKey.Seed())
 
 	backend.SaveConfig()
 }
 
-// Secp256k1NewPrivateKey creates a new public-private key pair
-func Secp256k1NewPrivateKey() (privateKey *btcec.PrivateKey, publicKey *btcec.PublicKey, err error) {
-	key, err := btcec.NewPrivateKey(btcec.S256())
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return key, (*btcec.PublicKey)(&key.PublicKey), nil
+// NewPrivateKey creates a new Ed25519 public-private key pair
+func NewPrivateKey() (publicKey ed25519.PublicKey, privateKey ed25519.PrivateKey, err error) {
+	return ed25519.GenerateKey(rand.Reader)
 }
 
 // ExportPrivateKey returns the peers public and private key
-func (backend *Backend) ExportPrivateKey() (privateKey *btcec.PrivateKey, publicKey *btcec.PublicKey) {
+func (backend *Backend) ExportPrivateKey() (privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey) {
 	return backend.peerPrivateKey, backend.peerPublicKey
 }
 
@@ -83,7 +83,7 @@ func (backend *Backend) SelfUserAgent() string {
 
 // PeerInfo stores information about a single remote peer
 type PeerInfo struct {
-	PublicKey             *btcec.PublicKey // Public key
+	PublicKey             ed25519.PublicKey // Public key
 	NodeID                []byte           // Node ID in Kademlia network = blake3(Public Key).
 	connectionActive      []*Connection    // List of active established connections to the peer.
 	connectionInactive    []*Connection    // List of former connections that are no longer valid. They may be removed after a while.
@@ -114,24 +114,24 @@ type peerAddress struct {
 }
 
 // PeerlistAdd adds a new peer to the peer list. It does not validate the peer info. If the peer is already added, it does nothing. Connections must be live.
-func (backend *Backend) PeerlistAdd(PublicKey *btcec.PublicKey, connections ...*Connection) (peer *PeerInfo, added bool) {
+func (backend *Backend) PeerlistAdd(PublicKey ed25519.PublicKey, connections ...*Connection) (peer *PeerInfo, added bool) {
 	if len(connections) == 0 {
 		return nil, false
 	}
-	publicKeyCompressed := publicKey2Compressed(PublicKey)
+	publicKeyArray := publicKey2Array(PublicKey)
 
 	backend.peerlistMutex.Lock()
 	defer backend.peerlistMutex.Unlock()
 
-	peer, ok := backend.peerList[publicKeyCompressed]
+	peer, ok := backend.peerList[publicKeyArray]
 	if ok {
 		return peer, false
 	}
 
-	peer = &PeerInfo{Backend: backend, PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], NodeID: protocol.PublicKey2NodeID(PublicKey), messageSequence: rand.Uint32()}
-	_, peer.IsRootPeer = rootPeers[publicKeyCompressed]
+	peer = &PeerInfo{Backend: backend, PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], NodeID: protocol.PublicKey2NodeID(PublicKey), messageSequence: mathrand.Uint32()}
+	_, peer.IsRootPeer = rootPeers[publicKeyArray]
 
-	backend.peerList[publicKeyCompressed] = peer
+	backend.peerList[publicKeyArray] = peer
 
 	// also add to mirrored nodeList
 	var nodeID [protocol.HashSize]byte
@@ -165,7 +165,7 @@ func (backend *Backend) PeerlistRemove(peer *PeerInfo) {
 	// remove from Kademlia
 	backend.nodesDHT.RemoveNode(peer.NodeID)
 
-	delete(backend.peerList, publicKey2Compressed(peer.PublicKey))
+	delete(backend.peerList, publicKey2Array(peer.PublicKey))
 
 	var nodeID [protocol.HashSize]byte
 	copy(nodeID[:], peer.NodeID)
@@ -186,11 +186,11 @@ func (backend *Backend) PeerlistGet() (peers []*PeerInfo) {
 }
 
 // PeerlistLookup returns the peer from the list with the public key
-func (backend *Backend) PeerlistLookup(publicKey *btcec.PublicKey) (peer *PeerInfo) {
+func (backend *Backend) PeerlistLookup(publicKey ed25519.PublicKey) (peer *PeerInfo) {
 	backend.peerlistMutex.RLock()
 	defer backend.peerlistMutex.RUnlock()
 
-	return backend.peerList[publicKey2Compressed(publicKey)]
+	return backend.peerList[publicKey2Array(publicKey)]
 }
 
 // NodelistLookup returns the peer from the list with the node ID
@@ -212,9 +212,10 @@ func (backend *Backend) PeerlistCount() (count int) {
 	return len(backend.peerList)
 }
 
-func publicKey2Compressed(publicKey *btcec.PublicKey) [btcec.PubKeyBytesLenCompressed]byte {
-	var key [btcec.PubKeyBytesLenCompressed]byte
-	copy(key[:], publicKey.SerializeCompressed())
+// publicKey2Array returns the public key as fixed-size array, usable as map key.
+func publicKey2Array(publicKey ed25519.PublicKey) [ed25519.PublicKeySize]byte {
+	var key [ed25519.PublicKeySize]byte
+	copy(key[:], publicKey)
 	return key
 }
 
@@ -227,7 +228,7 @@ func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord) (nodes 
 		}
 
 		var peer *PeerInfo
-		if record.PublicKey.IsEqual(peerSource.PublicKey) {
+		if record.PublicKey.Equal(peerSource.PublicKey) {
 			// Special case if peer that stores info = sender. In that case IP:Port in the record would be empty anyway.
 			peer = peerSource
 		} else if peer = peerSource.Backend.PeerlistLookup(record.PublicKey); peer == nil {
@@ -238,7 +239,7 @@ func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord) (nodes 
 				continue
 			}
 
-			peer = &PeerInfo{Backend: peerSource.Backend, PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, NodeID: protocol.PublicKey2NodeID(record.PublicKey), messageSequence: rand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource, Features: record.Features}
+			peer = &PeerInfo{Backend: peerSource.Backend, PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, NodeID: protocol.PublicKey2NodeID(record.PublicKey), messageSequence: mathrand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource, Features: record.Features}
 		}
 
 		nodes = append(nodes, &dht.Node{ID: peer.NodeID, LastSeen: record.LastContactT, Info: peer})
@@ -298,11 +299,11 @@ func (backend *Backend) DeleteAccount() {
 }
 
 // PublicKeyFromPeerID decodes the peer ID (hex encoded) into a public key.
-func PublicKeyFromPeerID(peerID string) (publicKey *btcec.PublicKey, err error) {
-	hash, err := hex.DecodeString(peerID)
-	if err != nil || len(hash) != 33 {
+func PublicKeyFromPeerID(peerID string) (publicKey ed25519.PublicKey, err error) {
+	publicKey, err = hex.DecodeString(peerID)
+	if err != nil || len(publicKey) != ed25519.PublicKeySize {
 		return nil, errors.New("invalid peer ID length")
 	}
 
-	return btcec.ParsePubKey(hash, btcec.S256())
+	return publicKey, nil
 }

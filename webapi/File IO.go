@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package webapi
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"io"
 	"net/http"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"github.com/PeernetOfficial/core"
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/warehouse"
 )
@@ -22,10 +22,10 @@ import (
 /*
 apiFileRead reads a file immediately from a remote peer. Use the /download functions to download a file.
 This endpoint supports the Range, Content-Range and Content-Length headers. Multipart ranges are not supported and result in HTTP 400.
-Instead of providing the node ID, the peer ID is also accepted in the &node= parameter.
+The peer ID identifies the remote peer (and the blockchain the file belongs to).
 The default timeout for connecting to the peer is 10 seconds.
 
-Request:    GET /file/read?hash=[hash]&node=[node ID]
+Request:    GET /file/read?hash=[hash]&peer=[peer ID]
             Optional: &offset=[offset]&limit=[limit] or via Range header.
             Optional: &timeout=[seconds]
 Response:   200 with the content
@@ -40,9 +40,8 @@ func (api *WebapiInstance) apiFileRead(w http.ResponseWriter, r *http.Request) {
 
 	// validate hashes (must be blake3) and other input
 	fileHash, valid1 := DecodeBlake3Hash(r.Form.Get("hash"))
-	nodeID, valid2 := DecodeBlake3Hash(r.Form.Get("node"))
-	publicKey, err3 := core.PublicKeyFromPeerID(r.Form.Get("node"))
-	if !valid1 || (!valid2 && err3 != nil) {
+	publicKey, errPeer := core.PublicKeyFromPeerID(r.Form.Get("peer"))
+	if !valid1 || errPeer != nil {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
@@ -73,14 +72,7 @@ func (api *WebapiInstance) apiFileRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// try connecting via node ID or peer ID?
-	var peer *core.PeerInfo
-
-	if valid2 {
-		peer, err = PeerConnectNode(api.backend, nodeID, timeout)
-	} else if err3 == nil {
-		peer, err = PeerConnectPublicKey(api.backend, publicKey, timeout)
-	}
+	peer, err := PeerConnectPublicKey(api.backend, publicKey, timeout)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		return
@@ -134,11 +126,11 @@ func serveFileFromWarehouse(backend *core.Backend, w http.ResponseWriter, fileHa
 /*
 apiFileView is similar to /file/read but but provides a format parameter. It sets the Content-Type and Accept-Ranges headers.
 This endpoint supports the Range, Content-Range and Content-Length headers. Multipart ranges are not supported and result in HTTP 400.
-Instead of providing the node ID, the peer ID is also accepted in the &node= parameter.
+The peer ID identifies the remote peer (and the blockchain the file belongs to).
 The default timeout for connecting to the peer is 10 seconds.
 Formats: 14 = Video
 
-Request:    GET /file/view?hash=[hash]&node=[node ID]&format=[format]
+Request:    GET /file/view?hash=[hash]&peer=[peer ID]&format=[format]
             Optional: &offset=[offset]&limit=[limit] or via Range header.
             Optional: &timeout=[seconds]
 Response:   200 with the content
@@ -153,9 +145,8 @@ func (api *WebapiInstance) apiFileView(w http.ResponseWriter, r *http.Request) {
 
 	// validate hashes (must be blake3) and other input
 	fileHash, valid1 := DecodeBlake3Hash(r.Form.Get("hash"))
-	nodeID, valid2 := DecodeBlake3Hash(r.Form.Get("node"))
-	publicKey, err3 := core.PublicKeyFromPeerID(r.Form.Get("node"))
-	if !valid1 || (!valid2 && err3 != nil) {
+	publicKey, errPeer := core.PublicKeyFromPeerID(r.Form.Get("peer"))
+	if !valid1 || errPeer != nil {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
@@ -198,14 +189,7 @@ func (api *WebapiInstance) apiFileView(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// try connecting via node ID or peer ID?
-	var peer *core.PeerInfo
-
-	if valid2 {
-		peer, err = PeerConnectNode(api.backend, nodeID, timeout)
-	} else if err3 == nil {
-		peer, err = PeerConnectPublicKey(api.backend, publicKey, timeout)
-	}
+	peer, err := PeerConnectPublicKey(api.backend, publicKey, timeout)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		return
@@ -229,7 +213,7 @@ func (api *WebapiInstance) apiFileView(w http.ResponseWriter, r *http.Request) {
 }
 
 // PeerConnectPublicKey attempts to connect to the peer specified by its public key (= peer ID).
-func PeerConnectPublicKey(backend *core.Backend, publicKey *btcec.PublicKey, timeout time.Duration) (peer *core.PeerInfo, err error) {
+func PeerConnectPublicKey(backend *core.Backend, publicKey ed25519.PublicKey, timeout time.Duration) (peer *core.PeerInfo, err error) {
 	if publicKey == nil {
 		return nil, errors.New("invalid public key")
 	}

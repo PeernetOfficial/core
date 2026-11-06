@@ -29,7 +29,6 @@ Rules for AI agents working in this repository.
 | `search/` | Local search index, term normalization, text-to-hash. |
 | `store/` | Key-value store backends (memory, pogreb, pebble). |
 | `udt/` | UDT transport implementation (own copy; `udt/packet/` has the packet types). |
-| `btcec/` | secp256k1 (own copy). |
 | `upnp/`, `reuseport/`, `sanitize/`, `system/` | UPnP port mapping, socket reuse, filename sanitizing, package file reading. |
 | `webapi/` | HTTP API on top of the backend; also exports high-level functions clients call directly. |
 | `Config Default.yaml` | Default config template written on first run; localhost paths only. |

@@ -32,8 +32,8 @@ func main() {
 ## Encryption and Hashing functions
 
 * Salsa20 is used for encrypting the packets.
-* secp256k1 is used to generate the peer IDs (public keys).
-* blake3 is used for hashing the packets when signing and as hashing algorithm for the DHT.
+* Ed25519 is used for peer IDs (public keys) and signatures.
+* blake3 is used as hashing algorithm for the DHT and for the block hashes.
 
 ## Dependencies
 

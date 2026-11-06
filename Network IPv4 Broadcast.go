@@ -9,13 +9,13 @@ IPv4 Multicast just sucks (can't use socket bound to 0.0.0.0:PortMain and send t
 package core
 
 import (
+	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
 	"net"
 	"strconv"
 	"time"
 
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/reuseport"
 )
@@ -23,14 +23,15 @@ import (
 const ipv4BroadcastPort = 12912
 
 // special Public-Private Key pair for local discovery
-var ipv4BroadcastPrivateKey *btcec.PrivateKey
-var ipv4BroadcastPublicKey *btcec.PublicKey
+var ipv4BroadcastPrivateKey ed25519.PrivateKey
+var ipv4BroadcastPublicKey ed25519.PublicKey
 
 const ipv4BroadcastPrivateKeyH = "5e27ecc8e54a24e71dca9ba84a9bf465400e27b8c46a977d34962d3d88558c8e"
 
 func initBroadcastIPv4() {
-	if configPK, err := hex.DecodeString(ipv4BroadcastPrivateKeyH); err == nil {
-		ipv4BroadcastPrivateKey, ipv4BroadcastPublicKey = btcec.PrivKeyFromBytes(btcec.S256(), configPK)
+	if configPK, err := hex.DecodeString(ipv4BroadcastPrivateKeyH); err == nil && len(configPK) == ed25519.SeedSize {
+		ipv4BroadcastPrivateKey = ed25519.NewKeyFromSeed(configPK)
+		ipv4BroadcastPublicKey = ipv4BroadcastPrivateKey.Public().(ed25519.PublicKey)
 	}
 }
 

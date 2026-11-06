@@ -22,10 +22,10 @@ The regular Peernet packets would be too CPU expensive and slow due to public ke
 package protocol
 
 import (
+	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
 
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/google/uuid"
 )
 
@@ -99,7 +99,7 @@ const TransferMaxEmbedSize = internetSafeMTU - PacketLengthMin - transferPayload
 const TransferMaxEmbedSizeLite = internetSafeMTU - PacketLiteSizeMin
 
 // EncodeTransfer encodes a transfer message. The embedded packet size must be smaller than TransferMaxEmbedSize.
-func EncodeTransfer(senderPrivateKey *btcec.PrivateKey, data []byte, control, transferProtocol uint8, hash []byte, offset, limit uint64, transferID uuid.UUID) (packetRaw []byte, err error) {
+func EncodeTransfer(senderPrivateKey ed25519.PrivateKey, data []byte, control, transferProtocol uint8, hash []byte, offset, limit uint64, transferID uuid.UUID) (packetRaw []byte, err error) {
 	if control == TransferControlRequestStart && len(data) != 0 {
 		return nil, errors.New("transfer encode: payload not allowed in start")
 	} else if isPacketSizeExceed(transferPayloadHeaderSize, len(data)) {

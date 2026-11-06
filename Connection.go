@@ -7,12 +7,12 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"net"
 	"sync/atomic"
 	"time"
 
-	"github.com/PeernetOfficial/core/btcec"
 	"github.com/PeernetOfficial/core/protocol"
 )
 
@@ -336,7 +336,7 @@ func (peer *PeerInfo) IsFirewallReported() (result bool) {
 
 // send sends the packet to the peer on the connection
 // isFirstPacket indicates whether this is the first packet to an uncontacted peer.
-func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey *btcec.PublicKey, isFirstPacket bool) (err error) {
+func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey ed25519.PublicKey, isFirstPacket bool) (err error) {
 	if c == nil {
 		return errors.New("invalid connection")
 	}
@@ -423,7 +423,7 @@ func (peer *PeerInfo) sendConnection(packet *protocol.PacketRaw, connection *Con
 
 // sendAllNetworks sends a raw packet via all networks. It assigns a new sequence for each sent packet.
 // receiverPortInternal is important for NAT detection and sending the traverse message. Firewall indicates whether the remote peer was reported to be behind a firewall.
-func (nets *Networks) sendAllNetworks(receiverPublicKey *btcec.PublicKey, packet *protocol.PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, receiverFirewall bool, traversePeer *PeerInfo, sequenceData interface{}) (err error) {
+func (nets *Networks) sendAllNetworks(receiverPublicKey ed25519.PublicKey, packet *protocol.PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, receiverFirewall bool, traversePeer *PeerInfo, sequenceData interface{}) (err error) {
 	nets.RLock()
 	defer nets.RUnlock()
 
