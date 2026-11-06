@@ -386,7 +386,7 @@ Example response:
         "name": "Test.txt",
         "description": "",
         "date": "2021-08-27T14:59:13Z",
-        "peerid": "0Zo9QHCF06Nrbxgg9s4Q4wYpcHzsQhSMsmftQqjanVI=",
+        "peerid": "SS9FWBnG5kP7/OGxvfCAVNIGiJIW6CeCU5O6D5Ejcdw=",
         "metadata": []
     }, {
         "id": "bc32cbae-011d-4f0b-80a8-281ca9369211",
@@ -398,7 +398,7 @@ Example response:
         "name": "Test 2.txt",
         "description": "Example description\nThis can be any text #newfile #2021.",
         "date": "2021-09-27T23:33:37Z",
-        "peerid": "0Zo9QHCF06Nrbxgg9s4Q4wYpcHzsQhSMsmftQqjanVI=",
+        "peerid": "SS9FWBnG5kP7/OGxvfCAVNIGiJIW6CeCU5O6D5Ejcdw=",
         "metadata": [{
             "type": 2,
             "name": "Date Created",
@@ -724,7 +724,7 @@ Example response with dummy data:
         "name": "88d8cc57d5c2a5fea881ceea09503ee4.txt",
         "description": "",
         "date": "2021-09-23T00:00:00Z",
-        "peerid": "j4yHzmCXiXqg4DPhowj0DIOuuyJxQflo2QSNG3yhCK8=",
+        "peerid": "c3TSnomMHMJImEq/vcvc2lkUQjc/WnxI30irAljbI0g=",
         "metadata": [{
             "type": 5,
             "name": "Shared By Count",
@@ -849,7 +849,7 @@ type apiResponseDownloadStatus struct {
 }
 ```
 
-Example request: `http://127.0.0.1:112/download/start?path=test.bin&hash=cde13a55f41e387480391c47238acfe9c0136dd56bf365b01416aec03eec7dc4&peer=5a0f712822ddc49633d27df6009d3efa27f19cb371319837f04160bdbda38544`
+Example request: `http://127.0.0.1:112/download/start?path=test.bin&hash=cde13a55f41e387480391c47238acfe9c0136dd56bf365b01416aec03eec7dc4&peer=492f455819c6e643fbfce1b1bdf08054d206889216e827825393ba0f912371dc`
 
 Example response (only apistatus, id, and downloadstatus are used):
 
@@ -887,7 +887,7 @@ Example request: `http://127.0.0.1:112/download/status?id=a6107122-9e31-42d3-b66
         "name": "a96dc7b6a4a7a401c48f93c442f01de9.bin",
         "description": "",
         "date": "2021-10-04T04:37:17Z",
-        "peerid": "lMP3/nYMjoE/PfGKRDZi+ms5h7jWUrdIZaKSvLAAq6A=",
+        "peerid": "eIjZCVQ8BtgPvVhGgtc9sHSgKl8zPchBFaH8LYlsHoQ=",
         "metadata": []
     },
     "progress": {
