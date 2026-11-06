@@ -2,8 +2,6 @@
 
 The core library which is needed for any Peernet client. It provides connectivity to the network and all basic functions. It is developed according to the Peernet protocol specified in the [whitepaper](https://peernet.org/whitepaper). For details about Peernet see [peernet.org](https://peernet.org/).
 
-Current version: Alpha 6
-
 ## Use
 
 ```go
