@@ -180,7 +180,7 @@ func decodeInfoStore(data []byte) (files []InfoStore, read int, valid bool) {
 }
 
 // EncodeAnnouncement encodes an announcement message. It may return multiple messages if the input does not fit into one.
-// findPeer is a list of node IDs (blake3 hash of peer ID)
+// findPeer is a list of peer IDs
 // findValue is a list of hashes
 // files is a list of files stored to inform about
 func EncodeAnnouncement(sendUA, findSelf bool, findPeer []KeyHash, findValue []KeyHash, files []InfoStore, features byte, blockchainHeight, blockchainVersion uint64, userAgent string) (packetsRaw [][]byte) {

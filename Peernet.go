@@ -12,7 +12,6 @@ import (
 
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/dht"
-	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/search"
 	"github.com/PeernetOfficial/core/store"
 	"github.com/PeernetOfficial/core/warehouse"
@@ -100,19 +99,13 @@ type Backend struct {
 	UserWarehouse         *warehouse.Warehouse     // UserWarehouse is the user's warehouse for storing files that are shared
 	nodesDHT              *dht.DHT                 // Nodes connected in the DHT.
 
-	// peerID is the current peer's ID. It is an Ed25519 public key.
+	// peerID is the current peer's ID. It is an Ed25519 public key. It is also the peer's key in the DHT.
 	peerPrivateKey ed25519.PrivateKey
 	peerPublicKey  ed25519.PublicKey
-
-	// The node ID is the blake3 hash of the public key.
-	nodeID []byte
 
 	// peerList keeps track of all peers
 	peerList      map[[ed25519.PublicKeySize]byte]*PeerInfo
 	peerlistMutex sync.RWMutex
-
-	// nodeList is a mirror of peerList but using the node ID
-	nodeList map[[protocol.HashSize]byte]*PeerInfo
 
 	// peerMonitor is a list of channels receiving information about new peers
 	peerMonitor []chan<- *PeerInfo

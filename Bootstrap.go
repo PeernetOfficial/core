@@ -248,7 +248,7 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 		}
 
 		// Check if the reported peer was recently contacted (in connection with the origin peer) for bootstrapping. This makes sure inactive peers are not contacted over and over again.
-		recent, blacklisted := isReturnedPeerRecent(&closePeer, peer.NodeID)
+		recent, blacklisted := isReturnedPeerRecent(&closePeer, peer.PublicKey)
 		if blacklisted {
 			continue
 		}
@@ -328,7 +328,7 @@ const bootstrapRecentContact = 5 * 60 // 5-10 minutes
 type recentContactInfo struct {
 	added     time.Time           // When the peer was added to the list
 	addresses []*peerAddress      // List of contacted addresses in IP:Port format
-	origin    map[string]struct{} // List of node IDs who reported this contact
+	origin    map[string]struct{} // List of peer IDs who reported this contact
 	sync.RWMutex
 }
 
@@ -355,7 +355,7 @@ func resetRecentContacts() {
 }
 
 // isReturnedPeerRecent checks if the peer is blacklisted related to the origin peer due to recent contact. It will create a "recent contact" if none exists.
-func isReturnedPeerRecent(record *protocol.PeerRecord, originNodeID []byte) (recent *recentContactInfo, blacklisted bool) {
+func isReturnedPeerRecent(record *protocol.PeerRecord, originPublicKey ed25519.PublicKey) (recent *recentContactInfo, blacklisted bool) {
 	key := publicKey2Array(record.PublicKey)
 
 	recentContactsMutex.Lock()
@@ -363,12 +363,12 @@ func isReturnedPeerRecent(record *protocol.PeerRecord, originNodeID []byte) (rec
 
 	if recent = recentContacts[key]; recent == nil {
 		recent = &recentContactInfo{added: time.Now(), origin: make(map[string]struct{})}
-		recent.origin[string(originNodeID)] = struct{}{}
+		recent.origin[string(originPublicKey)] = struct{}{}
 
 		recentContacts[key] = recent
 	} else {
-		if _, blacklisted = recent.origin[string(originNodeID)]; !blacklisted {
-			recent.origin[string(originNodeID)] = struct{}{}
+		if _, blacklisted = recent.origin[string(originPublicKey)]; !blacklisted {
+			recent.origin[string(originPublicKey)] = struct{}{}
 
 			// Here we could add an additional check: If number of recent.addresses (i.e. unique IP:Port tried) exceeds a threshold.
 			// However, this is currently not done due to risk of peer isolation. This could happen if enough peers would gang up to report false addresses for a given peer (such peer could still establish an inbound connection to this peer, however).

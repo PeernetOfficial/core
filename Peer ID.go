@@ -23,7 +23,6 @@ import (
 
 func (backend *Backend) initPeerID() {
 	backend.peerList = make(map[[ed25519.PublicKeySize]byte]*PeerInfo)
-	backend.nodeList = make(map[[protocol.HashSize]byte]*PeerInfo)
 
 	// load existing key from config, if available
 	if len(backend.Config.PrivateKey) > 0 {
@@ -34,7 +33,6 @@ func (backend *Backend) initPeerID() {
 		if err == nil {
 			backend.peerPrivateKey = ed25519.NewKeyFromSeed(configPK)
 			backend.peerPublicKey = backend.peerPrivateKey.Public().(ed25519.PublicKey)
-			backend.nodeID = protocol.PublicKey2NodeID(backend.peerPublicKey)
 
 			if backend.Config.AutoUpdateSeedList {
 				backend.configUpdateSeedList()
@@ -53,7 +51,6 @@ func (backend *Backend) initPeerID() {
 		backend.LogError("initPeerID", "generating public-private key pairs: %s\n", err.Error())
 		os.Exit(ExitPrivateKeyCreate)
 	}
-	backend.nodeID = protocol.PublicKey2NodeID(backend.peerPublicKey)
 
 	// save the newly generated private key into the config
 	backend.Config.PrivateKey = hex.EncodeToString(backend.peerPrivateKey.Seed())
@@ -71,14 +68,9 @@ func (backend *Backend) ExportPrivateKey() (privateKey ed25519.PrivateKey, publi
 	return backend.peerPrivateKey, backend.peerPublicKey
 }
 
-// SelfPublicKey returns the public key (= peer ID) of this peer
+// SelfPublicKey returns the public key (= peer ID) of this peer. It is also the peer's key in the DHT.
 func (backend *Backend) SelfPublicKey() ed25519.PublicKey {
 	return backend.peerPublicKey
-}
-
-// SelfNodeID returns the node ID used for DHT
-func (backend *Backend) SelfNodeID() []byte {
-	return backend.nodeID
 }
 
 // SelfUserAgent returns the User Agent
@@ -88,8 +80,7 @@ func (backend *Backend) SelfUserAgent() string {
 
 // PeerInfo stores information about a single remote peer
 type PeerInfo struct {
-	PublicKey             ed25519.PublicKey // Public key
-	NodeID                []byte           // Node ID in Kademlia network = blake3(Public Key).
+	PublicKey             ed25519.PublicKey // Public key = Peer ID. It is also the peer's key in the DHT.
 	connectionActive      []*Connection    // List of active established connections to the peer.
 	connectionInactive    []*Connection    // List of former connections that are no longer valid. They may be removed after a while.
 	connectionLatest      *Connection      // Latest valid connection.
@@ -133,18 +124,13 @@ func (backend *Backend) PeerlistAdd(PublicKey ed25519.PublicKey, connections ...
 		return peer, false
 	}
 
-	peer = &PeerInfo{Backend: backend, PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], NodeID: protocol.PublicKey2NodeID(PublicKey), messageSequence: mathrand.Uint32()}
+	peer = &PeerInfo{Backend: backend, PublicKey: PublicKey, connectionActive: connections, connectionLatest: connections[0], messageSequence: mathrand.Uint32()}
 	_, peer.IsRootPeer = rootPeers[publicKeyArray]
 
 	backend.peerList[publicKeyArray] = peer
 
-	// also add to mirrored nodeList
-	var nodeID [protocol.HashSize]byte
-	copy(nodeID[:], peer.NodeID)
-	backend.nodeList[nodeID] = peer
-
 	// add to Kademlia
-	backend.nodesDHT.AddNode(&dht.Node{ID: peer.NodeID, Info: peer})
+	backend.nodesDHT.AddNode(&dht.Node{ID: peer.PublicKey, Info: peer})
 
 	// TODO: If the node isn't added to Kademlia, it should be either added temporarily to the peerList with an expiration, or to a temp list, or not at all.
 
@@ -168,14 +154,9 @@ func (backend *Backend) PeerlistRemove(peer *PeerInfo) {
 	defer backend.peerlistMutex.Unlock()
 
 	// remove from Kademlia
-	backend.nodesDHT.RemoveNode(peer.NodeID)
+	backend.nodesDHT.RemoveNode(peer.PublicKey)
 
 	delete(backend.peerList, publicKey2Array(peer.PublicKey))
-
-	var nodeID [protocol.HashSize]byte
-	copy(nodeID[:], peer.NodeID)
-
-	delete(backend.nodeList, nodeID)
 }
 
 // PeerlistGet returns the full peer list
@@ -196,17 +177,6 @@ func (backend *Backend) PeerlistLookup(publicKey ed25519.PublicKey) (peer *PeerI
 	defer backend.peerlistMutex.RUnlock()
 
 	return backend.peerList[publicKey2Array(publicKey)]
-}
-
-// NodelistLookup returns the peer from the list with the node ID
-func (backend *Backend) NodelistLookup(nodeID []byte) (peer *PeerInfo) {
-	backend.peerlistMutex.RLock()
-	defer backend.peerlistMutex.RUnlock()
-
-	var nodeID2 [protocol.HashSize]byte
-	copy(nodeID2[:], nodeID)
-
-	return backend.nodeList[nodeID2]
 }
 
 // PeerlistCount returns the current count of peers in the peer list
@@ -244,10 +214,10 @@ func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord) (nodes 
 				continue
 			}
 
-			peer = &PeerInfo{Backend: peerSource.Backend, PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, NodeID: protocol.PublicKey2NodeID(record.PublicKey), messageSequence: mathrand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource, Features: record.Features}
+			peer = &PeerInfo{Backend: peerSource.Backend, PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, messageSequence: mathrand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource, Features: record.Features}
 		}
 
-		nodes = append(nodes, &dht.Node{ID: peer.NodeID, LastSeen: record.LastContactT, Info: peer})
+		nodes = append(nodes, &dht.Node{ID: peer.PublicKey, LastSeen: record.LastContactT, Info: peer})
 	}
 
 	return
@@ -257,7 +227,6 @@ func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord) (nodes 
 func (backend *Backend) selfPeerRecord() (result protocol.PeerRecord) {
 	return protocol.PeerRecord{
 		PublicKey: backend.peerPublicKey,
-		NodeID:    backend.nodeID,
 		//IP:          network.address.IP,
 		//Port:        uint16(network.address.Port),
 		LastContact: 0,

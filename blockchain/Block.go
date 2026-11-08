@@ -29,8 +29,7 @@ import (
 // Block is a single block containing a set of records (metadata).
 // It has no upper size limit, although a soft limit of 64 KB - overhead is encouraged for efficiency.
 type Block struct {
-	OwnerPublicKey    ed25519.PublicKey // Owner Public Key
-	NodeID            []byte            // Node ID of the owner (derived from the public key)
+	OwnerPublicKey    ed25519.PublicKey // Owner Public Key = Peer ID
 	LastBlockHash     []byte            // Hash of the last block. Blake3.
 	BlockchainVersion uint64            // Blockchain version
 	Number            uint64            // Block number
@@ -58,8 +57,6 @@ func decodeBlock(raw []byte, ownerPublicKey ed25519.PublicKey) (block *Block, er
 	}
 
 	block = &Block{OwnerPublicKey: ownerPublicKey}
-
-	block.NodeID = protocol.PublicKey2NodeID(block.OwnerPublicKey)
 
 	block.LastBlockHash = make([]byte, protocol.HashSize)
 	copy(block.LastBlockHash, raw[64:64+protocol.HashSize])
