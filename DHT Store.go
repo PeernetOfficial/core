@@ -7,11 +7,11 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"crypto/ed25519"
+
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/store"
 )
-
-// TODO: Via descriptors, files stored by other peers
 
 func (backend *Backend) initStore() {
 	backend.dhtStore = store.NewMemoryStore()
@@ -32,17 +32,18 @@ func (peer *PeerInfo) announcementGetData(hash []byte) (stored bool, data []byte
 	return true, nil
 }
 
-// announcementStore handles an incoming announcement by another peer about storing data
-func (peer *PeerInfo) announcementStore(records []protocol.InfoStore) {
-	// TODO: Only store the other peers data if certain conditions are met:
-	// - enough storage available
-	// - not exceeding record count per peer
-	// - not exceeding total record count limit
-	// - not exceeding record count per CIDR
-	//for _, record := range records {
-	//fmt.Printf("Remote node %s stores hash %s (size %d type %d)\n", hex.EncodeToString(peer.PublicKey), hex.EncodeToString(record.ID.Hash), record.Size, record.Type)
-	//Warehouse.Store(record.ID.Hash, )
-	// TODO: Request data from remote node.
-	//peer.sendAnnouncement(false, false, nil, []KeyHash{record.ID}, nil, nil)
-	//}
+// blockchainStored reports whether the blockchain of the peer is stored here: the own blockchain or a cached copy. Height and version are those of the stored copy.
+func (backend *Backend) blockchainStored(publicKey ed25519.PublicKey) (stored bool, height, version uint64) {
+	if publicKey.Equal(backend.peerPublicKey) {
+		_, height, version = backend.UserBlockchain.Header()
+		return true, height, version
+	}
+
+	if backend.GlobalBlockchainCache != nil {
+		if header, found, err := backend.GlobalBlockchainCache.Store.ReadBlockchainHeader(publicKey); err == nil && found {
+			return true, header.Height, header.Version
+		}
+	}
+
+	return false, 0, 0
 }

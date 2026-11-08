@@ -94,7 +94,7 @@ func (network *Network) BroadcastIPv4Listen() {
 // BroadcastIPv4Send sends out a single broadcast messages to discover peers
 func (network *Network) BroadcastIPv4Send() (err error) {
 	_, blockchainHeight, blockchainVersion := network.backend.UserBlockchain.Header()
-	packets := protocol.EncodeAnnouncement(true, true, nil, nil, nil, network.backend.FeatureSupport(), blockchainHeight, blockchainVersion, network.backend.userAgent)
+	packets := protocol.EncodeAnnouncement(true, nil, network.backend.FeatureSupport(), blockchainHeight, blockchainVersion, network.backend.userAgent)
 	if len(packets) == 0 {
 		return errors.New("error encoding broadcast announcement")
 	}

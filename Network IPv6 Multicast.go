@@ -139,7 +139,7 @@ func (network *Network) MulticastIPv6Listen() {
 // MulticastIPv6Send sends out a single multicast messages to discover peers at the same site
 func (network *Network) MulticastIPv6Send() (err error) {
 	_, blockchainHeight, blockchainVersion := network.backend.UserBlockchain.Header()
-	packets := protocol.EncodeAnnouncement(true, true, nil, nil, nil, network.backend.FeatureSupport(), blockchainHeight, blockchainVersion, network.backend.userAgent)
+	packets := protocol.EncodeAnnouncement(true, nil, network.backend.FeatureSupport(), blockchainHeight, blockchainVersion, network.backend.userAgent)
 	if len(packets) == 0 {
 		return errors.New("error encoding multicast announcement")
 	}

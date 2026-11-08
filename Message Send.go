@@ -8,6 +8,7 @@ package core
 
 import (
 	"crypto/ed25519"
+	"encoding/hex"
 	"time"
 
 	"github.com/PeernetOfficial/core/protocol"
@@ -31,13 +32,13 @@ func (peer *PeerInfo) pingConnection(connection *Connection) {
 // It has the same effect as ping, but returns the blockchain version and height of the other peer in the Response message, which may be useful for keeping the global blockchain cache up to date.
 func (peer *PeerInfo) pingConnectionAnnouncement(connection *Connection) {
 	_, blockchainHeight, blockchainVersion := peer.Backend.UserBlockchain.Header()
-	packets := protocol.EncodeAnnouncement(false, false, nil, nil, nil, peer.Backend.FeatureSupport(), blockchainHeight, blockchainVersion, peer.Backend.userAgent)
+	packets := protocol.EncodeAnnouncement(false, nil, peer.Backend.FeatureSupport(), blockchainHeight, blockchainVersion, peer.Backend.userAgent)
 	if len(packets) != 1 {
 		return
 	}
 
 	raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packets[0], Sequence: peer.Backend.networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, nil).SequenceNumber}
-	peer.Backend.Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, false, nil, nil, nil)
+	peer.Backend.Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, nil)
 
 	err := peer.sendConnection(raw, connection)
 	connection.LastPingOut = time.Now()
@@ -58,30 +59,34 @@ func (peer *PeerInfo) Chat(text string) {
 	peer.send(&protocol.PacketRaw{Command: protocol.CommandChat, Payload: []byte(text)})
 }
 
-// sendAnnouncement sends the announcement message. It acquires a new sequence for each message.
-func (peer *PeerInfo) sendAnnouncement(sendUA, findSelf bool, findPeer []protocol.KeyHash, findValue []protocol.KeyHash, files []protocol.InfoStore, sequenceData interface{}) {
+// sendAnnouncement sends the announcement message with the requests (may be nil). It acquires a new sequence for each message.
+func (peer *PeerInfo) sendAnnouncement(sendUA bool, requests *protocol.Requests, sequenceData interface{}) {
 	_, blockchainHeight, blockchainVersion := peer.Backend.UserBlockchain.Header()
-	packets := protocol.EncodeAnnouncement(sendUA, findSelf, findPeer, findValue, files, peer.Backend.FeatureSupport(), blockchainHeight, blockchainVersion, peer.Backend.userAgent)
+	packets := protocol.EncodeAnnouncement(sendUA, requests, peer.Backend.FeatureSupport(), blockchainHeight, blockchainVersion, peer.Backend.userAgent)
 
 	for _, packet := range packets {
 		raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packet, Sequence: peer.Backend.networks.Sequences.NewSequence(peer.PublicKey, &peer.messageSequence, sequenceData).SequenceNumber}
-		peer.Backend.Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, findSelf, findPeer, findValue, files)
+		peer.Backend.Filters.MessageOutAnnouncement(peer.PublicKey, peer, raw, requests)
 		peer.send(raw)
 	}
 }
 
-// sendResponse sends the response message
-func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, hash2Peers []protocol.Hash2Peer, filesEmbed []protocol.EmbeddedFileData, hashesNotFound [][]byte) (err error) {
+// sendResponse sends the response message with the response records
+func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, records []protocol.ResponseRecord) (err error) {
 	_, blockchainHeight, blockchainVersion := peer.Backend.UserBlockchain.Header()
-	packets, err := protocol.EncodeResponse(sendUA, hash2Peers, filesEmbed, hashesNotFound, peer.Backend.FeatureSupport(), blockchainHeight, blockchainVersion, peer.Backend.userAgent)
+	packets, err := protocol.EncodeResponse(sendUA, records, peer.Backend.FeatureSupport(), blockchainHeight, blockchainVersion, peer.Backend.userAgent)
+	if err != nil {
+		peer.Backend.LogError("sendResponse", "encoding response to %s: %s\n", hex.EncodeToString(peer.PublicKey), err.Error())
+		return err
+	}
 
 	for _, packet := range packets {
 		raw := &protocol.PacketRaw{Command: protocol.CommandResponse, Payload: packet, Sequence: sequence}
-		peer.Backend.Filters.MessageOutResponse(peer, raw, hash2Peers, filesEmbed, hashesNotFound)
+		peer.Backend.Filters.MessageOutResponse(peer, raw, records)
 		peer.send(raw)
 	}
 
-	return err
+	return nil
 }
 
 // sendTraverse sends a traverse message

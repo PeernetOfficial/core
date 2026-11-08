@@ -156,6 +156,7 @@ func (packet *PacketRaw) SetSelfReportedPorts(portI, portE uint16) {
 		return
 	}
 
-	binary.LittleEndian.PutUint16(packet.Payload[19:19+2], portI)
-	binary.LittleEndian.PutUint16(packet.Payload[21:21+2], portE)
+	// Offsets 18 and 20 of the Announcement/Response payload header, see Message Encoding Announcement.go.
+	binary.LittleEndian.PutUint16(packet.Payload[18:18+2], portI)
+	binary.LittleEndian.PutUint16(packet.Payload[20:20+2], portE)
 }

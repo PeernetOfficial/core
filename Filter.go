@@ -36,8 +36,9 @@ type Filters struct {
 	// DHTSearchStatus is called with updates of searches in the DHT. It allows to see the live progress of searches.
 	DHTSearchStatus func(client *dht.SearchClient, function, format string, v ...interface{})
 
-	// IncomingRequest receives all incoming information requests. The action field is set accordingly.
-	IncomingRequest func(peer *PeerInfo, Action int, Key []byte, Info interface{})
+	// IncomingRequest receives all incoming request records of announcements. RequestType is the protocol.RequestX record type.
+	// Info is *protocol.BlockchainStore for B_STORE_BLOCKCHAIN and *protocol.FileStore for B_STORE_FILE, nil otherwise.
+	IncomingRequest func(peer *PeerInfo, RequestType int, Key []byte, Info interface{})
 
 	// PacketIn is a low-level filter for incoming packets after they are decrypted.
 	// Traverse messages are not covered.
@@ -52,10 +53,10 @@ type Filters struct {
 
 	// MessageOutAnnouncement is a high-level filter for outgoing announcements. Peer is nil on first contact.
 	// Broadcast and Multicast messages are not covered.
-	MessageOutAnnouncement func(receiverPublicKey ed25519.PublicKey, peer *PeerInfo, packet *protocol.PacketRaw, findSelf bool, findPeer []protocol.KeyHash, findValue []protocol.KeyHash, files []protocol.InfoStore)
+	MessageOutAnnouncement func(receiverPublicKey ed25519.PublicKey, peer *PeerInfo, packet *protocol.PacketRaw, requests *protocol.Requests)
 
-	// MessageOutResponse is a high-level filter for outgoing responses.
-	MessageOutResponse func(peer *PeerInfo, packet *protocol.PacketRaw, hash2Peers []protocol.Hash2Peer, filesEmbed []protocol.EmbeddedFileData, hashesNotFound [][]byte)
+	// MessageOutResponse is a high-level filter for outgoing responses. The records are those of the whole response, which may span multiple packets.
+	MessageOutResponse func(peer *PeerInfo, packet *protocol.PacketRaw, records []protocol.ResponseRecord)
 
 	// MessageOutTraverse is a high-level filter for outgoing traverse messages.
 	MessageOutTraverse func(peer *PeerInfo, packet *protocol.PacketRaw, embeddedPacket *protocol.PacketRaw, receiverEnd ed25519.PublicKey)
@@ -90,7 +91,7 @@ func (backend *Backend) initFilters() {
 		backend.Filters.LogError = func(function, format string, v ...interface{}) {}
 	}
 	if backend.Filters.IncomingRequest == nil {
-		backend.Filters.IncomingRequest = func(peer *PeerInfo, Action int, Key []byte, Info interface{}) {}
+		backend.Filters.IncomingRequest = func(peer *PeerInfo, RequestType int, Key []byte, Info interface{}) {}
 	}
 	if backend.Filters.PacketIn == nil {
 		backend.Filters.PacketIn = func(packet *protocol.PacketRaw, senderPublicKey ed25519.PublicKey, c *Connection) {}
@@ -102,11 +103,11 @@ func (backend *Backend) initFilters() {
 		backend.Filters.MessageIn = func(peer *PeerInfo, raw *protocol.MessageRaw, message interface{}) {}
 	}
 	if backend.Filters.MessageOutAnnouncement == nil {
-		backend.Filters.MessageOutAnnouncement = func(receiverPublicKey ed25519.PublicKey, peer *PeerInfo, packet *protocol.PacketRaw, findSelf bool, findPeer []protocol.KeyHash, findValue []protocol.KeyHash, files []protocol.InfoStore) {
+		backend.Filters.MessageOutAnnouncement = func(receiverPublicKey ed25519.PublicKey, peer *PeerInfo, packet *protocol.PacketRaw, requests *protocol.Requests) {
 		}
 	}
 	if backend.Filters.MessageOutResponse == nil {
-		backend.Filters.MessageOutResponse = func(peer *PeerInfo, packet *protocol.PacketRaw, hash2Peers []protocol.Hash2Peer, filesEmbed []protocol.EmbeddedFileData, hashesNotFound [][]byte) {
+		backend.Filters.MessageOutResponse = func(peer *PeerInfo, packet *protocol.PacketRaw, records []protocol.ResponseRecord) {
 		}
 	}
 	if backend.Filters.MessageOutTraverse == nil {

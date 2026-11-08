@@ -210,13 +210,14 @@ func (nets *Networks) autoMulticastBroadcast() {
 func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, address *net.UDPAddr, receiverPortInternal uint16, receiverFirewall bool) (contacted bool) {
 	findSelf := ShouldSendFindSelf()
 	_, blockchainHeight, blockchainVersion := backend.UserBlockchain.Header()
-	packets := protocol.EncodeAnnouncement(true, findSelf, nil, nil, nil, backend.FeatureSupport(), blockchainHeight, blockchainVersion, backend.userAgent)
+	requests := &protocol.Requests{FindSelf: findSelf}
+	packets := protocol.EncodeAnnouncement(true, requests, backend.FeatureSupport(), blockchainHeight, blockchainVersion, backend.userAgent)
 	if len(packets) == 0 {
 		return false
 	}
 	raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packets[0]}
 
-	backend.Filters.MessageOutAnnouncement(publicKey, nil, raw, findSelf, nil, nil, nil)
+	backend.Filters.MessageOutAnnouncement(publicKey, nil, raw, requests)
 
 	backend.networks.sendAllNetworks(publicKey, raw, address, receiverPortInternal, receiverFirewall, nil, &bootstrapFindSelf{})
 
@@ -231,7 +232,7 @@ type bootstrapFindSelf struct {
 // bootstrapAcceptContacts is the maximum count of contacts considered. It limits the impact of fake peers.
 const bootstrapAcceptContacts = 5
 
-// cmdResponseBootstrapFindSelf processes FIND_SELF responses
+// cmdResponseBootstrapFindSelf processes A_RESPONSE_SELF records of the bootstrap announcement
 func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse, closest []protocol.PeerRecord) {
 	if len(closest) > bootstrapAcceptContacts {
 		closest = closest[:bootstrapAcceptContacts]
@@ -265,7 +266,7 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 	}
 }
 
-// ShouldSendFindSelf checks if FIND_SELF should be send
+// ShouldSendFindSelf checks if A_FIND_SELF should be sent
 func ShouldSendFindSelf() bool {
 	// TODO
 	return true
