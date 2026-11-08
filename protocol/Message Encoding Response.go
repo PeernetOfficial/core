@@ -1,422 +1,242 @@
 /*
 File Name:  Message Encoding Response.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2026 Kleissner Ventures Ltd
 Author:     Peter Kleissner
+
+The Response message (whitepaper § Response). Same header as the Announcement; typed response records follow.
 */
 
 package protocol
 
 import (
-	"crypto/ed25519"
 	"bytes"
+	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
 	"net"
 	"time"
-	"unicode/utf8"
-
 )
 
 // MessageResponse is the decoded response message.
 type MessageResponse struct {
-	*MessageRaw                          // Underlying raw message
-	Protocol          uint8              // Protocol version supported (low 4 bits).
-	Features          uint8              // Feature support (high 4 bits). Future use.
-	Actions           uint8              // Action bit array. See ActionX
-	BlockchainHeight  uint64             // Blockchain height
-	BlockchainVersion uint64             // Blockchain version
-	PortInternal      uint16             // Internal port. Can be used to detect NATs.
-	PortExternal      uint16             // External port if known. 0 if not. Can be used for UPnP support.
-	UserAgent         string             // User Agent. Format "Software/Version". Required in the initial announcement/bootstrap. UTF-8 encoded. Max length is 255 bytes.
-	Hash2Peers        []Hash2Peer        // List of peers that know the requested hashes or at least are close to it
-	FilesEmbed        []EmbeddedFileData // Files that were embedded in the response
-	HashesNotFound    [][]byte           // Hashes that were reported back as not found
+	*MessageRaw                        // Underlying raw message
+	Protocol          uint8            // Protocol version supported (low 4 bits).
+	Features          uint8            // Feature support
+	BlockchainHeight  uint64           // Blockchain height
+	BlockchainVersion uint64           // Blockchain version
+	PortInternal      uint16           // Internal port. Can be used to detect NATs.
+	PortExternal      uint16           // External port if known. 0 if not. Can be used for UPnP support.
+	UserAgent         string           // User Agent. Format "Software/Version". Required in the initial announcement/bootstrap. UTF-8 encoded. Max length is 255 bytes.
+	SequenceLast      bool             // SEQUENCE_LAST: no further response messages follow for the announcement
+	Records           []ResponseRecord // Response records in the order received
 }
 
-// PeerRecord informs about a peer
+// ResponseRecord is one response record: A_RESPONSE_SELF, A_RESPONSE_PEER, B_RESPONSE_BLOCKCHAIN, B_RESPONSE_FILE or B_RESPONSE_FILE_EMBED.
+// Which fields are set depends on the type.
+type ResponseRecord struct {
+	Type    uint8         // ResponseX
+	Key     []byte        // Requested key. nil for A_RESPONSE_SELF.
+	Storing []StoringPeer // B_RESPONSE_BLOCKCHAIN, B_RESPONSE_FILE: peers that store the data
+	Closest []PeerRecord  // A_RESPONSE_SELF, A_RESPONSE_PEER, B_RESPONSE_BLOCKCHAIN, B_RESPONSE_FILE: peers close to the key (to the sender for A_RESPONSE_SELF)
+	IsLast  bool          // Bit 15 of the peer record count: no more results follow for the key. A key with no peer records and IsLast was not found.
+	Data    []byte        // B_RESPONSE_FILE_EMBED: the file
+}
+
+// StoringPeer is a peer that stores the requested data.
+type StoringPeer struct {
+	PeerRecord
+	BlockchainHeight  uint64 // B_RESPONSE_BLOCKCHAIN: blockchain height stored
+	BlockchainVersion uint64 // B_RESPONSE_BLOCKCHAIN: blockchain version stored
+}
+
+// PeerRecord informs about a peer.
 type PeerRecord struct {
 	PublicKey                ed25519.PublicKey // Public Key = Peer ID
-	IPv4                     net.IP           // IPv4 address. 0 if not set.
-	IPv4Port                 uint16           // Port (actual one used for connection)
-	IPv4PortReportedInternal uint16           // Internal port as reported by that peer. This can be used to identify whether the peer is potentially behind a NAT.
-	IPv4PortReportedExternal uint16           // External port as reported by that peer. This is used in case of port forwarding (manual or automated).
-	IPv6                     net.IP           // IPv6 address. 0 if not set.
-	IPv6Port                 uint16           // Port (actual one used for connection)
-	IPv6PortReportedInternal uint16           // Internal port as reported by that peer. This can be used to identify whether the peer is potentially behind a NAT.
-	IPv6PortReportedExternal uint16           // External port as reported by that peer. This is used in case of port forwarding (manual or automated).
-	LastContact              uint32           // Last contact in seconds
-	LastContactT             time.Time        // Last contact time translated from seconds
-	Features                 uint8            // Feature support. Same as in Announcement/Response message.
+	IPv4                     net.IP            // IPv4 address. 0 if not set.
+	IPv4Port                 uint16            // Port (actual one used for connection)
+	IPv4PortReportedInternal uint16            // Internal port as reported by that peer. This can be used to identify whether the peer is potentially behind a NAT.
+	IPv4PortReportedExternal uint16            // External port as reported by that peer. This is used in case of port forwarding (manual or automated).
+	IPv6                     net.IP            // IPv6 address. 0 if not set.
+	IPv6Port                 uint16            // Port (actual one used for connection)
+	IPv6PortReportedInternal uint16            // Internal port as reported by that peer. This can be used to identify whether the peer is potentially behind a NAT.
+	IPv6PortReportedExternal uint16            // External port as reported by that peer. This is used in case of port forwarding (manual or automated).
+	LastContact              uint32            // Last contact in seconds
+	LastContactT             time.Time         // Last contact time translated from seconds
+	Features                 uint8             // Feature support. Same as in Announcement/Response message.
 }
 
-// Hash2Peer links a hash to peers who are known to store the data and to peers who are considered close to the hash
-type Hash2Peer struct {
-	ID      KeyHash      // Hash that was queried
-	Closest []PeerRecord // Closest peers
-	Storing []PeerRecord // Peers known to store the data identified by the hash
-	IsLast  bool         // Whether it is the last records returned for the requested hash and no more results will follow
-}
-
-// EmbeddedFileData contains embedded data sent within a response
-type EmbeddedFileData struct {
-	ID   KeyHash // Hash of the file
-	Data []byte  // Data
-}
-
-// Actions in Response message
+// Response record types in the Response message. Names as in the whitepaper.
 const (
-	ActionSequenceLast = 0 // SEQUENCE_LAST Last response to the announcement in the sequence
+	ResponseASelf       = 0 // A_RESPONSE_SELF: peers close to the sender. Answers A_FIND_SELF.
+	ResponseAPeer       = 1 // A_RESPONSE_PEER: peers close to the requested Peer ID. Answers A_FIND_PEER.
+	ResponseBBlockchain = 2 // B_RESPONSE_BLOCKCHAIN: peers that store the requested blockchain, and peers close to the key. Answers B_FIND_BLOCKCHAIN.
+	ResponseBFile       = 3 // B_RESPONSE_FILE: peers that store the requested file, and peers close to the key. Answers B_FIND_FILE.
+	ResponseBFileEmbed  = 4 // B_RESPONSE_FILE_EMBED: the requested file embedded. Answers B_FIND_FILE.
 )
 
-// DecodeResponse decodes the incoming response message. Returns nil if invalid.
-func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
-	result = &MessageResponse{
-		MessageRaw: msg,
-	}
-
-	if len(msg.Payload) < announcementPayloadHeaderSize+6 {
-		return nil, errors.New("response: invalid minimum length")
-	}
-
-	result.Protocol = msg.Payload[0] & 0x0F // Protocol version support is stored in the first 4 bits
-	result.Features = msg.Payload[1]        // Feature support
-	result.Actions = msg.Payload[2]
-	result.BlockchainHeight = binary.LittleEndian.Uint64(msg.Payload[3 : 3+8])
-	result.BlockchainVersion = binary.LittleEndian.Uint64(msg.Payload[11 : 11+8])
-	result.PortInternal = binary.LittleEndian.Uint16(msg.Payload[19 : 19+2])
-	result.PortExternal = binary.LittleEndian.Uint16(msg.Payload[21 : 21+2])
-
-	userAgentLength := int(msg.Payload[23])
-	read := announcementPayloadHeaderSize
-
-	if userAgentLength > 0 {
-		if userAgentLength > len(msg.Payload)-announcementPayloadHeaderSize {
-			return nil, errors.New("response: user agent overflow")
-		}
-
-		userAgentB := msg.Payload[announcementPayloadHeaderSize : announcementPayloadHeaderSize+userAgentLength]
-		if !utf8.Valid(userAgentB) {
-			return nil, errors.New("response: user agent invalid encoding")
-		}
-
-		result.UserAgent = string(userAgentB)
-		read += userAgentLength
-	}
-
-	countPeerResponses := binary.LittleEndian.Uint16(msg.Payload[read+0 : read+0+2])
-	countEmbeddedFiles := binary.LittleEndian.Uint16(msg.Payload[read+2 : read+2+2])
-	countHashesNotFound := binary.LittleEndian.Uint16(msg.Payload[read+4 : read+4+2])
-	read += 6
-
-	if countPeerResponses == 0 && countEmbeddedFiles == 0 && countHashesNotFound == 0 {
-		// Empty responses are allowed. They can be useful as quasi-pings to get the latest blockchain info of the peer.
-		return
-	}
-
-	data := msg.Payload[read:]
-
-	// Peer response data
-	if countPeerResponses > 0 {
-		hash2Peers, read, valid := decodePeerRecord(data, int(countPeerResponses))
-		if !valid {
-			return nil, errors.New("response: peer info invalid data")
-		}
-		data = data[read:]
-
-		result.Hash2Peers = append(result.Hash2Peers, hash2Peers...)
-	}
-
-	// Embedded files
-	if countEmbeddedFiles > 0 {
-		filesEmbed, read, valid := decodeEmbeddedFile(data, int(countEmbeddedFiles))
-		if !valid {
-			return nil, errors.New("response: embedded file invalid data")
-		}
-		data = data[read:]
-
-		result.FilesEmbed = append(result.FilesEmbed, filesEmbed...)
-	}
-
-	// Hashes not found
-	if countHashesNotFound > 0 {
-		if len(data) < int(countHashesNotFound)*32 {
-			return nil, errors.New("response: hash list invalid data")
-		}
-
-		for n := 0; n < int(countHashesNotFound); n++ {
-			hash := make([]byte, HashSize)
-			copy(hash, data[n*32:n*32+32])
-
-			result.HashesNotFound = append(result.HashesNotFound, hash)
-		}
-	}
-
-	return
-}
-
-// Length of peer record in bytes
+// peerRecordSize is the size of a peer record in bytes.
 const peerRecordSize = 69
 
-// decodePeerRecord decodes the response data for FIND_SELF, FIND_PEER and FIND_VALUE messages
-func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int, valid bool) {
-	index := 0
+// storingBlockchainRecordSize is the size of a storing peer record in B_RESPONSE_BLOCKCHAIN: peer record + height (8) + version (8).
+const storingBlockchainRecordSize = peerRecordSize + 16
 
-	for n := 0; n < count; n++ {
-		if read += 34; len(data) < read {
-			return nil, 0, false
-		}
+// peerCountLastFlag is bit 15 of a peer record count: the last result for the key.
+const peerCountLastFlag = 0x8000
 
-		hash := make([]byte, HashSize)
-		copy(hash, data[index:index+32])
-		countField := binary.LittleEndian.Uint16(data[index+32:index+32+2]) & 0x7FFF
-		isLast := binary.LittleEndian.Uint16(data[index+32:index+32+2])&0x8000 > 0
-		index += 34
+// EmbeddedFileSizeMax is the maximum size of a file embedded in a response message (B_RESPONSE_FILE_EMBED). Any file exceeding that must be shared via regular file transfer.
+// It leaves room for the header with the maximum User Agent, the record count, the record header and the key.
+const EmbeddedFileSizeMax = messagePayloadMax - announcementPayloadHeaderSize - 255 - 1 - recordHeaderSize - HashSize
 
-		hash2Peer := Hash2Peer{ID: KeyHash{hash}, IsLast: isLast}
-
-		// Response contains peer records
-		for m := 0; m < int(countField); m++ {
-			if read += peerRecordSize; len(data) < read {
-				return nil, 0, false
-			}
-
-			peer := PeerRecord{}
-
-			peer.PublicKey = make(ed25519.PublicKey, ed25519.PublicKeySize)
-			copy(peer.PublicKey, data[index:index+32])
-
-			// IPv4
-			ipv4B := make([]byte, 4)
-			copy(ipv4B[:], data[index+32:index+32+4])
-
-			peer.IPv4 = ipv4B
-			peer.IPv4Port = binary.LittleEndian.Uint16(data[index+36 : index+36+2])
-			peer.IPv4PortReportedInternal = binary.LittleEndian.Uint16(data[index+38 : index+38+2])
-			peer.IPv4PortReportedExternal = binary.LittleEndian.Uint16(data[index+40 : index+40+2])
-
-			// IPv6
-			ipv6B := make([]byte, 16)
-			copy(ipv6B[:], data[index+42:index+42+16])
-
-			peer.IPv6 = ipv6B
-			peer.IPv6Port = binary.LittleEndian.Uint16(data[index+58 : index+58+2])
-			peer.IPv6PortReportedInternal = binary.LittleEndian.Uint16(data[index+60 : index+60+2])
-			peer.IPv6PortReportedExternal = binary.LittleEndian.Uint16(data[index+62 : index+62+2])
-
-			if peer.IPv6.To4() != nil { // IPv6 address mismatch
-				return nil, 0, false
-			}
-
-			peer.LastContact = binary.LittleEndian.Uint32(data[index+64 : index+64+4])
-			peer.LastContactT = time.Now().Add(-time.Second * time.Duration(peer.LastContact))
-			peer.Features = data[index+68] & 0x7F
-			reason := data[index+68] >> 7
-
-			if reason == 0 { // Peer was returned because it is close to the requested hash
-				hash2Peer.Closest = append(hash2Peer.Closest, peer)
-			} else if reason == 1 { // Peer stores the data
-				hash2Peer.Storing = append(hash2Peer.Storing, peer)
-			}
-
-			index += peerRecordSize
-		}
-
-		hash2Peers = append(hash2Peers, hash2Peer)
+// DecodeResponse decodes the incoming response message. Returns nil if invalid.
+// Records of an unknown type are skipped.
+func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
+	header, records, sequenceLast, err := decodeMessageHeader(msg.Payload, "response")
+	if err != nil {
+		return nil, err
 	}
 
-	return hash2Peers, read, true
-}
-
-// decodeEmbeddedFile decodes the embedded file response data for FIND_VALUE
-func decodeEmbeddedFile(data []byte, count int) (filesEmbed []EmbeddedFileData, read int, valid bool) {
-	index := 0
-
-	for n := 0; n < count; n++ {
-		if read += 34; len(data) < read {
-			return nil, 0, false
-		}
-
-		hash := make([]byte, HashSize)
-		copy(hash, data[index:index+32])
-		sizeField := int(binary.LittleEndian.Uint16(data[index+32 : index+32+2]))
-		index += 34
-
-		if read += sizeField; len(data) < read {
-			return nil, 0, false
-		}
-
-		fileData := make([]byte, sizeField)
-		copy(fileData[:], data[index:index+sizeField])
-
-		index += sizeField
-
-		// validate the hash
-		if !bytes.Equal(hash, HashData(fileData)) {
-			return nil, read, false
-		}
-
-		filesEmbed = append(filesEmbed, EmbeddedFileData{ID: KeyHash{Hash: hash}, Data: fileData})
+	result = &MessageResponse{
+		MessageRaw:        msg,
+		Protocol:          header.Protocol,
+		Features:          header.Features,
+		BlockchainHeight:  header.BlockchainHeight,
+		BlockchainVersion: header.BlockchainVersion,
+		PortInternal:      header.PortInternal,
+		PortExternal:      header.PortExternal,
+		UserAgent:         header.UserAgent,
+		SequenceLast:      sequenceLast,
 	}
 
-	return filesEmbed, read, true
-}
+	for _, raw := range records {
+		record := ResponseRecord{Type: raw.Type}
+		data := raw.Data
 
-// EmbeddedFileSizeMax is the maximum size of embedded files in response messages. Any file exceeding that must be shared via regular file transfer.
-const EmbeddedFileSizeMax = udpMaxPacketSize - PacketLengthMin - announcementPayloadHeaderSize - 2 - 35
-
-// EncodeResponse encodes a response message
-// hash2Peers will be modified.
-func EncodeResponse(sendUA bool, hash2Peers []Hash2Peer, filesEmbed []EmbeddedFileData, hashesNotFound [][]byte, features byte, blockchainHeight, blockchainVersion uint64, userAgent string) (packetsRaw [][]byte, err error) {
-	for n := range filesEmbed {
-		if len(filesEmbed[n].Data) > EmbeddedFileSizeMax {
-			return nil, errors.New("embedded file too big")
-		}
-	}
-
-createPacketLoop:
-	for {
-		raw := make([]byte, 64*1024) // max UDP packet size
-		packetSize := announcementPayloadHeaderSize
-
-		raw[0] = byte(ProtocolVersion) // Protocol
-		raw[1] = features              // Feature support
-		//raw[2] = Actions                                   // Action bit array
-
-		binary.LittleEndian.PutUint64(raw[3:3+8], blockchainHeight)
-		binary.LittleEndian.PutUint64(raw[11:11+8], blockchainVersion)
-
-		// only on initial response the User Agent must be provided according to the protocol spec
-		if sendUA {
-			userAgentB := []byte(userAgent)
-			if len(userAgentB) > 255 {
-				userAgentB = userAgentB[:255]
-			}
-
-			raw[23] = byte(len(userAgentB))
-			copy(raw[announcementPayloadHeaderSize:announcementPayloadHeaderSize+len(userAgentB)], userAgentB)
-			packetSize += len(userAgentB)
-		}
-
-		// 3 count field at raw[index]: count of peer responses, embedded files, and hashes not found
-		countIndex := packetSize
-		packetSize += 6
-
-		// Encode the peer response data for FIND_SELF, FIND_PEER and FIND_VALUE requests.
-		if len(hash2Peers) > 0 {
-			for n, hash2Peer := range hash2Peers {
-				if isPacketSizeExceed(packetSize, 34+peerRecordSize) { // check if minimum length is available in packet
-					packetsRaw = append(packetsRaw, raw[:packetSize])
-					hash2Peers = hash2Peers[n:]
-					continue createPacketLoop
+		switch raw.Type {
+		case ResponseASelf, ResponseAPeer, ResponseBBlockchain, ResponseBFile:
+			if raw.Type != ResponseASelf {
+				if len(data) < HashSize {
+					return nil, errors.New("response: record too short for key")
 				}
+				record.Key = make([]byte, HashSize)
+				copy(record.Key, data[:HashSize])
+				data = data[HashSize:]
+			}
 
-				index := packetSize
-				copy(raw[index:index+32], hash2Peer.ID.Hash)
-				count2Index := index + 32
+			if len(data) < 2 {
+				return nil, errors.New("response: record too short for count")
+			}
+			countField := binary.LittleEndian.Uint16(data[0:2])
+			record.IsLast = countField&peerCountLastFlag > 0
+			count := int(countField & 0x7FFF)
+			data = data[2:]
 
-				packetSize += 34
-				count2 := uint16(0)
+			if raw.Type == ResponseBBlockchain || raw.Type == ResponseBFile {
+				// count is the storing peers, followed by the count of closest peers
+				if len(data) < 2 {
+					return nil, errors.New("response: record too short for count")
+				}
+				countClosest := int(binary.LittleEndian.Uint16(data[0:2]))
+				data = data[2:]
 
-				for m := range hash2Peer.Storing {
-					if isPacketSizeExceed(packetSize, peerRecordSize) { // check if minimum length is available in packet
-						packetsRaw = append(packetsRaw, raw[:packetSize])
-						hash2Peers = hash2Peers[n:]
-						hash2Peer.Storing = hash2Peer.Storing[m:]
-						continue createPacketLoop
+				for n := 0; n < count; n++ {
+					storing := StoringPeer{}
+					size := peerRecordSize
+					if raw.Type == ResponseBBlockchain {
+						size = storingBlockchainRecordSize
 					}
-
-					index := packetSize
-					encodePeerRecord(raw[index:index+peerRecordSize], &hash2Peer.Storing[m], 1)
-
-					packetSize += peerRecordSize
-					binary.LittleEndian.PutUint16(raw[count2Index+0:count2Index+2], uint16(m+1))
-					count2++
-				}
-
-				hash2Peer.Storing = nil
-
-				for m := range hash2Peer.Closest {
-					if isPacketSizeExceed(packetSize, peerRecordSize) { // check if minimum length is available in packet
-						packetsRaw = append(packetsRaw, raw[:packetSize])
-						hash2Peers = hash2Peers[n:]
-						hash2Peer.Closest = hash2Peer.Closest[m:]
-						continue createPacketLoop
+					if len(data) < size {
+						return nil, errors.New("response: storing peer record overflow")
 					}
+					if !decodePeerRecord(data, &storing.PeerRecord) {
+						return nil, errors.New("response: invalid peer record")
+					}
+					if raw.Type == ResponseBBlockchain {
+						storing.BlockchainHeight = binary.LittleEndian.Uint64(data[peerRecordSize : peerRecordSize+8])
+						storing.BlockchainVersion = binary.LittleEndian.Uint64(data[peerRecordSize+8 : peerRecordSize+16])
+					}
+					data = data[size:]
 
-					index := packetSize
-					encodePeerRecord(raw[index:index+peerRecordSize], &hash2Peer.Closest[m], 0)
-
-					packetSize += peerRecordSize
-					count2++
-					binary.LittleEndian.PutUint16(raw[count2Index+0:count2Index+2], count2)
+					record.Storing = append(record.Storing, storing)
 				}
 
-				binary.LittleEndian.PutUint16(raw[count2Index+0:count2Index+2], count2|0x8000) // signal the last result for the key with bit 15
-				binary.LittleEndian.PutUint16(raw[countIndex+0:countIndex+0+2], uint16(n+1))   // count of peer responses
+				count = countClosest
 			}
 
-			hash2Peers = nil
-		}
-
-		// FIND_VALUE response embedded data
-		if len(filesEmbed) > 0 {
-			if isPacketSizeExceed(packetSize, 34+len(filesEmbed[0].Data)) { // check if there is enough space for at least the header and 1 record
-				packetsRaw = append(packetsRaw, raw[:packetSize])
-				continue createPacketLoop
-			}
-
-			for n, file := range filesEmbed {
-				if isPacketSizeExceed(packetSize, 34+len(file.Data)) { // check if minimum length is available in packet
-					packetsRaw = append(packetsRaw, raw[:packetSize])
-					filesEmbed = filesEmbed[n:]
-					continue createPacketLoop
+			for n := 0; n < count; n++ {
+				if len(data) < peerRecordSize {
+					return nil, errors.New("response: peer record overflow")
 				}
-
-				index := packetSize
-				copy(raw[index:index+32], file.ID.Hash)
-				binary.LittleEndian.PutUint16(raw[index+32:index+32+2], uint16(len(file.Data)))
-				copy(raw[index+34:index+34+len(file.Data)], file.Data)
-
-				binary.LittleEndian.PutUint16(raw[countIndex+2:countIndex+2+2], uint16(n+1)) // count of embedded files
-				packetSize += 34 + len(file.Data)
-			}
-
-			filesEmbed = nil
-		}
-
-		// Hashes not found
-		if len(hashesNotFound) > 0 {
-			index := packetSize
-
-			for n, hash := range hashesNotFound {
-				if isPacketSizeExceed(packetSize, 32) { // check if there is enough space for at least the header and 1 record
-					packetsRaw = append(packetsRaw, raw[:packetSize])
-					continue createPacketLoop
+				peer := PeerRecord{}
+				if !decodePeerRecord(data, &peer) {
+					return nil, errors.New("response: invalid peer record")
 				}
+				data = data[peerRecordSize:]
 
-				copy(raw[index+n*32:index+n*32+32], hash)
-
-				binary.LittleEndian.PutUint16(raw[countIndex+4:countIndex+4+2], uint16(n+1)) // count of hashes not found
-				packetSize += 32
+				record.Closest = append(record.Closest, peer)
 			}
 
-			hashesNotFound = nil
+			if len(data) != 0 {
+				return nil, errors.New("response: record size mismatch")
+			}
+
+		case ResponseBFileEmbed:
+			if len(data) < HashSize {
+				return nil, errors.New("response: record too short for key")
+			}
+			record.Key = make([]byte, HashSize)
+			copy(record.Key, data[:HashSize])
+			record.Data = make([]byte, len(data)-HashSize)
+			copy(record.Data, data[HashSize:])
+
+			if !bytes.Equal(record.Key, HashData(record.Data)) {
+				return nil, errors.New("response: embedded file hash mismatch")
+			}
+
+		default:
+			continue
 		}
 
-		raw[2] |= 1 << ActionSequenceLast // Indicate that no more responses will be sent in this sequence
-		packetsRaw = append(packetsRaw, raw[:packetSize])
-
-		if len(hash2Peers) == 0 && len(filesEmbed) == 0 && len(hashesNotFound) == 0 { // this should always be the case here
-			return
-		}
+		result.Records = append(result.Records, record)
 	}
+
+	return result, nil
 }
 
-// encodePeerRecord encodes a single peer record and stores it into raw
-func encodePeerRecord(raw []byte, peer *PeerRecord, reason uint8) {
+// decodePeerRecord decodes a single peer record. data must be at least peerRecordSize.
+func decodePeerRecord(data []byte, peer *PeerRecord) (valid bool) {
+	peer.PublicKey = make(ed25519.PublicKey, ed25519.PublicKeySize)
+	copy(peer.PublicKey, data[0:32])
+
+	// IPv4
+	ipv4B := make([]byte, 4)
+	copy(ipv4B, data[32:32+4])
+	peer.IPv4 = ipv4B
+	peer.IPv4Port = binary.LittleEndian.Uint16(data[36 : 36+2])
+	peer.IPv4PortReportedInternal = binary.LittleEndian.Uint16(data[38 : 38+2])
+	peer.IPv4PortReportedExternal = binary.LittleEndian.Uint16(data[40 : 40+2])
+
+	// IPv6
+	ipv6B := make([]byte, 16)
+	copy(ipv6B, data[42:42+16])
+	peer.IPv6 = ipv6B
+	peer.IPv6Port = binary.LittleEndian.Uint16(data[58 : 58+2])
+	peer.IPv6PortReportedInternal = binary.LittleEndian.Uint16(data[60 : 60+2])
+	peer.IPv6PortReportedExternal = binary.LittleEndian.Uint16(data[62 : 62+2])
+
+	if peer.IPv6.To4() != nil { // IPv6 address mismatch
+		return false
+	}
+
+	peer.LastContact = binary.LittleEndian.Uint32(data[64 : 64+4])
+	peer.LastContactT = time.Now().Add(-time.Second * time.Duration(peer.LastContact))
+	peer.Features = data[68]
+
+	return true
+}
+
+// encodePeerRecord encodes a single peer record into raw, which must be at least peerRecordSize.
+func encodePeerRecord(raw []byte, peer *PeerRecord) {
 	copy(raw[0:0+32], peer.PublicKey)
-	binary.LittleEndian.PutUint32(raw[64:64+4], peer.LastContact)
-	raw[68] = peer.Features | reason<<7
 
 	// IPv4
 	copy(raw[32:32+4], peer.IPv4.To4())
@@ -429,9 +249,102 @@ func encodePeerRecord(raw []byte, peer *PeerRecord, reason uint8) {
 	binary.LittleEndian.PutUint16(raw[58:58+2], peer.IPv6Port)
 	binary.LittleEndian.PutUint16(raw[60:60+2], peer.IPv6PortReportedInternal)
 	binary.LittleEndian.PutUint16(raw[62:62+2], peer.IPv6PortReportedExternal)
+
+	binary.LittleEndian.PutUint32(raw[64:64+4], peer.LastContact)
+	raw[68] = peer.Features
+}
+
+// encodeResponseRecord encodes the data of a response record.
+func encodeResponseRecord(record *ResponseRecord) (data []byte, err error) {
+	switch record.Type {
+	case ResponseASelf, ResponseAPeer, ResponseBBlockchain, ResponseBFile:
+		if record.Type != ResponseASelf {
+			if len(record.Key) != HashSize {
+				return nil, errors.New("invalid key size")
+			}
+			data = append(data, record.Key...)
+		}
+
+		countField := uint16(len(record.Closest))
+		if record.Type == ResponseBBlockchain || record.Type == ResponseBFile {
+			countField = uint16(len(record.Storing))
+		}
+		if record.IsLast {
+			countField |= peerCountLastFlag
+		}
+		data = binary.LittleEndian.AppendUint16(data, countField)
+
+		if record.Type == ResponseBBlockchain || record.Type == ResponseBFile {
+			data = binary.LittleEndian.AppendUint16(data, uint16(len(record.Closest)))
+
+			for n := range record.Storing {
+				raw := make([]byte, peerRecordSize)
+				encodePeerRecord(raw, &record.Storing[n].PeerRecord)
+				data = append(data, raw...)
+
+				if record.Type == ResponseBBlockchain {
+					data = binary.LittleEndian.AppendUint64(data, record.Storing[n].BlockchainHeight)
+					data = binary.LittleEndian.AppendUint64(data, record.Storing[n].BlockchainVersion)
+				}
+			}
+		}
+
+		for n := range record.Closest {
+			raw := make([]byte, peerRecordSize)
+			encodePeerRecord(raw, &record.Closest[n])
+			data = append(data, raw...)
+		}
+
+	case ResponseBFileEmbed:
+		if len(record.Key) != HashSize {
+			return nil, errors.New("invalid key size")
+		}
+		if len(record.Data) > EmbeddedFileSizeMax {
+			return nil, errors.New("embedded file too big")
+		}
+		data = append(data, record.Key...)
+		data = append(data, record.Data...)
+
+	default:
+		return nil, errors.New("unknown response record type")
+	}
+
+	if len(data) > recordDataSizeMax {
+		return nil, errors.New("response record too big")
+	}
+
+	return data, nil
+}
+
+// EncodeResponse encodes a response message. It returns multiple messages if the records do not fit into one; the last message carries the SEQUENCE_LAST flag.
+// A record is never split over messages; the caller limits the peer records per response record.
+func EncodeResponse(sendUA bool, records []ResponseRecord, features byte, blockchainHeight, blockchainVersion uint64, userAgent string) (packetsRaw [][]byte, err error) {
+	b := newMessageBuilder(sendUA, features, blockchainHeight, blockchainVersion, userAgent)
+
+	for n := range records {
+		data, err := encodeResponseRecord(&records[n])
+		if err != nil {
+			return nil, err
+		}
+
+		if len(data) > b.space() {
+			b.finish(false)
+			b.start()
+
+			if len(data) > b.space() {
+				return nil, errors.New("response record too big")
+			}
+		}
+
+		b.add(records[n].Type, data)
+	}
+
+	b.finish(true)
+
+	return b.messages, nil
 }
 
 // IsLast checks if the incoming message is the last expected response in this sequence.
 func (msg *MessageResponse) IsLast() bool {
-	return msg.Actions&(1<<ActionSequenceLast) > 0
+	return msg.SequenceLast
 }

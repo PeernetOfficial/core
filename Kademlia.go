@@ -99,28 +99,23 @@ func (backend *Backend) bootstrapKademlia() {
 
 // Future sendAnnouncementX: If it detects that announcements are sent out to the same peer within 50ms it should activate a wait-and-group scheme.
 
+// sendAnnouncementFindNode sends A_FIND_PEER for the requested key, or A_FIND_SELF if the key is self.
 func (peer *PeerInfo) sendAnnouncementFindNode(request *dht.InformationRequest) {
-	// If the key is self, send it as FIND_SELF
 	if bytes.Equal(request.Key, peer.Backend.peerPublicKey) {
-		peer.sendAnnouncement(false, true, nil, nil, nil, request)
+		peer.sendAnnouncement(false, &protocol.Requests{FindSelf: true}, request)
 	} else {
-		peer.sendAnnouncement(false, false, []protocol.KeyHash{{Hash: request.Key}}, nil, nil, request)
+		peer.sendAnnouncement(false, &protocol.Requests{FindPeer: [][]byte{request.Key}}, request)
 	}
 }
 
+// sendAnnouncementFindValue sends B_FIND_FILE for the requested key.
 func (peer *PeerInfo) sendAnnouncementFindValue(request *dht.InformationRequest) {
-
-	findSelf := false
-	var findPeer []protocol.KeyHash
-	var findValue []protocol.KeyHash
-
-	findValue = append(findValue, protocol.KeyHash{Hash: request.Key})
-
-	peer.sendAnnouncement(false, findSelf, findPeer, findValue, nil, request)
+	peer.sendAnnouncement(false, &protocol.Requests{FindFile: [][]byte{request.Key}}, request)
 }
 
+// sendAnnouncementStore sends B_STORE_FILE for the file.
 func (peer *PeerInfo) sendAnnouncementStore(fileHash []byte, fileSize uint64) {
-	peer.sendAnnouncement(false, false, nil, nil, []protocol.InfoStore{{ID: protocol.KeyHash{Hash: fileHash}, Size: fileSize, Type: 0}}, nil)
+	peer.sendAnnouncement(false, &protocol.Requests{StoreFile: []protocol.FileStore{{Hash: fileHash, Size: fileSize, Type: 0}}}, nil)
 }
 
 // ---- CORE DATA FUNCTIONS ----
