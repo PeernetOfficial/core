@@ -40,7 +40,7 @@ func (peer *PeerInfo) announcementStore(records []protocol.InfoStore) {
 	// - not exceeding total record count limit
 	// - not exceeding record count per CIDR
 	//for _, record := range records {
-	//fmt.Printf("Remote node %s stores hash %s (size %d type %d)\n", hex.EncodeToString(peer.NodeID), hex.EncodeToString(record.ID.Hash), record.Size, record.Type)
+	//fmt.Printf("Remote node %s stores hash %s (size %d type %d)\n", hex.EncodeToString(peer.PublicKey), hex.EncodeToString(record.ID.Hash), record.Size, record.Type)
 	//Warehouse.Store(record.ID.Hash, )
 	// TODO: Request data from remote node.
 	//peer.sendAnnouncement(false, false, nil, []KeyHash{record.ID}, nil, nil)

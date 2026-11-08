@@ -8,6 +8,7 @@ package core
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"time"
 
 	"github.com/PeernetOfficial/core/dht"
@@ -18,7 +19,7 @@ const alpha = 5       // Count of nodes to be contacted in parallel for finding 
 const bucketSize = 20 // Count of nodes per bucket
 
 func (backend *Backend) initKademlia() {
-	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.nodeID}, 256, bucketSize, alpha)
+	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.peerPublicKey}, 256, bucketSize, alpha)
 
 	// ShouldEvict determines whether node 1 shall be evicted in favor of node 2
 	backend.nodesDHT.ShouldEvict = func(node1, node2 *dht.Node) bool {
@@ -100,7 +101,7 @@ func (backend *Backend) bootstrapKademlia() {
 
 func (peer *PeerInfo) sendAnnouncementFindNode(request *dht.InformationRequest) {
 	// If the key is self, send it as FIND_SELF
-	if bytes.Equal(request.Key, peer.Backend.nodeID) {
+	if bytes.Equal(request.Key, peer.Backend.peerPublicKey) {
 		peer.sendAnnouncement(false, true, nil, nil, nil, request)
 	} else {
 		peer.sendAnnouncement(false, false, []protocol.KeyHash{{Hash: request.Key}}, nil, nil, request)
@@ -129,10 +130,10 @@ func Data2Hash(data []byte) (hash []byte) {
 	return protocol.HashData(data)
 }
 
-// GetData returns the requested data. It checks first the local store and then tries via DHT.
-func (backend *Backend) GetData(hash []byte) (data []byte, senderNodeID []byte, found bool) {
+// GetData returns the requested data. It checks first the local store and then tries via DHT. The sender is the peer ID of the peer that provided the data.
+func (backend *Backend) GetData(hash []byte) (data []byte, senderPublicKey []byte, found bool) {
 	if data, found = backend.GetDataLocal(hash); found {
-		return data, backend.nodeID, found
+		return data, backend.peerPublicKey, found
 	}
 
 	return backend.GetDataDHT(hash)
@@ -143,10 +144,10 @@ func (backend *Backend) GetDataLocal(hash []byte) (data []byte, found bool) {
 	return backend.dhtStore.Get(hash)
 }
 
-// GetDataDHT requests data via DHT
-func (backend *Backend) GetDataDHT(hash []byte) (data []byte, senderNodeID []byte, found bool) {
-	data, senderNodeID, found, _ = backend.nodesDHT.Get(hash)
-	return data, senderNodeID, found
+// GetDataDHT requests data via DHT. The sender is the peer ID of the peer that provided the data.
+func (backend *Backend) GetDataDHT(hash []byte) (data []byte, senderPublicKey []byte, found bool) {
+	data, senderPublicKey, found, _ = backend.nodesDHT.Get(hash)
+	return data, senderPublicKey, found
 }
 
 // StoreDataLocal stores data into the local warehouse.
@@ -167,9 +168,9 @@ func (backend *Backend) StoreDataDHT(data []byte, closestCount int) error {
 
 // ---- NODE FUNCTIONS ----
 
-// IsNodeContact checks if the node is a contact in the local DHT routing table
-func (backend *Backend) IsNodeContact(nodeID []byte) (node *dht.Node, peer *PeerInfo) {
-	node = backend.nodesDHT.IsNodeContact(nodeID)
+// IsNodeContact checks if the peer is a contact in the local DHT routing table
+func (backend *Backend) IsNodeContact(publicKey ed25519.PublicKey) (node *dht.Node, peer *PeerInfo) {
+	node = backend.nodesDHT.IsNodeContact(publicKey)
 	if node == nil {
 		return nil, nil
 	}
@@ -177,15 +178,15 @@ func (backend *Backend) IsNodeContact(nodeID []byte) (node *dht.Node, peer *Peer
 	return node, node.Info.(*PeerInfo)
 }
 
-// FindNode finds a node via the DHT
-func (backend *Backend) FindNode(nodeID []byte, Timeout time.Duration) (node *dht.Node, peer *PeerInfo, err error) {
-	// first check if in mirrored node list
-	if peer = backend.NodelistLookup(nodeID); peer != nil {
+// FindNode finds a peer via the DHT
+func (backend *Backend) FindNode(publicKey ed25519.PublicKey, Timeout time.Duration) (node *dht.Node, peer *PeerInfo, err error) {
+	// first check if in the peer list
+	if peer = backend.PeerlistLookup(publicKey); peer != nil {
 		return nil, peer, nil
 	}
 
-	// Search the node via DHT.
-	node, err = backend.nodesDHT.FindNode(nodeID)
+	// Search the peer via DHT.
+	node, err = backend.nodesDHT.FindNode(publicKey)
 	if node == nil {
 		return nil, nil, err
 	}

@@ -224,8 +224,7 @@ func PeerConnectPublicKey(backend *core.Backend, publicKey ed25519.PublicKey, ti
 	}
 
 	// Try to connect via DHT.
-	nodeID := protocol.PublicKey2NodeID(publicKey)
-	if _, peer, _ = backend.FindNode(nodeID, timeout); peer != nil {
+	if _, peer, _ = backend.FindNode(publicKey, timeout); peer != nil {
 		return peer, nil
 	}
 

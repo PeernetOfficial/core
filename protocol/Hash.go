@@ -7,8 +7,6 @@ Author:     Peter Kleissner
 package protocol
 
 import (
-	"crypto/ed25519"
-
 	"lukechampine.com/blake3"
 )
 
@@ -20,9 +18,3 @@ func HashData(data []byte) (hash []byte) {
 
 // HashSize is blake3 hash digest size = 256 bits
 const HashSize = 32
-
-// PublicKey2NodeID translates the Public Key into the node ID used in the Kademlia network.
-// It is also referenced in various other places including blockchain data at runtime. The node ID identifies the owner.
-func PublicKey2NodeID(publicKey ed25519.PublicKey) (nodeID []byte) {
-	return HashData(publicKey)
-}

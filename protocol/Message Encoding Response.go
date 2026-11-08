@@ -35,8 +35,7 @@ type MessageResponse struct {
 
 // PeerRecord informs about a peer
 type PeerRecord struct {
-	PublicKey                ed25519.PublicKey // Public Key
-	NodeID                   []byte           // Kademlia Node ID
+	PublicKey                ed25519.PublicKey // Public Key = Peer ID
 	IPv4                     net.IP           // IPv4 address. 0 if not set.
 	IPv4Port                 uint16           // Port (actual one used for connection)
 	IPv4PortReportedInternal uint16           // Internal port as reported by that peer. This can be used to identify whether the peer is potentially behind a NAT.
@@ -212,8 +211,6 @@ func decodePeerRecord(data []byte, count int) (hash2Peers []Hash2Peer, read int,
 			peer.LastContactT = time.Now().Add(-time.Second * time.Duration(peer.LastContact))
 			peer.Features = data[index+68] & 0x7F
 			reason := data[index+68] >> 7
-
-			peer.NodeID = PublicKey2NodeID(peer.PublicKey)
 
 			if reason == 0 { // Peer was returned because it is close to the requested hash
 				hash2Peer.Closest = append(hash2Peer.Closest, peer)

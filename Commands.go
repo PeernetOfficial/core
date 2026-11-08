@@ -40,12 +40,12 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 
 	// FIND_SELF: Requesting peers close to the sender?
 	if msg.Actions&(1<<protocol.ActionFindSelf) > 0 {
-		peer.Backend.Filters.IncomingRequest(peer, protocol.ActionFindSelf, peer.NodeID, nil)
+		peer.Backend.Filters.IncomingRequest(peer, protocol.ActionFindSelf, peer.PublicKey, nil)
 
-		selfD := protocol.Hash2Peer{ID: protocol.KeyHash{Hash: peer.NodeID}}
+		selfD := protocol.Hash2Peer{ID: protocol.KeyHash{Hash: peer.PublicKey}}
 
 		// do not respond the caller's own peer (add to ignore list)
-		for _, node := range peer.Backend.nodesDHT.GetClosestContacts(respondClosesContactsCount, peer.NodeID, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
+		for _, node := range peer.Backend.nodesDHT.GetClosestContacts(respondClosesContactsCount, peer.PublicKey, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.PublicKey) {
 			if info := node.Info.(*PeerInfo).peer2Record(connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
 				selfD.Closest = append(selfD.Closest, *info)
 			}
@@ -54,7 +54,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		if len(selfD.Closest) > 0 {
 			hash2Peers = append(hash2Peers, selfD)
 		} else {
-			hashesNotFound = append(hashesNotFound, peer.NodeID)
+			hashesNotFound = append(hashesNotFound, peer.PublicKey)
 		}
 	}
 
@@ -66,7 +66,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 			details := protocol.Hash2Peer{ID: findPeer}
 
 			// Same as before, put self as ignoredNodes.
-			for _, node := range peer.Backend.nodesDHT.GetClosestContacts(respondClosesContactsCount, findPeer.Hash, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.NodeID) {
+			for _, node := range peer.Backend.nodesDHT.GetClosestContacts(respondClosesContactsCount, findPeer.Hash, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.PublicKey) {
 				if info := node.Info.(*PeerInfo).peer2Record(connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
 					details.Closest = append(details.Closest, *info)
 				}
@@ -119,7 +119,6 @@ func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result
 
 	result = &protocol.PeerRecord{
 		PublicKey: peer.PublicKey,
-		NodeID:    peer.NodeID,
 		Features:  peer.Features,
 	}
 
@@ -156,7 +155,7 @@ func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Con
 	if _, ok := msg.SequenceInfo.Data.(*bootstrapFindSelf); ok {
 		for _, hash2Peer := range msg.Hash2Peers {
 			// Make sure no garbage is returned. The key must be self and only Closest is expected.
-			if !bytes.Equal(hash2Peer.ID.Hash, peer.Backend.nodeID) || len(hash2Peer.Closest) == 0 {
+			if !bytes.Equal(hash2Peer.ID.Hash, peer.Backend.peerPublicKey) || len(hash2Peer.Closest) == 0 {
 				peer.Backend.LogError("cmdResponse", "incoming response to bootstrap FIND_SELF contains invalid data from %s\n", connection.Address.String())
 				return
 			}
@@ -178,7 +177,7 @@ func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Con
 		}
 
 		for _, hash2Peer := range msg.Hash2Peers {
-			info.QueueResult(&dht.NodeMessage{SenderID: peer.NodeID, Closest: peer.records2Nodes(hash2Peer.Closest), Storing: peer.records2Nodes(hash2Peer.Storing)})
+			info.QueueResult(&dht.NodeMessage{SenderID: peer.PublicKey, Closest: peer.records2Nodes(hash2Peer.Closest), Storing: peer.records2Nodes(hash2Peer.Storing)})
 
 			if hash2Peer.IsLast {
 				info.Done()
@@ -186,7 +185,7 @@ func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Con
 		}
 
 		for _, file := range msg.FilesEmbed {
-			info.QueueResult(&dht.NodeMessage{SenderID: peer.NodeID, Data: file.Data})
+			info.QueueResult(&dht.NodeMessage{SenderID: peer.PublicKey, Data: file.Data})
 
 			info.Done()
 			info.Terminate() // file was found, terminate the request.
