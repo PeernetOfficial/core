@@ -70,8 +70,8 @@ const (
 	ResponseASelf       = 0 // A_RESPONSE_SELF: peers close to the sender. Answers A_FIND_SELF.
 	ResponseAPeer       = 1 // A_RESPONSE_PEER: peers close to the requested Peer ID. Answers A_FIND_PEER.
 	ResponseBBlockchain = 2 // B_RESPONSE_BLOCKCHAIN: peers that store the requested blockchain, and peers close to the key. Answers B_FIND_BLOCKCHAIN.
-	ResponseBFile       = 3 // B_RESPONSE_FILE: peers that store the requested file, and peers close to the key. Answers B_FIND_FILE.
-	ResponseBFileEmbed  = 4 // B_RESPONSE_FILE_EMBED: the requested file embedded. Answers B_FIND_FILE.
+	ResponseBFile       = 3 // B_RESPONSE_FILE: peers that store the requested file, and peers close to the key. Answers B_FIND_FILE and B_FIND_FILE_EMBED.
+	ResponseBFileEmbed  = 4 // B_RESPONSE_FILE_EMBED: the requested file embedded. Answers B_FIND_FILE_EMBED.
 )
 
 // peerRecordSize is the size of a peer record in bytes.

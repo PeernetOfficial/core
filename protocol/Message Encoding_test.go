@@ -104,6 +104,7 @@ func TestAnnouncementRequests(t *testing.T) {
 		FindPeer:        testKeys(t, 2),
 		FindBlockchain:  testKeys(t, 1),
 		FindFile:        testKeys(t, 3),
+		FindFileEmbed:   testKeys(t, 2),
 		StoreBlockchain: []BlockchainStore{{PublicKey: testKey(t), Height: 12, Version: 2}},
 		StoreFile:       []FileStore{{Hash: HashData([]byte("a")), Size: 1, Type: 0}, {Hash: HashData([]byte("b")), Size: 99, Type: 1}},
 	}
@@ -112,17 +113,22 @@ func TestAnnouncementRequests(t *testing.T) {
 	if len(packets) != 1 {
 		t.Fatalf("expected 1 packet, got %d", len(packets))
 	}
-	if packets[0][announcementPayloadHeaderSize] != 6 {
-		t.Fatalf("expected 6 records, got %d", packets[0][announcementPayloadHeaderSize])
+	if packets[0][announcementPayloadHeaderSize] != 7 {
+		t.Fatalf("expected 7 records, got %d", packets[0][announcementPayloadHeaderSize])
 	}
 
 	result := decodeAll(t, packets)[0]
-	if !result.FindSelf || len(result.FindPeer) != 2 || len(result.FindBlockchain) != 1 || len(result.FindFile) != 3 || len(result.StoreBlockchain) != 1 || len(result.StoreFile) != 2 {
+	if !result.FindSelf || len(result.FindPeer) != 2 || len(result.FindBlockchain) != 1 || len(result.FindFile) != 3 || len(result.FindFileEmbed) != 2 || len(result.StoreBlockchain) != 1 || len(result.StoreFile) != 2 {
 		t.Fatal("record counts mismatch")
 	}
 	for n := range requests.FindFile {
 		if !bytes.Equal(result.FindFile[n], requests.FindFile[n]) {
 			t.Fatal("B_FIND_FILE key mismatch")
+		}
+	}
+	for n := range requests.FindFileEmbed {
+		if !bytes.Equal(result.FindFileEmbed[n], requests.FindFileEmbed[n]) {
+			t.Fatal("B_FIND_FILE_EMBED key mismatch")
 		}
 	}
 	if !result.StoreBlockchain[0].PublicKey.Equal(requests.StoreBlockchain[0].PublicKey) || result.StoreBlockchain[0].Height != 12 || result.StoreBlockchain[0].Version != 2 {

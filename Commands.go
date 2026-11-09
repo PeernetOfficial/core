@@ -82,13 +82,28 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		records = append(records, record)
 	}
 
-	// B_FIND_FILE: the file embedded if stored here and small enough, otherwise self if stored here; and peers close to the key
+	// B_FIND_FILE: self if the file is stored here, and peers close to the key
 	for _, key := range msg.FindFile {
 		if keyBudget == 0 {
 			break
 		}
 		keyBudget--
 		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBFindFile, key, nil)
+
+		record := protocol.ResponseRecord{Type: protocol.ResponseBFile, Key: key, Closest: closestPeers(key), IsLast: true}
+		if stored, _ := peer.announcementGetData(key); stored {
+			record.Storing = []protocol.StoringPeer{{PeerRecord: peer.Backend.selfPeerRecord()}}
+		}
+		records = append(records, record)
+	}
+
+	// B_FIND_FILE_EMBED: the file embedded if stored here and it fits into the packet, otherwise as B_FIND_FILE
+	for _, key := range msg.FindFileEmbed {
+		if keyBudget == 0 {
+			break
+		}
+		keyBudget--
+		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBFindFileEmbed, key, nil)
 
 		stored, data := peer.announcementGetData(key)
 		if stored && len(data) > 0 {

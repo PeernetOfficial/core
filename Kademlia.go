@@ -108,9 +108,9 @@ func (peer *PeerInfo) sendAnnouncementFindNode(request *dht.InformationRequest) 
 	}
 }
 
-// sendAnnouncementFindValue sends B_FIND_FILE for the requested key.
+// sendAnnouncementFindValue sends B_FIND_FILE_EMBED for the requested key: the file itself if it fits into the packet, otherwise the peers that store it.
 func (peer *PeerInfo) sendAnnouncementFindValue(request *dht.InformationRequest) {
-	peer.sendAnnouncement(false, &protocol.Requests{FindFile: [][]byte{request.Key}}, request)
+	peer.sendAnnouncement(false, &protocol.Requests{FindFileEmbed: [][]byte{request.Key}}, request)
 }
 
 // sendAnnouncementStore sends B_STORE_FILE for the file.

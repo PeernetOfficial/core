@@ -34,13 +34,14 @@ type Requests struct {
 	FindPeer        [][]byte          // A_FIND_PEER: Peer IDs to request closest peers for
 	FindBlockchain  [][]byte          // B_FIND_BLOCKCHAIN: Peer IDs to request storing peers for
 	FindFile        [][]byte          // B_FIND_FILE: file hashes to request storing peers for
+	FindFileEmbed   [][]byte          // B_FIND_FILE_EMBED: file hashes to request storing peers for, or the file itself if it fits into the packet
 	StoreBlockchain []BlockchainStore // B_STORE_BLOCKCHAIN: blockchains the sender stores
 	StoreFile       []FileStore       // B_STORE_FILE: files the sender stores
 }
 
 // IsEmpty is true if there are no requests.
 func (r *Requests) IsEmpty() bool {
-	return r == nil || !r.FindSelf && len(r.FindPeer) == 0 && len(r.FindBlockchain) == 0 && len(r.FindFile) == 0 && len(r.StoreBlockchain) == 0 && len(r.StoreFile) == 0
+	return r == nil || !r.FindSelf && len(r.FindPeer) == 0 && len(r.FindBlockchain) == 0 && len(r.FindFile) == 0 && len(r.FindFileEmbed) == 0 && len(r.StoreBlockchain) == 0 && len(r.StoreFile) == 0
 }
 
 // BlockchainStore is one item of B_STORE_BLOCKCHAIN: a blockchain the sender stores.
@@ -70,8 +71,9 @@ const (
 	RequestAFindPeer        = 1 // A_FIND_PEER: request closest peers to each Peer ID (DHT A)
 	RequestBFindBlockchain  = 2 // B_FIND_BLOCKCHAIN: request peers that store the blockchain of each Peer ID (DHT B)
 	RequestBFindFile        = 3 // B_FIND_FILE: request peers that store each file (DHT B)
-	RequestBStoreBlockchain = 4 // B_STORE_BLOCKCHAIN: sender indicates storing the listed blockchains (DHT B)
-	RequestBStoreFile       = 5 // B_STORE_FILE: sender indicates storing the listed files (DHT B)
+	RequestBFindFileEmbed   = 4 // B_FIND_FILE_EMBED: as B_FIND_FILE, but the file itself if the receiver stores it and it fits into the packet (DHT B)
+	RequestBStoreBlockchain = 5 // B_STORE_BLOCKCHAIN: sender indicates storing the listed blockchains (DHT B)
+	RequestBStoreFile       = 6 // B_STORE_FILE: sender indicates storing the listed files (DHT B)
 )
 
 // Sizes of the fixed-size list items in request records.
@@ -195,7 +197,7 @@ func DecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error
 		case RequestAFindSelf:
 			result.FindSelf = true
 
-		case RequestAFindPeer, RequestBFindBlockchain, RequestBFindFile:
+		case RequestAFindPeer, RequestBFindBlockchain, RequestBFindFile, RequestBFindFileEmbed:
 			keys, valid := decodeKeyList(record.Data)
 			if !valid {
 				return nil, errors.New("announcement: invalid key list")
@@ -208,6 +210,8 @@ func DecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error
 				result.FindBlockchain = append(result.FindBlockchain, keys...)
 			case RequestBFindFile:
 				result.FindFile = append(result.FindFile, keys...)
+			case RequestBFindFileEmbed:
+				result.FindFileEmbed = append(result.FindFileEmbed, keys...)
 			}
 
 		case RequestBStoreBlockchain:
@@ -374,6 +378,7 @@ func EncodeAnnouncement(sendUA bool, requests *Requests, features byte, blockcha
 		b.addList(RequestAFindPeer, requests.FindPeer, HashSize)
 		b.addList(RequestBFindBlockchain, requests.FindBlockchain, HashSize)
 		b.addList(RequestBFindFile, requests.FindFile, HashSize)
+		b.addList(RequestBFindFileEmbed, requests.FindFileEmbed, HashSize)
 
 		var items [][]byte
 		for _, item := range requests.StoreBlockchain {
