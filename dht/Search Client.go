@@ -178,12 +178,7 @@ func (client *SearchClient) sendInfoRequest(nodes []*Node, resultChan chan *Node
 	info = client.dht.NewInformationRequest(client.Action, client.Key, nodes)
 	info.ResultChanExt = resultChan
 
-	switch client.Action {
-	case ActionFindNode:
-		client.dht.SendRequestFindNode(info)
-	case ActionFindValue:
-		client.dht.SendRequestFindValue(info)
-	}
+	client.dht.SendRequest(info)
 
 	go func() {
 		select {
@@ -288,6 +283,11 @@ func (client *SearchClient) startSearch(level int) {
 
 				client.LogStatus("search.startSearch", "find node: sender %s: %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Closest))
 
+			case ActionFindValueClosest:
+				// Only the nodes close to the key are of interest.
+				result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
+
+				client.LogStatus("search.startSearch", "find closest: sender %s: %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Closest))
 			}
 
 			// Add closest to list

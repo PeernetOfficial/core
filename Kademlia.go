@@ -43,17 +43,19 @@ func (backend *Backend) initKademlia() {
 		node.Info.(*PeerInfo).sendAnnouncementStore(key, dataSize)
 	}
 
-	// SendRequestFindNode sends an information request to find a particular node. nodes are the nodes to send the request to.
-	backend.nodesDHT.SendRequestFindNode = func(request *dht.InformationRequest) {
+	// SendRequest sends the announcement matching the action of the information request to the nodes.
+	backend.nodesDHT.SendRequest = func(request *dht.InformationRequest) {
 		for _, node := range request.Nodes {
-			node.Info.(*PeerInfo).sendAnnouncementFindNode(request)
-		}
-	}
+			peer := node.Info.(*PeerInfo)
 
-	// SendRequestFindValue sends an information request to find data. nodes are the nodes to send the request to.
-	backend.nodesDHT.SendRequestFindValue = func(request *dht.InformationRequest) {
-		for _, node := range request.Nodes {
-			node.Info.(*PeerInfo).sendAnnouncementFindValue(request)
+			switch request.Action {
+			case dht.ActionFindNode:
+				peer.sendAnnouncementFindPeer(request)
+			case dht.ActionFindValue:
+				peer.sendAnnouncementFindFileEmbed(request)
+			case dht.ActionFindValueClosest:
+				peer.sendAnnouncementFindFile(request)
+			}
 		}
 	}
 
@@ -99,8 +101,8 @@ func (backend *Backend) bootstrapKademlia() {
 
 // Future sendAnnouncementX: If it detects that announcements are sent out to the same peer within 50ms it should activate a wait-and-group scheme.
 
-// sendAnnouncementFindNode sends A_FIND_PEER for the requested key, or A_FIND_SELF if the key is self.
-func (peer *PeerInfo) sendAnnouncementFindNode(request *dht.InformationRequest) {
+// sendAnnouncementFindPeer sends A_FIND_PEER for the requested key, or A_FIND_SELF if the key is self.
+func (peer *PeerInfo) sendAnnouncementFindPeer(request *dht.InformationRequest) {
 	if bytes.Equal(request.Key, peer.Backend.peerPublicKey) {
 		peer.sendAnnouncement(false, &protocol.Requests{FindSelf: true}, request)
 	} else {
@@ -108,8 +110,13 @@ func (peer *PeerInfo) sendAnnouncementFindNode(request *dht.InformationRequest) 
 	}
 }
 
-// sendAnnouncementFindValue sends B_FIND_FILE_EMBED for the requested key: the file itself if it fits into the packet, otherwise the peers that store it.
-func (peer *PeerInfo) sendAnnouncementFindValue(request *dht.InformationRequest) {
+// sendAnnouncementFindFile sends B_FIND_FILE for the requested key: the peers that store the file, and peers close to the key.
+func (peer *PeerInfo) sendAnnouncementFindFile(request *dht.InformationRequest) {
+	peer.sendAnnouncement(false, &protocol.Requests{FindFile: [][]byte{request.Key}}, request)
+}
+
+// sendAnnouncementFindFileEmbed sends B_FIND_FILE_EMBED for the requested key: the file itself if it fits into the packet, otherwise as B_FIND_FILE.
+func (peer *PeerInfo) sendAnnouncementFindFileEmbed(request *dht.InformationRequest) {
 	peer.sendAnnouncement(false, &protocol.Requests{FindFileEmbed: [][]byte{request.Key}}, request)
 }
 

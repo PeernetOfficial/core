@@ -29,8 +29,9 @@ type InformationRequest struct {
 
 // Actions for performing the information request
 const (
-	ActionFindNode  = iota // Find a node
-	ActionFindValue        // Find a value
+	ActionFindNode         = iota // Find a node
+	ActionFindValue               // Find a value: the data if embedded in the response, or the nodes storing it
+	ActionFindValueClosest        // Find the nodes closest to a value key, for storing. Data and storing nodes in the response are ignored.
 )
 
 const messageChannelSize = 100

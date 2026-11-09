@@ -30,11 +30,8 @@ type DHT struct {
 	// SendRequestStore sends an announcement-store message to the remote node. It informs the remote node that the local one stores the given key-value.
 	SendRequestStore func(node *Node, key []byte, dataSize uint64)
 
-	// SendRequestFindNode sends an information request to find a particular node. nodes are the nodes to send the request to.
-	SendRequestFindNode func(request *InformationRequest)
-
-	// SendRequestFindValue sends an information request to find data. nodes are the nodes to send the request to.
-	SendRequestFindValue func(request *InformationRequest)
+	// SendRequest sends an information request to request.Nodes. The message to send follows from request.Action.
+	SendRequest func(request *InformationRequest)
 
 	// FilterSearchStatus is called with updates of searches in the DHT
 	FilterSearchStatus func(client *SearchClient, function, format string, v ...interface{})
@@ -117,9 +114,7 @@ func (dht *DHT) Store(key []byte, dataSize uint64, closestCount int) (err error)
 		return errors.New("invalid key size")
 	}
 
-	// TODO: Introduce ActionFindClosestNodes?
-
-	search := dht.NewSearch(ActionFindNode, key, dht.TimeoutSearch, dht.TimeoutIR, dht.alpha)
+	search := dht.NewSearch(ActionFindValueClosest, key, dht.TimeoutSearch, dht.TimeoutIR, dht.alpha)
 	search.LogStatus = func(function, format string, v ...interface{}) {
 		dht.FilterSearchStatus(search, function, format, v...)
 	}
