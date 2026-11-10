@@ -1,6 +1,6 @@
 /*
 File Name:  Network.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -283,9 +283,9 @@ func (nets *Networks) packetWorker() {
 		case protocol.CommandTraverse:
 			if traverse, _ := protocol.DecodeTraverse(raw); traverse != nil {
 				nets.backend.Filters.MessageIn(peer, raw, traverse)
-				if traverse.TargetPeer.Equal(nets.backend.peerPublicKey) && traverse.AuthorizedRelayPeer.Equal(peer.PublicKey) {
+				if traverse.TargetPeer.Equal(nets.backend.peerPublicKey) {
 					peer.cmdTraverseReceive(traverse)
-				} else if traverse.AuthorizedRelayPeer.Equal(nets.backend.peerPublicKey) {
+				} else {
 					peer.cmdTraverseForward(traverse)
 				}
 			}

@@ -1,6 +1,6 @@
 /*
 File Name:  Command Traverse.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -9,20 +9,15 @@ package core
 import (
 	"math/rand"
 	"net"
-	"time"
 
 	"github.com/PeernetOfficial/core/protocol"
 )
 
 // cmdTraverseForward handles an incoming traverse message that should be forwarded to another peer
 func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse) {
-	// Verify the signature against the sender of this message. This makes sure that a forwarded message cannot be replayed by others.
-	if !peer.PublicKey.Equal(msg.SenderPublicKey) || !msg.VerifySignature(msg.SenderPublicKey) {
-		return
-	}
-
-	// Check expiration
-	if msg.Expires.Before(time.Now()) {
+	// The embedded packet is encrypted for the end receiver, with the nonce taken from the Peer ID of the relay (self).
+	// Forward only if it is valid and its sender is the sender of this message. This makes sure that a forwarded message cannot be replayed by others.
+	if _, embeddedSender, err := protocol.PacketDecryptEmbedded(msg.EmbeddedPacketRaw, msg.TargetPeer, peer.Backend.peerPublicKey); err != nil || !embeddedSender.Equal(peer.PublicKey) {
 		return
 	}
 
@@ -65,21 +60,16 @@ func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse) {
 	peerTarget.send(&protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: msg.Payload})
 }
 
+// cmdTraverseReceive handles an incoming traverse message for this peer. peer is the relay that sent it.
 func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse) {
-	if msg.Expires.Before(time.Now()) {
-		return
-	}
-
 	// ---- fork packetWorker to decode and validate embedded packet ---
 	// Due to missing connection and other embedded details in the message (such as ports), the packet is not just simply queued to rawPacketsIncoming.
-	// The sender of the embedded packet is the original sender; the traverse message must be signed by it.
-	decoded, senderPublicKey, err := protocol.PacketDecrypt(msg.EmbeddedPacketRaw, peer.Backend.peerPublicKey)
+	// The sender of the embedded packet is the original sender. The embedded packet is encrypted for self, with the nonce taken from the Peer ID of the relay that sent this message.
+	decoded, senderPublicKey, err := protocol.PacketDecryptEmbedded(msg.EmbeddedPacketRaw, peer.Backend.peerPublicKey, peer.PublicKey)
 	if err != nil {
 		return
 	}
-	if !msg.VerifySignature(senderPublicKey) {
-		return
-	} else if senderPublicKey.Equal(peer.Backend.peerPublicKey) {
+	if senderPublicKey.Equal(peer.Backend.peerPublicKey) {
 		return
 	} else if decoded.Protocol != 0 {
 		return

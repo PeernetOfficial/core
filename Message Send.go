@@ -1,6 +1,6 @@
 /*
 File Name:  Message Send.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -89,18 +89,18 @@ func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, records []proto
 	return nil
 }
 
-// sendTraverse sends a traverse message
+// sendTraverse sends a traverse message to the peer, which relays the embedded packet to the end receiver.
 func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd ed25519.PublicKey) (err error) {
 	packet.Protocol = protocol.ProtocolVersion
 	// self-reported ports are not set, as this isn't sent via a specific network but a relay
 	//packet.SetSelfReportedPorts(c.Network.SelfReportedPorts())
 
-	embeddedPacketRaw, err := protocol.PacketEncrypt(peer.Backend.peerPrivateKey, receiverEnd, packet)
+	embeddedPacketRaw, err := protocol.PacketEncryptEmbedded(peer.Backend.peerPrivateKey, receiverEnd, peer.PublicKey, packet)
 	if err != nil {
 		return err
 	}
 
-	packetRaw, err := protocol.EncodeTraverse(peer.Backend.peerPrivateKey, embeddedPacketRaw, receiverEnd, peer.PublicKey)
+	packetRaw, err := protocol.EncodeTraverse(embeddedPacketRaw, receiverEnd)
 	if err != nil {
 		return err
 	}
