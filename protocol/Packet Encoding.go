@@ -18,6 +18,9 @@ Offset  Size   Info
 Everything after the nonce is encrypted with Salsa20 using the receiver's public key as key, including the signature.
 The signature is applied on the entire packet as transmitted (i.e. encrypted), which guarantees that the signature becomes invalid should someone try to forge the receiver (i.e. forward the packet).
 Because the signature could be a possible fingerprint, it is encrypted itself.
+
+A packet embedded in a Traverse message has the same structure without the nonce field and without the randomized garbage. Its Salsa20 nonce is the first 8 bytes of the Peer ID of the relaying peer.
+The signature covers all preceding bytes of the embedded packet. It is therefore valid only inside a Traverse message sent by that relay, and not as a packet sent directly.
 */
 
 package protocol
@@ -42,6 +45,10 @@ type PacketRaw struct {
 // The minimum packet size is 44 bytes (header) + 64 bytes (signature)
 const PacketLengthMin = packetHeaderSize + signatureSize
 const packetHeaderSize = 44
+const packetNonceSize = 4
+
+// PacketLengthMinEmbedded is the minimum size of a packet embedded in a Traverse message. It has no nonce field. Its size is the minimum size plus the size of the payload.
+const PacketLengthMinEmbedded = PacketLengthMin - packetNonceSize
 const signatureSize = ed25519.SignatureSize
 const maxRandomGarbage = 20
 
@@ -55,9 +62,35 @@ func PacketDecrypt(raw []byte, receiverPublicKey ed25519.PublicKey) (packet *Pac
 	copy(nonce[0:4], raw[0:4])
 	copy(nonce[4:8], raw[0:4])
 
-	// Decrypt the packet (everything after the nonce, including the signature) using Salsa20.
-	bufferDecrypted := make([]byte, len(raw)-4) // full length -nonce
-	salsa20.XORKeyStream(bufferDecrypted, raw[4:], nonce, publicKeyToSalsa20Key(receiverPublicKey))
+	return packetDecrypt(raw, packetNonceSize, nonce, receiverPublicKey)
+}
+
+// PacketDecryptEmbedded decrypts a packet embedded in a Traverse message, verifies its signature and returns a high-level version of the packet.
+// The Salsa20 nonce is the first 8 bytes of the Peer ID of the relaying peer. The relay passes its own Peer ID, the end receiver the Peer ID of the peer that sent the Traverse message.
+func PacketDecryptEmbedded(raw []byte, receiverPublicKey, relayPublicKey ed25519.PublicKey) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, err error) {
+	if len(raw) < PacketLengthMinEmbedded {
+		return nil, nil, errors.New("embedded packet: invalid minimum length")
+	} else if len(relayPublicKey) != ed25519.PublicKeySize {
+		return nil, nil, errors.New("embedded packet: invalid relay peer ID")
+	}
+
+	if packet, senderPublicKey, err = packetDecrypt(raw, 0, relayPublicKey[:8], receiverPublicKey); err != nil {
+		return nil, nil, err
+	}
+
+	// The embedded packet has no randomized garbage.
+	if len(raw) != PacketLengthMinEmbedded+len(packet.Payload) {
+		return nil, nil, errors.New("embedded packet: invalid length")
+	}
+
+	return packet, senderPublicKey, nil
+}
+
+// packetDecrypt decrypts and verifies a packet. nonceFieldSize is the size of the nonce field at the start of the packet, which is 0 for an embedded packet.
+func packetDecrypt(raw []byte, nonceFieldSize int, nonce []byte, receiverPublicKey ed25519.PublicKey) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, err error) {
+	// Decrypt the packet (everything after the nonce field, including the signature) using Salsa20.
+	bufferDecrypted := make([]byte, len(raw)-nonceFieldSize)
+	salsa20.XORKeyStream(bufferDecrypted, raw[nonceFieldSize:], nonce, publicKeyToSalsa20Key(receiverPublicKey))
 
 	// Verify the signature using the sender's public key transmitted in the packet. The signature covers all preceding bytes as transmitted.
 	senderPublicKey = make(ed25519.PublicKey, ed25519.PublicKeySize)
@@ -86,35 +119,54 @@ func PacketDecrypt(raw []byte, receiverPublicKey ed25519.PublicKey) (packet *Pac
 
 // PacketEncrypt encrypts a packet using the provided senders private key and receivers public key.
 func PacketEncrypt(senderPrivateKey ed25519.PrivateKey, receiverPublicKey ed25519.PublicKey, packet *PacketRaw) (raw []byte, err error) {
-	garbage := packetGarbage(PacketLengthMin + len(packet.Payload))
-	raw = make([]byte, PacketLengthMin+len(packet.Payload)+len(garbage))
-
 	nonceC := rand.Uint32()
 	nonce := make([]byte, 8)
 	binary.LittleEndian.PutUint32(nonce[0:4], nonceC)
 	binary.LittleEndian.PutUint32(nonce[4:8], nonceC)
-	copy(raw[0:4], nonce[0:4])
 
-	raw[4] = packet.Protocol
-	raw[5] = packet.Command
+	return packetEncrypt(senderPrivateKey, receiverPublicKey, nonce[0:4], nonce, packet, packetGarbage(PacketLengthMin+len(packet.Payload))), nil
+}
 
-	binary.LittleEndian.PutUint32(raw[6:10], uint32(packet.Sequence))
-	copy(raw[10:42], senderPrivateKey.Public().(ed25519.PublicKey))
-	binary.LittleEndian.PutUint16(raw[42:44], uint16(len(packet.Payload)))
-	copy(raw[44:], packet.Payload)
-	copy(raw[44+len(packet.Payload):44+len(packet.Payload)+len(garbage)], garbage)
+// PacketEncryptEmbedded encrypts a packet to be embedded in a Traverse message. It has no nonce field and no randomized garbage.
+// The Salsa20 nonce is the first 8 bytes of the Peer ID of the relaying peer, which is the peer the Traverse message is sent to.
+func PacketEncryptEmbedded(senderPrivateKey ed25519.PrivateKey, receiverPublicKey, relayPublicKey ed25519.PublicKey, packet *PacketRaw) (raw []byte, err error) {
+	if len(relayPublicKey) != ed25519.PublicKeySize {
+		return nil, errors.New("embedded packet: invalid relay peer ID")
+	}
 
-	// encrypt it using Salsa20. One continuous key stream covers everything after the nonce, including the signature added below.
-	keyStream := make([]byte, len(raw)-4)
+	return packetEncrypt(senderPrivateKey, receiverPublicKey, nil, relayPublicKey[:8], packet, nil), nil
+}
+
+// packetEncrypt encrypts and signs a packet. nonceField is transmitted at the start of the packet; it is empty for an embedded packet.
+// garbage is appended to the payload; it is empty for an embedded packet.
+func packetEncrypt(senderPrivateKey ed25519.PrivateKey, receiverPublicKey ed25519.PublicKey, nonceField, nonce []byte, packet *PacketRaw, garbage []byte) (raw []byte) {
+	o := len(nonceField) // offset of the encrypted fields
+	lengthMin := o + packetHeaderSize - packetNonceSize + signatureSize
+
+	raw = make([]byte, lengthMin+len(packet.Payload)+len(garbage))
+
+	copy(raw[0:o], nonceField)
+
+	raw[o] = packet.Protocol
+	raw[o+1] = packet.Command
+
+	binary.LittleEndian.PutUint32(raw[o+2:o+6], uint32(packet.Sequence))
+	copy(raw[o+6:o+38], senderPrivateKey.Public().(ed25519.PublicKey))
+	binary.LittleEndian.PutUint16(raw[o+38:o+40], uint16(len(packet.Payload)))
+	copy(raw[o+40:], packet.Payload)
+	copy(raw[o+40+len(packet.Payload):o+40+len(packet.Payload)+len(garbage)], garbage)
+
+	// encrypt it using Salsa20. One continuous key stream covers everything after the nonce field, including the signature added below.
+	keyStream := make([]byte, len(raw)-o)
 	salsa20.XORKeyStream(keyStream, keyStream, nonce, publicKeyToSalsa20Key(receiverPublicKey))
-	xorBytes(raw[4:len(raw)-signatureSize], keyStream[:len(keyStream)-signatureSize])
+	xorBytes(raw[o:len(raw)-signatureSize], keyStream[:len(keyStream)-signatureSize])
 
 	// add signature over all preceding bytes as transmitted, then encrypt it
 	signature := ed25519.Sign(senderPrivateKey, raw[:len(raw)-signatureSize])
 	xorBytes(signature, keyStream[len(keyStream)-signatureSize:])
 	copy(raw[len(raw)-signatureSize:], signature)
 
-	return raw, nil
+	return raw
 }
 
 func packetGarbage(packetLength int) (random []byte) {
