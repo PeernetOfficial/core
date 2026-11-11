@@ -139,7 +139,7 @@ func (peer *PeerInfo) IsConnectable(allowLocal, allowIPv4, allowIPv6 bool) bool 
 }
 
 // GetConnection2Share returns a connection to share. Nil if none.
-// allowLocal specifies whether it is OK to return local IPs.
+// allowLocal specifies whether it is OK to return local IPs. In that case a local connection is preferred, so that peers on the same local network connect over it.
 func (peer *PeerInfo) GetConnection2Share(allowLocal, allowIPv4, allowIPv6 bool) (connection *Connection) {
 	if !allowLocal && !allowIPv4 && !allowIPv6 {
 		return nil
@@ -147,6 +147,22 @@ func (peer *PeerInfo) GetConnection2Share(allowLocal, allowIPv4, allowIPv6 bool)
 
 	peer.RLock()
 	defer peer.RUnlock()
+
+	if allowLocal {
+		isLocalMatch := func(connection *Connection) bool {
+			return connection.IsLocal() && (IsIPv4(connection.Address.IP) && allowIPv4 || IsIPv6(connection.Address.IP) && allowIPv6) && connection.PortInternal > 0
+		}
+
+		if peer.connectionLatest != nil && isLocalMatch(peer.connectionLatest) {
+			return peer.connectionLatest
+		}
+
+		for _, connection := range peer.connectionActive {
+			if isLocalMatch(connection) {
+				return connection
+			}
+		}
+	}
 
 	if peer.connectionLatest != nil && !(!allowLocal && peer.connectionLatest.IsLocal()) &&
 		(IsIPv4(peer.connectionLatest.Address.IP) && allowIPv4 || IsIPv6(peer.connectionLatest.Address.IP) && allowIPv6) && peer.connectionLatest.PortInternal > 0 {
