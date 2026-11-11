@@ -1,6 +1,6 @@
 /*
 File Name:  Commands.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -180,7 +180,7 @@ func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Con
 				return
 			}
 
-			peer.cmdResponseBootstrapFindSelf(msg, record.Closest)
+			peer.cmdResponseBootstrapFindSelf(msg, record.Closest, connection.IsLocal())
 		}
 
 		return
@@ -203,7 +203,7 @@ func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Con
 					storing = append(storing, record.Storing[n].PeerRecord)
 				}
 
-				info.QueueResult(&dht.NodeMessage{SenderID: peer.PublicKey, Closest: peer.records2Nodes(record.Closest), Storing: peer.records2Nodes(storing)})
+				info.QueueResult(&dht.NodeMessage{SenderID: peer.PublicKey, Closest: peer.records2Nodes(record.Closest, connection.IsLocal()), Storing: peer.records2Nodes(storing, connection.IsLocal())})
 
 			case protocol.ResponseBFileEmbed:
 				info.QueueResult(&dht.NodeMessage{SenderID: peer.PublicKey, Data: record.Data})

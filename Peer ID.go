@@ -1,6 +1,6 @@
 /*
 File Name:  Peer ID.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -196,7 +196,8 @@ func publicKey2Array(publicKey ed25519.PublicKey) [ed25519.PublicKeySize]byte {
 
 // records2Nodes translates infoPeer structures to nodes reported by the peer. If the reported nodes are not in the peer table, it will create temporary PeerInfo structures.
 // LastContact is passed on in the Node.LastSeen field.
-func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord) (nodes []*dht.Node) {
+// allowLocal indicates whether the records were received via a local connection. Local addresses of the reported nodes are only used in that case.
+func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord, allowLocal bool) (nodes []*dht.Node) {
 	for _, record := range records {
 		if peerSource.Backend.isReturnedPeerBadQuality(&record) {
 			continue
@@ -209,7 +210,7 @@ func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord) (nodes 
 		} else if peer = peerSource.Backend.PeerlistLookup(record.PublicKey); peer == nil {
 			// Create temporary peer which is not added to the global list and not added to Kademlia.
 			// traversePeer is set to the peer who provided the node information.
-			addresses := peerRecordToAddresses(&record)
+			addresses := peerRecordToAddresses(&record, allowLocal)
 			if len(addresses) == 0 {
 				continue
 			}
