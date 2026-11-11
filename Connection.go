@@ -1,6 +1,6 @@
 /*
 File Name:  Connection.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -94,6 +94,24 @@ func (peer *PeerInfo) IsConnectionActive() bool {
 	defer peer.RUnlock()
 
 	return len(peer.connectionActive) > 0
+}
+
+// localConnection returns an active connection to the peer via a local address. It returns nil if there is none.
+func (peer *PeerInfo) localConnection() *Connection {
+	peer.RLock()
+	defer peer.RUnlock()
+
+	if peer.connectionLatest != nil && peer.connectionLatest.IsLocal() {
+		return peer.connectionLatest
+	}
+
+	for _, connection := range peer.connectionActive {
+		if connection.IsLocal() {
+			return connection
+		}
+	}
+
+	return nil
 }
 
 // IsConnectable checks if the peer is connectable to the given IP parameters.

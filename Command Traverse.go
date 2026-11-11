@@ -13,8 +13,9 @@ import (
 	"github.com/PeernetOfficial/core/protocol"
 )
 
-// cmdTraverseForward handles an incoming traverse message that should be forwarded to another peer
-func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse) {
+// cmdTraverseForward handles an incoming traverse message that should be forwarded to another peer.
+// connection is the one the message was received on.
+func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse, connection *Connection) {
 	// The embedded packet is encrypted for the end receiver, with the nonce taken from the Peer ID of the relay (self).
 	// Forward only if it is valid and its sender is the sender of this message. This makes sure that a forwarded message cannot be replayed by others.
 	// Only an Announcement is forwarded: the Traverse message establishes a connection, and the Announcement is what the end receiver accepts.
@@ -32,10 +33,17 @@ func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse) {
 	}
 
 	// Get the right IP:Port of the original sender to share to the target peer.
+	// A local address of the original sender is only shared if the message was received via a local connection and the target peer has a local connection.
+	// The message is then forwarded via that local connection, where the target peer accepts a local address.
+	var connectionTargetLocal *Connection
+	if connection.IsLocal() {
+		connectionTargetLocal = peerTarget.localConnection()
+	}
+	allowLocal := connectionTargetLocal != nil
 	allowIPv4 := peerTarget.Features&(1<<protocol.FeatureIPv4Listen) > 0
 	allowIPv6 := peerTarget.Features&(1<<protocol.FeatureIPv6Listen) > 0
-	connectionIPv4 := peer.GetConnection2Share(false, allowIPv4, false)
-	connectionIPv6 := peer.GetConnection2Share(false, false, allowIPv6)
+	connectionIPv4 := peer.GetConnection2Share(allowLocal, allowIPv4, false)
+	connectionIPv6 := peer.GetConnection2Share(allowLocal, false, allowIPv6)
 
 	if connectionIPv4 == nil && connectionIPv6 == nil {
 		return
@@ -59,11 +67,18 @@ func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse) {
 		return
 	}
 
-	peerTarget.send(&protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: msg.Payload})
+	raw := &protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: msg.Payload}
+
+	if connectionTargetLocal != nil {
+		peerTarget.sendConnection(raw, connectionTargetLocal)
+	} else {
+		peerTarget.send(raw)
+	}
 }
 
 // cmdTraverseReceive handles an incoming traverse message for this peer. peer is the relay that sent it.
-func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse) {
+// connection is the one the message was received on.
+func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse, connection *Connection) {
 	// ---- fork packetWorker to decode and validate embedded packet ---
 	// Due to missing connection and other embedded details in the message (such as ports), the packet is not just simply queued to rawPacketsIncoming.
 	// The sender of the embedded packet is the original sender. The embedded packet is encrypted for self, with the nonce taken from the Peer ID of the relay that sent this message.
@@ -86,16 +101,17 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse) {
 	}
 
 	// parse IP addresses of the original sender
+	// A local address is only accepted if the message was received via a local connection.
 	var addresses []*peerAddress
 
-	if !msg.IPv4.IsUnspecified() {
+	if !msg.IPv4.IsUnspecified() && (connection.IsLocal() || !IsIPLocal(msg.IPv4)) {
 		port := msg.PortIPv4
 		if msg.PortIPv4ReportedExternal > 0 {
 			port = msg.PortIPv4ReportedExternal
 		}
 		addresses = append(addresses, &peerAddress{IP: msg.IPv4, Port: port, PortInternal: 0})
 	}
-	if !msg.IPv6.IsUnspecified() {
+	if !msg.IPv6.IsUnspecified() && (connection.IsLocal() || !IsIPLocal(msg.IPv6)) {
 		port := msg.PortIPv6
 		if msg.PortIPv6ReportedExternal > 0 {
 			port = msg.PortIPv6ReportedExternal
