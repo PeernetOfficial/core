@@ -455,6 +455,20 @@ func (peer *PeerInfo) sendConnection(packet *protocol.PacketRaw, connection *Con
 	return connection.send(packet, peer.PublicKey, isFirstPacketOut)
 }
 
+// sendConnectionLocal sends a packet to the peer using the specific local connection.
+// It is used for packets that may contain local addresses of peers: the Response to an Announcement received via a local connection, and a Traverse message forwarded with a local address.
+// The receiver uses a local address only if the packet arrives via a local connection, therefore the packet is sent via this connection only.
+// If sending fails with a fatal network error, the connection is invalidated.
+func (peer *PeerInfo) sendConnectionLocal(packet *protocol.PacketRaw, connection *Connection) (err error) {
+	err = peer.sendConnection(packet, connection)
+
+	if (connection.Status == ConnectionActive || connection.Status == ConnectionRedundant) && IsNetworkErrorFatal(err) {
+		peer.invalidateActiveConnection(connection)
+	}
+
+	return err
+}
+
 // sendAllNetworks sends a raw packet via all networks. It assigns a new sequence for each sent packet.
 // receiverPortInternal is important for NAT detection and sending the traverse message. Firewall indicates whether the remote peer was reported to be behind a firewall.
 func (nets *Networks) sendAllNetworks(receiverPublicKey ed25519.PublicKey, packet *protocol.PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, receiverFirewall bool, traversePeer *PeerInfo, sequenceData interface{}) (err error) {

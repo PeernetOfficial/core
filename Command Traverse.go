@@ -34,7 +34,7 @@ func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse, connecti
 
 	// Get the right IP:Port of the original sender to share to the target peer.
 	// A local address of the original sender is only shared if the message was received via a local connection and the target peer has a local connection.
-	// The message is then forwarded via that local connection, where the target peer accepts a local address.
+	// The message is then forwarded via that local connection, see sendConnectionLocal.
 	var connectionTargetLocal *Connection
 	if connection.IsLocal() {
 		connectionTargetLocal = peerTarget.localConnection()
@@ -70,7 +70,7 @@ func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse, connecti
 	raw := &protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: msg.Payload}
 
 	if connectionTargetLocal != nil {
-		peerTarget.sendConnection(raw, connectionTargetLocal)
+		peerTarget.sendConnectionLocal(raw, connectionTargetLocal)
 	} else {
 		peerTarget.send(raw)
 	}

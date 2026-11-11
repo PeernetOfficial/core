@@ -71,8 +71,9 @@ func (peer *PeerInfo) sendAnnouncement(sendUA bool, requests *protocol.Requests,
 	}
 }
 
-// sendResponse sends the response message with the response records
-func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, records []protocol.ResponseRecord) (err error) {
+// sendResponse sends the response message with the response records.
+// connection is the one the announcement was received on. If it is a local connection, the response is sent via it, see sendConnectionLocal.
+func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, records []protocol.ResponseRecord, connection *Connection) (err error) {
 	_, blockchainHeight, blockchainVersion := peer.Backend.UserBlockchain.Header()
 	packets, err := protocol.EncodeResponse(sendUA, records, peer.Backend.FeatureSupport(), blockchainHeight, blockchainVersion, peer.Backend.userAgent)
 	if err != nil {
@@ -83,7 +84,12 @@ func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, records []proto
 	for _, packet := range packets {
 		raw := &protocol.PacketRaw{Command: protocol.CommandResponse, Payload: packet, Sequence: sequence}
 		peer.Backend.Filters.MessageOutResponse(peer, raw, records)
-		peer.send(raw)
+
+		if connection.IsLocal() {
+			peer.sendConnectionLocal(raw, connection)
+		} else {
+			peer.send(raw)
+		}
 	}
 
 	return nil
