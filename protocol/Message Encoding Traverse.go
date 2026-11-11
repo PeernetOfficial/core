@@ -73,7 +73,6 @@ func DecodeTraverse(msg *MessageRaw) (result *MessageTraverse, err error) {
 	result.PortIPv6 = binary.LittleEndian.Uint16(msg.Payload[56 : 56+2])
 	result.PortIPv6ReportedExternal = binary.LittleEndian.Uint16(msg.Payload[58 : 58+2])
 
-	// TODO: Validate IPv4 and IPv6. Only external ones allowed.
 	if result.IPv6.To4() != nil {
 		return nil, errors.New("traverse: ipv6 address mismatch")
 	}

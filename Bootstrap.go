@@ -233,8 +233,9 @@ type bootstrapFindSelf struct {
 // bootstrapAcceptContacts is the maximum count of contacts considered. It limits the impact of fake peers.
 const bootstrapAcceptContacts = 5
 
-// cmdResponseBootstrapFindSelf processes A_RESPONSE_SELF records of the bootstrap announcement
-func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse, closest []protocol.PeerRecord) {
+// cmdResponseBootstrapFindSelf processes A_RESPONSE_SELF records of the bootstrap announcement.
+// allowLocal indicates whether the response was received via a local connection. Local addresses of the reported peers are only used in that case.
+func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse, closest []protocol.PeerRecord, allowLocal bool) {
 	if len(closest) > bootstrapAcceptContacts {
 		closest = closest[:bootstrapAcceptContacts]
 	}
@@ -255,7 +256,7 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 			continue
 		}
 
-		for _, address := range peerRecordToAddresses(&closePeer) {
+		for _, address := range peerRecordToAddresses(&closePeer, allowLocal) {
 			// Check if the specific IP:Port was already contacted in the last 5-10 minutes.
 			if recent.IsAddressContacted(address) {
 				continue
@@ -299,14 +300,15 @@ func (backend *Backend) isReturnedPeerBadQuality(record *protocol.PeerRecord) bo
 	return false
 }
 
-// peerRecordToAddresses returns the addresses in a usable way
-func peerRecordToAddresses(record *protocol.PeerRecord) (addresses []*peerAddress) {
+// peerRecordToAddresses returns the addresses of a peer record reported by another peer.
+// A local address is only returned if allowLocal is set, which is the case if the record was received via a local connection.
+func peerRecordToAddresses(record *protocol.PeerRecord, allowLocal bool) (addresses []*peerAddress) {
 	// IPv4
 	ipv4Port := record.IPv4Port
 	if record.IPv4PortReportedExternal > 0 { // Use the external port if available
 		ipv4Port = record.IPv4PortReportedExternal
 	}
-	if record.IPv4 != nil && !record.IPv4.IsUnspecified() {
+	if record.IPv4 != nil && !record.IPv4.IsUnspecified() && (allowLocal || !IsIPLocal(record.IPv4)) {
 		addresses = append(addresses, &peerAddress{IP: record.IPv4, Port: ipv4Port, PortInternal: record.IPv4PortReportedInternal})
 	}
 
@@ -315,7 +317,7 @@ func peerRecordToAddresses(record *protocol.PeerRecord) (addresses []*peerAddres
 	if record.IPv6PortReportedExternal > 0 { // Use the external port if available
 		ipv6Port = record.IPv6PortReportedExternal
 	}
-	if record.IPv6 != nil && !record.IPv6.IsUnspecified() {
+	if record.IPv6 != nil && !record.IPv6.IsUnspecified() && (allowLocal || !IsIPLocal(record.IPv6)) {
 		addresses = append(addresses, &peerAddress{IP: record.IPv6, Port: ipv6Port, PortInternal: record.IPv6PortReportedInternal})
 	}
 

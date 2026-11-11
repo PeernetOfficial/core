@@ -284,9 +284,9 @@ func (nets *Networks) packetWorker() {
 			if traverse, _ := protocol.DecodeTraverse(raw); traverse != nil {
 				nets.backend.Filters.MessageIn(peer, raw, traverse)
 				if traverse.TargetPeer.Equal(nets.backend.peerPublicKey) {
-					peer.cmdTraverseReceive(traverse)
+					peer.cmdTraverseReceive(traverse, connection)
 				} else {
-					peer.cmdTraverseForward(traverse)
+					peer.cmdTraverseForward(traverse, connection)
 				}
 			}
 

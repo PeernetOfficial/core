@@ -1,6 +1,6 @@
 /*
 File Name:  Connection.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -96,6 +96,24 @@ func (peer *PeerInfo) IsConnectionActive() bool {
 	return len(peer.connectionActive) > 0
 }
 
+// localConnection returns an active connection to the peer via a local address. It returns nil if there is none.
+func (peer *PeerInfo) localConnection() *Connection {
+	peer.RLock()
+	defer peer.RUnlock()
+
+	if peer.connectionLatest != nil && peer.connectionLatest.IsLocal() {
+		return peer.connectionLatest
+	}
+
+	for _, connection := range peer.connectionActive {
+		if connection.IsLocal() {
+			return connection
+		}
+	}
+
+	return nil
+}
+
 // IsConnectable checks if the peer is connectable to the given IP parameters.
 func (peer *PeerInfo) IsConnectable(allowLocal, allowIPv4, allowIPv6 bool) bool {
 	peer.RLock()
@@ -121,7 +139,7 @@ func (peer *PeerInfo) IsConnectable(allowLocal, allowIPv4, allowIPv6 bool) bool 
 }
 
 // GetConnection2Share returns a connection to share. Nil if none.
-// allowLocal specifies whether it is OK to return local IPs.
+// allowLocal specifies whether it is OK to return local IPs. In that case a local connection is preferred, so that peers on the same local network connect over it.
 func (peer *PeerInfo) GetConnection2Share(allowLocal, allowIPv4, allowIPv6 bool) (connection *Connection) {
 	if !allowLocal && !allowIPv4 && !allowIPv6 {
 		return nil
@@ -129,6 +147,22 @@ func (peer *PeerInfo) GetConnection2Share(allowLocal, allowIPv4, allowIPv6 bool)
 
 	peer.RLock()
 	defer peer.RUnlock()
+
+	if allowLocal {
+		isLocalMatch := func(connection *Connection) bool {
+			return connection.IsLocal() && (IsIPv4(connection.Address.IP) && allowIPv4 || IsIPv6(connection.Address.IP) && allowIPv6) && connection.PortInternal > 0
+		}
+
+		if peer.connectionLatest != nil && isLocalMatch(peer.connectionLatest) {
+			return peer.connectionLatest
+		}
+
+		for _, connection := range peer.connectionActive {
+			if isLocalMatch(connection) {
+				return connection
+			}
+		}
+	}
 
 	if peer.connectionLatest != nil && !(!allowLocal && peer.connectionLatest.IsLocal()) &&
 		(IsIPv4(peer.connectionLatest.Address.IP) && allowIPv4 || IsIPv6(peer.connectionLatest.Address.IP) && allowIPv6) && peer.connectionLatest.PortInternal > 0 {
@@ -419,6 +453,20 @@ func (peer *PeerInfo) sendConnection(packet *protocol.PacketRaw, connection *Con
 	atomic.AddUint64(&peer.StatsPacketSent, 1)
 
 	return connection.send(packet, peer.PublicKey, isFirstPacketOut)
+}
+
+// sendConnectionLocal sends a packet to the peer using the specific local connection.
+// It is used for packets that may contain local addresses of peers: the Response to an Announcement received via a local connection, and a Traverse message forwarded with a local address.
+// The receiver uses a local address only if the packet arrives via a local connection, therefore the packet is sent via this connection only.
+// If sending fails with a fatal network error, the connection is invalidated.
+func (peer *PeerInfo) sendConnectionLocal(packet *protocol.PacketRaw, connection *Connection) (err error) {
+	err = peer.sendConnection(packet, connection)
+
+	if (connection.Status == ConnectionActive || connection.Status == ConnectionRedundant) && IsNetworkErrorFatal(err) {
+		peer.invalidateActiveConnection(connection)
+	}
+
+	return err
 }
 
 // sendAllNetworks sends a raw packet via all networks. It assigns a new sequence for each sent packet.

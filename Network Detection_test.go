@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// TestIsIPLocal checks the private and link-local address ranges and their neighbours.
+// TestIsIPLocal checks the private, link-local and loopback address ranges and their neighbours.
 func TestIsIPLocal(t *testing.T) {
 	tests := []struct {
 		ip    string
@@ -28,10 +28,16 @@ func TestIsIPLocal(t *testing.T) {
 		{"169.253.0.1", false},
 		{"169.255.0.1", false},
 		{"8.8.8.8", false},
+		{"127.0.0.1", true},
+		{"127.255.255.254", true},
+		{"126.0.0.1", false},
+		{"128.0.0.1", false},
 		{"fc00::1", true},
 		{"fd12:3456::1", true},
 		{"fe80::1", true},
 		{"2001:db8::1", false},
+		{"::1", true},
+		{"::2", false},
 	}
 
 	for _, test := range tests {
