@@ -17,7 +17,9 @@ import (
 func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse) {
 	// The embedded packet is encrypted for the end receiver, with the nonce taken from the Peer ID of the relay (self).
 	// Forward only if it is valid and its sender is the sender of this message. This makes sure that a forwarded message cannot be replayed by others.
-	if _, embeddedSender, err := protocol.PacketDecryptEmbedded(msg.EmbeddedPacketRaw, msg.TargetPeer, peer.Backend.peerPublicKey); err != nil || !embeddedSender.Equal(peer.PublicKey) {
+	// Only an Announcement is forwarded: the Traverse message establishes a connection, and the Announcement is what the end receiver accepts.
+	embedded, embeddedSender, err := protocol.PacketDecryptEmbedded(msg.EmbeddedPacketRaw, msg.TargetPeer, peer.Backend.peerPublicKey)
+	if err != nil || !embeddedSender.Equal(peer.PublicKey) || embedded.Command != protocol.CommandAnnouncement {
 		return
 	}
 
