@@ -1,6 +1,6 @@
 /*
 File Name:  Network Detection.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -264,10 +264,11 @@ func (nets *Networks) networkChangeIPRemove(iface net.Interface, address net.Add
 // The identification of private, or local, unicast addresses uses address type
 // indentification as defined in RFC 1918 for ip4 and RFC 4193 (fc00::/7) for ip6 with the exception of ip4 directed broadcast addresses.
 // Unassigned, reserved, multicast and limited-broadcast addresses are not handled and will return false.
-// IPv6 link-local addresses (fe80::/10) are included in this check.
+// Link-local addresses are included in this check: 169.254.0.0/16 (RFC 3927) for ip4 and fe80::/10 for ip6.
 func IsIPLocal(ip net.IP) bool {
 	if ip4 := ip.To4(); ip4 != nil {
-		return ip4[0] == 10 || (ip4[0] == 172 && ip4[1]&0xf0 == 16) || (ip4[0] == 192 && ip4[1] == 168)
+		return ip4[0] == 10 || (ip4[0] == 172 && ip4[1]&0xf0 == 16) || (ip4[0] == 192 && ip4[1] == 168) ||
+			(ip4[0] == 169 && ip4[1] == 254) // 169.254.0.0/16
 	}
 	return len(ip) == net.IPv6len &&
 		(ip[0]&0xfe == 0xfc || // fc00::/7
