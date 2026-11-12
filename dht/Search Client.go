@@ -1,6 +1,6 @@
 /*
 File Name:  Search Client.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 
 A search client runs concurrent information requests for a single query. It solves the query efficiently by using levels.
@@ -171,7 +171,9 @@ func (client *SearchClient) sendInfoRequest(nodes []*Node, resultChan chan *Node
 		return nil
 	}
 
+	// A node that is sent the request is not sent it again when it is later reported as storing the value, by itself or by another node.
 	for _, node := range nodes {
+		client.isContactedNode(node.ID, true)
 		client.LogStatus("search.sendInfoRequest", "contact node %s\n", hex.EncodeToString(node.ID))
 	}
 
