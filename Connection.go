@@ -10,6 +10,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"net"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -114,6 +115,23 @@ func (peer *PeerInfo) localConnection() *Connection {
 	return nil
 }
 
+// isShareable checks if the connection may be shared with a peer that listens on the given IP versions.
+// allowLocal specifies whether a connection via a local address may be shared. A connection via a link-local or loopback address is not shared.
+func (c *Connection) isShareable(allowLocal, allowIPv4, allowIPv6 bool) bool {
+	// If the internal port is not known, which happens if no Announcement or Response was returned, do not share the peer details.
+	// This can happen if only other messages such as Ping/Pong were received, or the protocol implementation is not compatible. The external port is also likely not available.
+	// In this case sharing the peer would be bad, since the receiving peer could not use internal/external port to detemine the NAT status and port forwarding.
+	if c.PortInternal == 0 {
+		return false
+	}
+
+	if isIPLinkLocalOrLoopback(c.Address.IP) || !allowLocal && c.IsLocal() {
+		return false
+	}
+
+	return IsIPv4(c.Address.IP) && allowIPv4 || IsIPv6(c.Address.IP) && allowIPv6
+}
+
 // IsConnectable checks if the peer is connectable to the given IP parameters.
 func (peer *PeerInfo) IsConnectable(allowLocal, allowIPv4, allowIPv6 bool) bool {
 	peer.RLock()
@@ -121,61 +139,61 @@ func (peer *PeerInfo) IsConnectable(allowLocal, allowIPv4, allowIPv6 bool) bool 
 
 	// Only 1 active connection must be allowed for being connectable.
 	for _, connection := range peer.connectionActive {
-		// If the internal port is not known, which happens if no Announcement or Response was returned, do not share the peer details.
-		// This can happen if only other messages such as Ping/Pong were received, or the protocol implementation is not compatible. The external port is also likely not available.
-		// In this case sharing the peer would be bad, since the receiving peer could not use internal/external port to detemine the NAT status and port forwarding.
-		if connection.PortInternal == 0 {
-			continue
-		}
-
-		if IsIPv4(connection.Address.IP) && allowIPv4 || IsIPv6(connection.Address.IP) && allowIPv6 {
-			if !(!allowLocal && connection.IsLocal()) {
-				return true
-			}
+		if connection.isShareable(allowLocal, allowIPv4, allowIPv6) {
+			return true
 		}
 	}
 
 	return false
 }
 
-// GetConnection2Share returns a connection to share. Nil if none.
-// allowLocal specifies whether it is OK to return local IPs. In that case a local connection is preferred, so that peers on the same local network connect over it.
+// GetConnection2Share returns the preferred connection to share. Nil if none. See GetConnections2Share.
 func (peer *PeerInfo) GetConnection2Share(allowLocal, allowIPv4, allowIPv6 bool) (connection *Connection) {
-	if !allowLocal && !allowIPv4 && !allowIPv6 {
-		return nil
-	}
-
-	peer.RLock()
-	defer peer.RUnlock()
-
-	if allowLocal {
-		isLocalMatch := func(connection *Connection) bool {
-			return connection.IsLocal() && (IsIPv4(connection.Address.IP) && allowIPv4 || IsIPv6(connection.Address.IP) && allowIPv6) && connection.PortInternal > 0
-		}
-
-		if peer.connectionLatest != nil && isLocalMatch(peer.connectionLatest) {
-			return peer.connectionLatest
-		}
-
-		for _, connection := range peer.connectionActive {
-			if isLocalMatch(connection) {
-				return connection
-			}
-		}
-	}
-
-	if peer.connectionLatest != nil && !(!allowLocal && peer.connectionLatest.IsLocal()) &&
-		(IsIPv4(peer.connectionLatest.Address.IP) && allowIPv4 || IsIPv6(peer.connectionLatest.Address.IP) && allowIPv6) && peer.connectionLatest.PortInternal > 0 {
-		return peer.connectionLatest
-	}
-
-	for _, connection := range peer.connectionActive {
-		if (IsIPv4(connection.Address.IP) && allowIPv4 || IsIPv6(connection.Address.IP) && allowIPv6) && !(!allowLocal && connection.IsLocal()) && connection.PortInternal > 0 {
-			return connection
-		}
+	if connections := peer.GetConnections2Share(allowLocal, allowIPv4, allowIPv6, 1); len(connections) > 0 {
+		return connections[0]
 	}
 
 	return nil
+}
+
+// GetConnections2Share returns the connections to share in the order of preference, at most limit and one per remote address.
+// allowLocal specifies whether it is OK to return local IPs. In that case local connections are preferred, so that peers on the same local network connect over it.
+// The latest connection is preferred among the others. A connection via a link-local or loopback address is not shared.
+func (peer *PeerInfo) GetConnections2Share(allowLocal, allowIPv4, allowIPv6 bool, limit int) (connections []*Connection) {
+	peer.RLock()
+	defer peer.RUnlock()
+
+	candidates := peer.connectionActive
+	if peer.connectionLatest != nil {
+		candidates = append([]*Connection{peer.connectionLatest}, peer.connectionActive...)
+	}
+
+	add := func(local bool) {
+		for _, connection := range candidates {
+			if len(connections) >= limit {
+				return
+			}
+			if connection.IsLocal() != local || !connection.isShareable(allowLocal, allowIPv4, allowIPv6) {
+				continue
+			}
+
+			// The same remote address may be connected via multiple networks.
+			if slices.ContainsFunc(connections, func(other *Connection) bool {
+				return other.Address.IP.Equal(connection.Address.IP) && other.Address.Port == connection.Address.Port
+			}) {
+				continue
+			}
+
+			connections = append(connections, connection)
+		}
+	}
+
+	if allowLocal {
+		add(true)
+	}
+	add(false)
+
+	return connections
 }
 
 // registerConnection registers an incoming connection for an existing peer. If new, it will add to the list. If previously inactive, it will elevate.

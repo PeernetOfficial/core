@@ -195,18 +195,15 @@ func publicKey2Array(publicKey ed25519.PublicKey) [ed25519.PublicKeySize]byte {
 }
 
 // records2Nodes translates infoPeer structures to nodes reported by the peer. If the reported nodes are not in the peer table, it will create temporary PeerInfo structures.
-// LastContact is passed on in the Node.LastSeen field.
 // allowLocal indicates whether the records were received via a local connection. Local addresses of the reported nodes are only used in that case.
 func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord, allowLocal bool) (nodes []*dht.Node) {
 	for _, record := range records {
-		if peerSource.Backend.isReturnedPeerBadQuality(&record) {
-			continue
-		}
-
 		var peer *PeerInfo
 		if record.PublicKey.Equal(peerSource.PublicKey) {
-			// Special case if peer that stores info = sender. In that case IP:Port in the record would be empty anyway.
+			// The sender itself: a peer that stores the requested data lists its own Peer ID as storing peer record without an address. It is reached via the connection the response came from.
 			peer = peerSource
+		} else if peerSource.Backend.isReturnedPeerBadQuality(&record) {
+			continue
 		} else if peer = peerSource.Backend.PeerlistLookup(record.PublicKey); peer == nil {
 			// Create temporary peer which is not added to the global list and not added to Kademlia.
 			// traversePeer is set to the peer who provided the node information.
@@ -218,20 +215,17 @@ func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord, allowLo
 			peer = &PeerInfo{Backend: peerSource.Backend, PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, messageSequence: mathrand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource, Features: record.Features}
 		}
 
-		nodes = append(nodes, &dht.Node{ID: peer.PublicKey, LastSeen: record.LastContactT, Info: peer})
+		nodes = append(nodes, &dht.Node{ID: peer.PublicKey, LastSeen: time.Now(), Info: peer})
 	}
 
 	return
 }
 
-// selfPeerRecord returns self as peer record
+// selfPeerRecord returns self as storing peer record. It carries no address: the receiver reaches this peer via the connection the response comes from.
 func (backend *Backend) selfPeerRecord() (result protocol.PeerRecord) {
 	return protocol.PeerRecord{
 		PublicKey: backend.peerPublicKey,
-		//IP:          network.address.IP,
-		//Port:        uint16(network.address.Port),
-		LastContact: 0,
-		Features:    backend.FeatureSupport(),
+		Features:  backend.FeatureSupport(),
 	}
 }
 

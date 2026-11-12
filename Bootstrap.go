@@ -277,18 +277,18 @@ func ShouldSendFindSelf() bool {
 
 // isReturnedPeerBadQuality checks if the returned peer record is bad quality and should be discarded
 func (backend *Backend) isReturnedPeerBadQuality(record *protocol.PeerRecord) bool {
-	isIPv4 := record.IPv4 != nil && !record.IPv4.IsUnspecified()
-	isIPv6 := record.IPv6 != nil && !record.IPv6.IsUnspecified()
-
-	// At least one IP must be provided.
-	if !isIPv4 && !isIPv6 {
+	// At least one address must be provided.
+	if len(record.IPv4) == 0 && len(record.IPv6) == 0 {
 		return true
 	}
 
 	// Internal port must be provided. Otherwise the external port is likely not provided either, and checking the NAT and port forwarded status is not possible.
-	if isIPv4 && record.IPv4PortReportedInternal == 0 || isIPv6 && record.IPv6PortReportedInternal == 0 {
-		//fmt.Printf("IsReturnedPeerBadQuality port internal not available for target %s port %d, peer %s\n", record.IP.String(), record.Port, hex.EncodeToString(record.PublicKey))
-		return true
+	for _, addresses := range [][]protocol.PeerRecordAddress{record.IPv4, record.IPv6} {
+		for n := range addresses {
+			if addresses[n].PortReportedInternal == 0 {
+				return true
+			}
+		}
 	}
 
 	// Must not be self. There is no point that a remote peer would return self
@@ -301,24 +301,21 @@ func (backend *Backend) isReturnedPeerBadQuality(record *protocol.PeerRecord) bo
 }
 
 // peerRecordToAddresses returns the addresses of a peer record reported by another peer.
-// A local address is only returned if allowLocal is set, which is the case if the record was received via a local connection.
+// A local address is only returned if allowLocal is set, which is the case if the record was received via a local connection. A link-local or loopback address is not returned.
 func peerRecordToAddresses(record *protocol.PeerRecord, allowLocal bool) (addresses []*peerAddress) {
-	// IPv4
-	ipv4Port := record.IPv4Port
-	if record.IPv4PortReportedExternal > 0 { // Use the external port if available
-		ipv4Port = record.IPv4PortReportedExternal
-	}
-	if record.IPv4 != nil && !record.IPv4.IsUnspecified() && (allowLocal || !IsIPLocal(record.IPv4)) {
-		addresses = append(addresses, &peerAddress{IP: record.IPv4, Port: ipv4Port, PortInternal: record.IPv4PortReportedInternal})
-	}
+	for _, recordAddresses := range [][]protocol.PeerRecordAddress{record.IPv4, record.IPv6} {
+		for _, address := range recordAddresses {
+			if !isReportedAddressUsable(address.IP, allowLocal) {
+				continue
+			}
 
-	// IPv6
-	ipv6Port := record.IPv6Port
-	if record.IPv6PortReportedExternal > 0 { // Use the external port if available
-		ipv6Port = record.IPv6PortReportedExternal
-	}
-	if record.IPv6 != nil && !record.IPv6.IsUnspecified() && (allowLocal || !IsIPLocal(record.IPv6)) {
-		addresses = append(addresses, &peerAddress{IP: record.IPv6, Port: ipv6Port, PortInternal: record.IPv6PortReportedInternal})
+			port := address.Port
+			if address.PortReportedExternal > 0 { // Use the external port if available
+				port = address.PortReportedExternal
+			}
+
+			addresses = append(addresses, &peerAddress{IP: address.IP, Port: port, PortInternal: address.PortReportedInternal})
+		}
 	}
 
 	return addresses

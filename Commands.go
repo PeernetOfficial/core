@@ -18,8 +18,21 @@ import (
 )
 
 // respondClosesContactsCount is the number of closest peers to return per request key.
-// Each peer record takes 69 bytes. Reporting back 5 peers keeps a response to a single request well below the MTU.
+// A peer record with one IPv4 and one IPv6 address takes 66 bytes. Reporting back 5 peers keeps a response to a single request well below the MTU.
 const respondClosesContactsCount = 5
+
+// Maximum count of addresses per family in a peer record, by the response record that carries it.
+const (
+	respondAddressesMaxDHTA = protocol.PeerRecordAddressesMax // A_RESPONSE_SELF, A_RESPONSE_PEER
+	respondAddressesMaxDHTB = 1                               // B_RESPONSE_BLOCKCHAIN, B_RESPONSE_FILE
+)
+
+// respondPeerRecordsSizeTarget is the target size in bytes of the peer records of the closest peers per request key.
+// Each peer keeps one address per family; further addresses are only reported while the target size holds. 5 peer records with one IPv4 and one IPv6 address each fit.
+// The value is what a packet of 508 bytes (UDP minimum no fragmentation) leaves for the peer records of an A_RESPONSE_PEER record:
+// 508 - packet 108 - message header 23 - record count 1 - record header 3 - key 32 - peer record count 1.
+// A response that carries the User Agent or a storing peer record is larger.
+const respondPeerRecordsSizeTarget = 340
 
 // announcementMaxKeys is the maximum number of keys answered per announcement across A_FIND_PEER, B_FIND_BLOCKCHAIN and B_FIND_FILE. Keys beyond that are declined (no response record).
 const announcementMaxKeys = 20
@@ -36,13 +49,14 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 	allowIPv4 := msg.Features&(1<<protocol.FeatureIPv4Listen) > 0
 	allowIPv6 := msg.Features&(1<<protocol.FeatureIPv6Listen) > 0
 
-	// closestPeers returns the closest peers to the key, excluding the sender.
-	closestPeers := func(key []byte) (closest []protocol.PeerRecord) {
+	// closestPeers returns the closest peers to the key, excluding the sender. addressesMax is the maximum count of addresses per family in each peer record.
+	closestPeers := func(key []byte, addressesMax int) (closest []protocol.PeerRecord) {
 		for _, node := range peer.Backend.nodesDHT.GetClosestContacts(respondClosesContactsCount, key, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.PublicKey) {
-			if info := node.Info.(*PeerInfo).peer2Record(connection.IsLocal(), allowIPv4, allowIPv6); info != nil {
+			if info := node.Info.(*PeerInfo).peer2Record(connection.IsLocal(), allowIPv4, allowIPv6, addressesMax); info != nil {
 				closest = append(closest, *info)
 			}
 		}
+		limitPeerRecordsSize(closest, respondPeerRecordsSizeTarget)
 		return closest
 	}
 
@@ -53,7 +67,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 	if msg.FindSelf {
 		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestAFindSelf, peer.PublicKey, nil)
 
-		records = append(records, protocol.ResponseRecord{Type: protocol.ResponseASelf, Closest: closestPeers(peer.PublicKey), IsLast: true})
+		records = append(records, protocol.ResponseRecord{Type: protocol.ResponseASelf, Closest: closestPeers(peer.PublicKey, respondAddressesMaxDHTA), IsLast: true})
 	}
 
 	// A_FIND_PEER: peers close to each key
@@ -64,7 +78,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		keyBudget--
 		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestAFindPeer, key, nil)
 
-		records = append(records, protocol.ResponseRecord{Type: protocol.ResponseAPeer, Key: key, Closest: closestPeers(key), IsLast: true})
+		records = append(records, protocol.ResponseRecord{Type: protocol.ResponseAPeer, Key: key, Closest: closestPeers(key, respondAddressesMaxDHTA), IsLast: true})
 	}
 
 	// B_FIND_BLOCKCHAIN: self if the blockchain is stored here (own or cached), and peers close to the key
@@ -75,7 +89,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		keyBudget--
 		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBFindBlockchain, key, nil)
 
-		record := protocol.ResponseRecord{Type: protocol.ResponseBBlockchain, Key: key, Closest: closestPeers(key), IsLast: true}
+		record := protocol.ResponseRecord{Type: protocol.ResponseBBlockchain, Key: key, Closest: closestPeers(key, respondAddressesMaxDHTB), IsLast: true}
 		if stored, height, version := peer.Backend.blockchainStored(key); stored {
 			record.Storing = []protocol.StoringPeer{{PeerRecord: peer.Backend.selfPeerRecord(), BlockchainHeight: height, BlockchainVersion: version}}
 		}
@@ -90,7 +104,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		keyBudget--
 		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBFindFile, key, nil)
 
-		record := protocol.ResponseRecord{Type: protocol.ResponseBFile, Key: key, Closest: closestPeers(key), IsLast: true}
+		record := protocol.ResponseRecord{Type: protocol.ResponseBFile, Key: key, Closest: closestPeers(key, respondAddressesMaxDHTB), IsLast: true}
 		if stored, _ := peer.announcementGetData(key); stored {
 			record.Storing = []protocol.StoringPeer{{PeerRecord: peer.Backend.selfPeerRecord()}}
 		}
@@ -111,7 +125,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 			continue
 		}
 
-		record := protocol.ResponseRecord{Type: protocol.ResponseBFile, Key: key, Closest: closestPeers(key), IsLast: true}
+		record := protocol.ResponseRecord{Type: protocol.ResponseBFile, Key: key, Closest: closestPeers(key, respondAddressesMaxDHTB), IsLast: true}
 		if stored {
 			record.Storing = []protocol.StoringPeer{{PeerRecord: peer.Backend.selfPeerRecord()}}
 		}
@@ -130,10 +144,12 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 	peer.sendResponse(msg.Sequence, sendUA, records, connection)
 }
 
-func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result *protocol.PeerRecord) {
-	connectionIPv4 := peer.GetConnection2Share(allowLocal, allowIPv4, false)
-	connectionIPv6 := peer.GetConnection2Share(allowLocal, false, allowIPv6)
-	if connectionIPv4 == nil && connectionIPv6 == nil {
+// peer2Record returns the peer record of the peer to share with a peer that listens on the given IP versions. Nil if the peer has no address to share.
+// addressesMax is the maximum count of addresses per family. The addresses are those of the connections to share, see GetConnections2Share.
+func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool, addressesMax int) (result *protocol.PeerRecord) {
+	connectionsIPv4 := peer.GetConnections2Share(allowLocal, allowIPv4, false, addressesMax)
+	connectionsIPv6 := peer.GetConnections2Share(allowLocal, false, allowIPv6, addressesMax)
+	if len(connectionsIPv4) == 0 && len(connectionsIPv6) == 0 {
 		return nil
 	}
 
@@ -142,21 +158,38 @@ func (peer *PeerInfo) peer2Record(allowLocal, allowIPv4, allowIPv6 bool) (result
 		Features:  peer.Features,
 	}
 
-	if connectionIPv4 != nil {
-		result.IPv4 = connectionIPv4.Address.IP
-		result.IPv4Port = uint16(connectionIPv4.Address.Port)
-		result.IPv4PortReportedInternal = connectionIPv4.PortInternal
-		result.IPv4PortReportedExternal = connectionIPv4.PortExternal
+	for _, connection := range connectionsIPv4 {
+		result.IPv4 = append(result.IPv4, protocol.PeerRecordAddress{IP: connection.Address.IP, Port: uint16(connection.Address.Port), PortReportedInternal: connection.PortInternal, PortReportedExternal: connection.PortExternal})
 	}
-
-	if connectionIPv6 != nil {
-		result.IPv6 = connectionIPv6.Address.IP
-		result.IPv6Port = uint16(connectionIPv6.Address.Port)
-		result.IPv6PortReportedInternal = connectionIPv6.PortInternal
-		result.IPv6PortReportedExternal = connectionIPv6.PortExternal
+	for _, connection := range connectionsIPv6 {
+		result.IPv6 = append(result.IPv6, protocol.PeerRecordAddress{IP: connection.Address.IP, Port: uint16(connection.Address.Port), PortReportedInternal: connection.PortInternal, PortReportedExternal: connection.PortExternal})
 	}
 
 	return result
+}
+
+// limitPeerRecordsSize removes addresses from the peer records until their total size is within sizeMax. Each peer record keeps one address per family.
+// The third addresses are removed before the second ones, and those of the last record first: the records are sorted by distance to the key, the addresses by preference.
+func limitPeerRecordsSize(records []protocol.PeerRecord, sizeMax int) {
+	size := 0
+	for n := range records {
+		size += records[n].Size()
+	}
+
+	for keep := protocol.PeerRecordAddressesMax - 1; keep >= 1 && size > sizeMax; keep-- {
+		for n := len(records) - 1; n >= 0 && size > sizeMax; n-- {
+			if len(records[n].IPv6) > keep {
+				size -= records[n].Size()
+				records[n].IPv6 = records[n].IPv6[:keep]
+				size += records[n].Size()
+			}
+			if size > sizeMax && len(records[n].IPv4) > keep {
+				size -= records[n].Size()
+				records[n].IPv4 = records[n].IPv4[:keep]
+				size += records[n].Size()
+			}
+		}
+	}
 }
 
 // cmdResponse handles the response to the announcement

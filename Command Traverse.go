@@ -34,7 +34,7 @@ func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse, connecti
 
 	// Get the right IP:Port of the original sender to share to the target peer.
 	// A local address of the original sender is only shared if the message was received via a local connection and the target peer has a local connection.
-	// The message is then forwarded via that local connection, see sendConnectionLocal.
+	// The message is then forwarded via that local connection, see sendConnectionLocal. A link-local or loopback address is not shared, see GetConnections2Share.
 	var connectionTargetLocal *Connection
 	if connection.IsLocal() {
 		connectionTargetLocal = peerTarget.localConnection()
@@ -76,6 +76,27 @@ func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse, connecti
 	}
 }
 
+// traverseAddresses returns the addresses of the original sender that the relay set in the traverse message.
+// A local address is only returned if allowLocal is set, which is the case if the message was received via a local connection. A link-local or loopback address is not returned.
+func traverseAddresses(msg *protocol.MessageTraverse, allowLocal bool) (addresses []*peerAddress) {
+	if isReportedAddressUsable(msg.IPv4, allowLocal) {
+		port := msg.PortIPv4
+		if msg.PortIPv4ReportedExternal > 0 {
+			port = msg.PortIPv4ReportedExternal
+		}
+		addresses = append(addresses, &peerAddress{IP: msg.IPv4, Port: port, PortInternal: 0})
+	}
+	if isReportedAddressUsable(msg.IPv6, allowLocal) {
+		port := msg.PortIPv6
+		if msg.PortIPv6ReportedExternal > 0 {
+			port = msg.PortIPv6ReportedExternal
+		}
+		addresses = append(addresses, &peerAddress{IP: msg.IPv6, Port: port, PortInternal: 0})
+	}
+
+	return addresses
+}
+
 // cmdTraverseReceive handles an incoming traverse message for this peer. peer is the relay that sent it.
 // connection is the one the message was received on.
 func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse, connection *Connection) {
@@ -100,24 +121,7 @@ func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse, connecti
 		return
 	}
 
-	// parse IP addresses of the original sender
-	// A local address is only accepted if the message was received via a local connection.
-	var addresses []*peerAddress
-
-	if !msg.IPv4.IsUnspecified() && (connection.IsLocal() || !IsIPLocal(msg.IPv4)) {
-		port := msg.PortIPv4
-		if msg.PortIPv4ReportedExternal > 0 {
-			port = msg.PortIPv4ReportedExternal
-		}
-		addresses = append(addresses, &peerAddress{IP: msg.IPv4, Port: port, PortInternal: 0})
-	}
-	if !msg.IPv6.IsUnspecified() && (connection.IsLocal() || !IsIPLocal(msg.IPv6)) {
-		port := msg.PortIPv6
-		if msg.PortIPv6ReportedExternal > 0 {
-			port = msg.PortIPv6ReportedExternal
-		}
-		addresses = append(addresses, &peerAddress{IP: msg.IPv6, Port: port, PortInternal: 0})
-	}
+	addresses := traverseAddresses(msg, connection.IsLocal())
 	if len(addresses) == 0 {
 		return
 	}
