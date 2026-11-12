@@ -198,14 +198,12 @@ func publicKey2Array(publicKey ed25519.PublicKey) [ed25519.PublicKeySize]byte {
 // allowLocal indicates whether the records were received via a local connection. Local addresses of the reported nodes are only used in that case.
 func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord, allowLocal bool) (nodes []*dht.Node) {
 	for _, record := range records {
-		if peerSource.Backend.isReturnedPeerBadQuality(&record) {
-			continue
-		}
-
 		var peer *PeerInfo
 		if record.PublicKey.Equal(peerSource.PublicKey) {
-			// Special case if peer that stores info = sender. In that case IP:Port in the record would be empty anyway.
+			// The sender itself: a peer that stores the requested data lists its own Peer ID as storing peer record without an address. It is reached via the connection the response came from.
 			peer = peerSource
+		} else if peerSource.Backend.isReturnedPeerBadQuality(&record) {
+			continue
 		} else if peer = peerSource.Backend.PeerlistLookup(record.PublicKey); peer == nil {
 			// Create temporary peer which is not added to the global list and not added to Kademlia.
 			// traversePeer is set to the peer who provided the node information.
