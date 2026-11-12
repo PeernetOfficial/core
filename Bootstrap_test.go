@@ -23,7 +23,8 @@ func testRecordAddresses(port uint16, ips ...string) (addresses []protocol.PeerR
 	return addresses
 }
 
-// TestPeerRecordToAddresses checks that a local address of a reported peer is only returned if the record was received via a local connection.
+// TestPeerRecordToAddresses checks that a local address of a reported peer is only returned if the record was received via a local connection,
+// and that a link-local or loopback address is not returned.
 func TestPeerRecordToAddresses(t *testing.T) {
 	tests := []struct {
 		ipv4, ipv6 []string
@@ -43,10 +44,15 @@ func TestPeerRecordToAddresses(t *testing.T) {
 		{[]string{"203.0.113.7", "192.168.1.7", "203.0.113.9"}, []string{"fd00::7", "2001:db8::8"}, true, []string{"203.0.113.7", "192.168.1.7", "203.0.113.9", "fd00::7", "2001:db8::8"}},
 		{nil, []string{"2001:db8::7", "2001:db8::8"}, false, []string{"2001:db8::7", "2001:db8::8"}},
 
-		// link-local addresses
+		// link-local and loopback addresses
 		{[]string{"203.0.113.7"}, []string{"fe80::7"}, false, []string{"203.0.113.7"}},
+		{[]string{"203.0.113.7"}, []string{"fe80::7"}, true, []string{"203.0.113.7"}},
 		{[]string{"169.254.1.7"}, nil, false, nil},
-		{[]string{"169.254.1.7"}, nil, true, []string{"169.254.1.7"}},
+		{[]string{"169.254.1.7"}, nil, true, nil},
+		{[]string{"127.0.0.1"}, []string{"::1"}, false, nil},
+		{[]string{"127.0.0.1"}, []string{"::1"}, true, nil},
+		{[]string{"127.0.0.1", "192.168.1.7", "169.254.1.7"}, []string{"::1", "fe80::7", "fd00::7"}, true, []string{"192.168.1.7", "fd00::7"}},
+		{[]string{"127.0.0.1", "192.168.1.7", "169.254.1.7"}, []string{"::1", "fe80::7", "fd00::7"}, false, nil},
 
 		// unspecified addresses
 		{[]string{"0.0.0.0", "203.0.113.7"}, []string{"::"}, true, []string{"203.0.113.7"}},

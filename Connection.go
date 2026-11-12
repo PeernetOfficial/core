@@ -116,7 +116,7 @@ func (peer *PeerInfo) localConnection() *Connection {
 }
 
 // isShareable checks if the connection may be shared with a peer that listens on the given IP versions.
-// allowLocal specifies whether a connection via a local address may be shared.
+// allowLocal specifies whether a connection via a local address may be shared. A connection via a link-local or loopback address is not shared.
 func (c *Connection) isShareable(allowLocal, allowIPv4, allowIPv6 bool) bool {
 	// If the internal port is not known, which happens if no Announcement or Response was returned, do not share the peer details.
 	// This can happen if only other messages such as Ping/Pong were received, or the protocol implementation is not compatible. The external port is also likely not available.
@@ -125,7 +125,7 @@ func (c *Connection) isShareable(allowLocal, allowIPv4, allowIPv6 bool) bool {
 		return false
 	}
 
-	if !allowLocal && c.IsLocal() {
+	if isIPLinkLocalOrLoopback(c.Address.IP) || !allowLocal && c.IsLocal() {
 		return false
 	}
 
@@ -158,7 +158,7 @@ func (peer *PeerInfo) GetConnection2Share(allowLocal, allowIPv4, allowIPv6 bool)
 
 // GetConnections2Share returns the connections to share in the order of preference, at most limit and one per remote address.
 // allowLocal specifies whether it is OK to return local IPs. In that case local connections are preferred, so that peers on the same local network connect over it.
-// The latest connection is preferred among the others.
+// The latest connection is preferred among the others. A connection via a link-local or loopback address is not shared.
 func (peer *PeerInfo) GetConnections2Share(allowLocal, allowIPv4, allowIPv6 bool, limit int) (connections []*Connection) {
 	peer.RLock()
 	defer peer.RUnlock()

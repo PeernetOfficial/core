@@ -278,3 +278,15 @@ func IsIPLocal(ip net.IP) bool {
 		(ip[0]&0xfe == 0xfc || // fc00::/7
 			(ip[0] == 0xfe && ip[1]&0xC0 == 0x80)) // fe80::/10
 }
+
+// isIPLinkLocalOrLoopback checks if the IP is a link-local address (169.254.0.0/16, fe80::/10) or a loopback address (127.0.0.0/8, ::1).
+// Such an address of a peer is used on the connection with that peer only. It is not shared with another peer and is ignored when received from another peer.
+func isIPLinkLocalOrLoopback(ip net.IP) bool {
+	return ip.IsLinkLocalUnicast() || ip.IsLoopback()
+}
+
+// isReportedAddressUsable checks if an address of a peer that was reported by another peer may be used to contact that peer.
+// A local address is only used if allowLocal is set, which is the case if it was received via a local connection. A link-local or loopback address is not used.
+func isReportedAddressUsable(ip net.IP, allowLocal bool) bool {
+	return len(ip) > 0 && !ip.IsUnspecified() && !isIPLinkLocalOrLoopback(ip) && (allowLocal || !IsIPLocal(ip))
+}

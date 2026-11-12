@@ -38,6 +38,7 @@ func testPeerConnections(t *testing.T, backend *Backend, ips ...string) (peer *P
 
 // TestAnnouncementResponseAddresses checks the addresses in the peer records of the response to an announcement:
 // up to 3 per family in A_RESPONSE_SELF and A_RESPONSE_PEER, at most one per family in B_RESPONSE_BLOCKCHAIN and B_RESPONSE_FILE.
+// A peer known only by link-local and loopback addresses is not reported.
 func TestAnnouncementResponseAddresses(t *testing.T) {
 	self, _, _ := ed25519.GenerateKey(rand.Reader)
 
@@ -45,11 +46,12 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 	backend.initFilters()
 	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha)
 
-	peerMany := testPeerConnections(t, backend, "203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.4", "2001:db8::1", "2001:db8::2", "2001:db8::3", "2001:db8::4", "192.168.1.1")
+	peerMany := testPeerConnections(t, backend, "203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.4", "2001:db8::1", "2001:db8::2", "2001:db8::3", "2001:db8::4", "192.168.1.1", "127.0.0.1", "fe80::1")
 	peerOne := testPeerConnections(t, backend, "203.0.113.5", "2001:db8::5")
+	peerNotShared := testPeerConnections(t, backend, "127.0.0.1", "169.254.1.6", "::1", "fe80::6")
 	peerLocal := testPeerConnections(t, backend, "192.168.1.7")
 
-	for _, peer := range []*PeerInfo{peerMany, peerOne, peerLocal} {
+	for _, peer := range []*PeerInfo{peerMany, peerOne, peerNotShared, peerLocal} {
 		backend.nodesDHT.AddNode(&dht.Node{ID: peer.PublicKey, Info: peer})
 	}
 
@@ -146,7 +148,7 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 
 // TestPeer2Record checks the peer record of a peer by what may be shared.
 func TestPeer2Record(t *testing.T) {
-	peer := testPeerConnections(t, nil, "203.0.113.1", "192.168.1.1", "203.0.113.2", "10.0.0.1", "172.16.0.1", "2001:db8::1", "fd00::1")
+	peer := testPeerConnections(t, nil, "203.0.113.1", "192.168.1.1", "203.0.113.2", "10.0.0.1", "172.16.0.1", "2001:db8::1", "fd00::1", "127.0.0.1", "169.254.1.1", "::1", "fe80::1")
 
 	tests := []struct {
 		allowLocal, allowIPv4, allowIPv6 bool

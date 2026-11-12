@@ -301,11 +301,11 @@ func (backend *Backend) isReturnedPeerBadQuality(record *protocol.PeerRecord) bo
 }
 
 // peerRecordToAddresses returns the addresses of a peer record reported by another peer.
-// A local address is only returned if allowLocal is set, which is the case if the record was received via a local connection.
+// A local address is only returned if allowLocal is set, which is the case if the record was received via a local connection. A link-local or loopback address is not returned.
 func peerRecordToAddresses(record *protocol.PeerRecord, allowLocal bool) (addresses []*peerAddress) {
 	for _, recordAddresses := range [][]protocol.PeerRecordAddress{record.IPv4, record.IPv6} {
 		for _, address := range recordAddresses {
-			if address.IP.IsUnspecified() || !allowLocal && IsIPLocal(address.IP) {
+			if !isReportedAddressUsable(address.IP, allowLocal) {
 				continue
 			}
 

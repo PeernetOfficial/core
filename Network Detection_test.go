@@ -46,3 +46,38 @@ func TestIsIPLocal(t *testing.T) {
 		}
 	}
 }
+
+// TestIsIPLinkLocalOrLoopback checks the link-local and loopback address ranges and their neighbours.
+func TestIsIPLinkLocalOrLoopback(t *testing.T) {
+	tests := []struct {
+		ip     string
+		result bool
+	}{
+		{"169.254.0.1", true},
+		{"169.254.255.255", true},
+		{"169.253.0.1", false},
+		{"169.255.0.1", false},
+		{"127.0.0.1", true},
+		{"127.255.255.254", true},
+		{"126.0.0.1", false},
+		{"128.0.0.1", false},
+		{"10.0.0.1", false},
+		{"172.16.0.1", false},
+		{"192.168.1.1", false},
+		{"8.8.8.8", false},
+		{"fe80::1", true},
+		{"febf::1", true},
+		{"fec0::1", false},
+		{"::1", true},
+		{"::2", false},
+		{"fc00::1", false},
+		{"fd12:3456::1", false},
+		{"2001:db8::1", false},
+	}
+
+	for _, test := range tests {
+		if result := isIPLinkLocalOrLoopback(net.ParseIP(test.ip)); result != test.result {
+			t.Errorf("isIPLinkLocalOrLoopback(%s) = %t, expected %t", test.ip, result, test.result)
+		}
+	}
+}
