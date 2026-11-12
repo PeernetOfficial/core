@@ -14,7 +14,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
-	"time"
 )
 
 // MessageResponse is the decoded response message.
@@ -38,7 +37,7 @@ type ResponseRecord struct {
 	Key     []byte        // Requested key. nil for A_RESPONSE_SELF.
 	Storing []StoringPeer // B_RESPONSE_BLOCKCHAIN, B_RESPONSE_FILE: peers that store the data
 	Closest []PeerRecord  // A_RESPONSE_SELF, A_RESPONSE_PEER, B_RESPONSE_BLOCKCHAIN, B_RESPONSE_FILE: peers close to the key (to the sender for A_RESPONSE_SELF)
-	IsLast  bool          // Bit 15 of the peer record count: no more results follow for the key. A key with no peer records and IsLast was not found.
+	IsLast  bool          // Bit 7 of the first peer record count: no more results follow for the key. A key with no peer records and IsLast was not found.
 	Data    []byte        // B_RESPONSE_FILE_EMBED: the file
 }
 
@@ -49,20 +48,20 @@ type StoringPeer struct {
 	BlockchainVersion uint64 // B_RESPONSE_BLOCKCHAIN: blockchain version stored
 }
 
-// PeerRecord informs about a peer.
+// PeerRecord informs about a peer. It carries up to 3 addresses per family, in no particular order.
 type PeerRecord struct {
-	PublicKey                ed25519.PublicKey // Public Key = Peer ID
-	IPv4                     net.IP            // IPv4 address. 0 if not set.
-	IPv4Port                 uint16            // Port (actual one used for connection)
-	IPv4PortReportedInternal uint16            // Internal port as reported by that peer. This can be used to identify whether the peer is potentially behind a NAT.
-	IPv4PortReportedExternal uint16            // External port as reported by that peer. This is used in case of port forwarding (manual or automated).
-	IPv6                     net.IP            // IPv6 address. 0 if not set.
-	IPv6Port                 uint16            // Port (actual one used for connection)
-	IPv6PortReportedInternal uint16            // Internal port as reported by that peer. This can be used to identify whether the peer is potentially behind a NAT.
-	IPv6PortReportedExternal uint16            // External port as reported by that peer. This is used in case of port forwarding (manual or automated).
-	LastContact              uint32            // Last contact in seconds
-	LastContactT             time.Time         // Last contact time translated from seconds
-	Features                 uint8             // Feature support. Same as in Announcement/Response message.
+	PublicKey ed25519.PublicKey   // Public Key = Peer ID
+	Features  uint8               // Feature support. Same as in Announcement/Response message.
+	IPv4      []PeerRecordAddress // IPv4 addresses
+	IPv6      []PeerRecordAddress // IPv6 addresses
+}
+
+// PeerRecordAddress is one address of a peer in a peer record.
+type PeerRecordAddress struct {
+	IP                   net.IP // IP address
+	Port                 uint16 // Port (actual one used for connection)
+	PortReportedInternal uint16 // Internal port as reported by that peer. This can be used to identify whether the peer is potentially behind a NAT.
+	PortReportedExternal uint16 // External port as reported by that peer. This is used in case of port forwarding (manual or automated). 0 if not known.
 }
 
 // Response record types in the Response message. Names as in the whitepaper.
@@ -74,14 +73,31 @@ const (
 	ResponseBFileEmbed  = 4 // B_RESPONSE_FILE_EMBED: the requested file embedded. Answers B_FIND_FILE_EMBED.
 )
 
-// peerRecordSize is the size of a peer record in bytes.
-const peerRecordSize = 69
+// peerRecordHeaderSize is the size of a peer record without its addresses: Peer ID (32), features (1), address counts (1).
+const peerRecordHeaderSize = 34
 
-// storingBlockchainRecordSize is the size of a storing peer record in B_RESPONSE_BLOCKCHAIN: peer record + height (8) + version (8).
-const storingBlockchainRecordSize = peerRecordSize + 16
+// Size of one address in a peer record: IP address (4 or 16), port (2), internal port (2), external port (2).
+const (
+	peerRecordAddressSizeIPv4 = net.IPv4len + 6
+	peerRecordAddressSizeIPv6 = net.IPv6len + 6
+)
 
-// peerCountLastFlag is bit 15 of a peer record count: the last result for the key.
-const peerCountLastFlag = 0x8000
+// PeerRecordAddressesMax is the maximum count of addresses per family in a peer record. Each count takes 2 bits of the address counts.
+const PeerRecordAddressesMax = 3
+
+// storingBlockchainInfoSize is the size of the data that follows the peer record of a storing peer in B_RESPONSE_BLOCKCHAIN: height (8) + version (8).
+const storingBlockchainInfoSize = 16
+
+// peerCountLastFlag is bit 7 of the first peer record count: the last result for the key.
+const peerCountLastFlag = 0x80
+
+// peerCountMax is the maximum count of peer records in one list of a response record (7 bits).
+const peerCountMax = 0x7F
+
+// Size returns the encoded size of the peer record in bytes. It follows from the count of addresses.
+func (peer *PeerRecord) Size() int {
+	return peerRecordHeaderSize + len(peer.IPv4)*peerRecordAddressSizeIPv4 + len(peer.IPv6)*peerRecordAddressSizeIPv6
+}
 
 // EmbeddedFileSizeMax is the maximum size of a file embedded in a response message (B_RESPONSE_FILE_EMBED). Any file exceeding that must be shared via regular file transfer.
 // It leaves room for the header with the maximum User Agent, the record count, the record header and the key.
@@ -122,39 +138,37 @@ func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 				data = data[HashSize:]
 			}
 
-			if len(data) < 2 {
+			if len(data) < 1 {
 				return nil, errors.New("response: record too short for count")
 			}
-			countField := binary.LittleEndian.Uint16(data[0:2])
-			record.IsLast = countField&peerCountLastFlag > 0
-			count := int(countField & 0x7FFF)
-			data = data[2:]
+			record.IsLast = data[0]&peerCountLastFlag > 0
+			count := int(data[0] & peerCountMax)
+			data = data[1:]
 
 			if raw.Type == ResponseBBlockchain || raw.Type == ResponseBFile {
 				// count is the storing peers, followed by the count of closest peers
-				if len(data) < 2 {
+				if len(data) < 1 {
 					return nil, errors.New("response: record too short for count")
 				}
-				countClosest := int(binary.LittleEndian.Uint16(data[0:2]))
-				data = data[2:]
+				countClosest := int(data[0] & peerCountMax)
+				data = data[1:]
 
 				for n := 0; n < count; n++ {
 					storing := StoringPeer{}
-					size := peerRecordSize
-					if raw.Type == ResponseBBlockchain {
-						size = storingBlockchainRecordSize
-					}
-					if len(data) < size {
-						return nil, errors.New("response: storing peer record overflow")
-					}
-					if !decodePeerRecord(data, &storing.PeerRecord) {
-						return nil, errors.New("response: invalid peer record")
-					}
-					if raw.Type == ResponseBBlockchain {
-						storing.BlockchainHeight = binary.LittleEndian.Uint64(data[peerRecordSize : peerRecordSize+8])
-						storing.BlockchainVersion = binary.LittleEndian.Uint64(data[peerRecordSize+8 : peerRecordSize+16])
+					size, err := decodePeerRecord(data, &storing.PeerRecord)
+					if err != nil {
+						return nil, err
 					}
 					data = data[size:]
+
+					if raw.Type == ResponseBBlockchain {
+						if len(data) < storingBlockchainInfoSize {
+							return nil, errors.New("response: peer record overflow")
+						}
+						storing.BlockchainHeight = binary.LittleEndian.Uint64(data[0:8])
+						storing.BlockchainVersion = binary.LittleEndian.Uint64(data[8:16])
+						data = data[storingBlockchainInfoSize:]
+					}
 
 					record.Storing = append(record.Storing, storing)
 				}
@@ -163,21 +177,17 @@ func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 			}
 
 			for n := 0; n < count; n++ {
-				if len(data) < peerRecordSize {
-					return nil, errors.New("response: peer record overflow")
-				}
 				peer := PeerRecord{}
-				if !decodePeerRecord(data, &peer) {
-					return nil, errors.New("response: invalid peer record")
+				size, err := decodePeerRecord(data, &peer)
+				if err != nil {
+					return nil, err
 				}
-				data = data[peerRecordSize:]
+				data = data[size:]
 
 				record.Closest = append(record.Closest, peer)
 			}
 
-			if len(data) != 0 {
-				return nil, errors.New("response: record size mismatch")
-			}
+			// Data after the counted peer records is ignored.
 
 		case ResponseBFileEmbed:
 			if len(data) < HashSize {
@@ -202,56 +212,95 @@ func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 	return result, nil
 }
 
-// decodePeerRecord decodes a single peer record. data must be at least peerRecordSize.
-func decodePeerRecord(data []byte, peer *PeerRecord) (valid bool) {
-	peer.PublicKey = make(ed25519.PublicKey, ed25519.PublicKeySize)
-	copy(peer.PublicKey, data[0:32])
-
-	// IPv4
-	ipv4B := make([]byte, 4)
-	copy(ipv4B, data[32:32+4])
-	peer.IPv4 = ipv4B
-	peer.IPv4Port = binary.LittleEndian.Uint16(data[36 : 36+2])
-	peer.IPv4PortReportedInternal = binary.LittleEndian.Uint16(data[38 : 38+2])
-	peer.IPv4PortReportedExternal = binary.LittleEndian.Uint16(data[40 : 40+2])
-
-	// IPv6
-	ipv6B := make([]byte, 16)
-	copy(ipv6B, data[42:42+16])
-	peer.IPv6 = ipv6B
-	peer.IPv6Port = binary.LittleEndian.Uint16(data[58 : 58+2])
-	peer.IPv6PortReportedInternal = binary.LittleEndian.Uint16(data[60 : 60+2])
-	peer.IPv6PortReportedExternal = binary.LittleEndian.Uint16(data[62 : 62+2])
-
-	if peer.IPv6.To4() != nil { // IPv6 address mismatch
-		return false
+// decodePeerRecord decodes the peer record at the start of data. It returns the size of the record, which follows from its address counts.
+func decodePeerRecord(data []byte, peer *PeerRecord) (size int, err error) {
+	if len(data) < peerRecordHeaderSize {
+		return 0, errors.New("response: peer record overflow")
 	}
 
-	peer.LastContact = binary.LittleEndian.Uint32(data[64 : 64+4])
-	peer.LastContactT = time.Now().Add(-time.Second * time.Duration(peer.LastContact))
-	peer.Features = data[68]
+	// Address counts: bits 0-1 count of IPv4 addresses, bits 2-3 count of IPv6 addresses. Bits 4-7 are reserved and ignored.
+	countIPv4 := int(data[33] & 0x03)
+	countIPv6 := int(data[33] >> 2 & 0x03)
 
-	return true
+	size = peerRecordHeaderSize + countIPv4*peerRecordAddressSizeIPv4 + countIPv6*peerRecordAddressSizeIPv6
+	if len(data) < size {
+		return 0, errors.New("response: peer record overflow")
+	}
+
+	peer.PublicKey = make(ed25519.PublicKey, ed25519.PublicKeySize)
+	copy(peer.PublicKey, data[0:32])
+	peer.Features = data[32]
+
+	data = data[peerRecordHeaderSize:]
+
+	for n := 0; n < countIPv4; n++ {
+		peer.IPv4 = append(peer.IPv4, decodePeerRecordAddress(data, net.IPv4len))
+		data = data[peerRecordAddressSizeIPv4:]
+	}
+
+	for n := 0; n < countIPv6; n++ {
+		address := decodePeerRecordAddress(data, net.IPv6len)
+		if address.IP.To4() != nil { // IPv6 address mismatch
+			return 0, errors.New("response: IPv4 address in the IPv6 addresses of a peer record")
+		}
+
+		peer.IPv6 = append(peer.IPv6, address)
+		data = data[peerRecordAddressSizeIPv6:]
+	}
+
+	return size, nil
 }
 
-// encodePeerRecord encodes a single peer record into raw, which must be at least peerRecordSize.
-func encodePeerRecord(raw []byte, peer *PeerRecord) {
-	copy(raw[0:0+32], peer.PublicKey)
+// decodePeerRecordAddress decodes one address of a peer record. ipSize is 4 for IPv4 and 16 for IPv6. data must be at least ipSize + 6.
+func decodePeerRecordAddress(data []byte, ipSize int) (address PeerRecordAddress) {
+	address.IP = make(net.IP, ipSize)
+	copy(address.IP, data[:ipSize])
+	address.Port = binary.LittleEndian.Uint16(data[ipSize : ipSize+2])
+	address.PortReportedInternal = binary.LittleEndian.Uint16(data[ipSize+2 : ipSize+4])
+	address.PortReportedExternal = binary.LittleEndian.Uint16(data[ipSize+4 : ipSize+6])
 
-	// IPv4
-	copy(raw[32:32+4], peer.IPv4.To4())
-	binary.LittleEndian.PutUint16(raw[36:36+2], peer.IPv4Port)
-	binary.LittleEndian.PutUint16(raw[38:38+2], peer.IPv4PortReportedInternal)
-	binary.LittleEndian.PutUint16(raw[40:40+2], peer.IPv4PortReportedExternal)
+	return address
+}
 
-	// IPv6
-	copy(raw[42:42+16], peer.IPv6.To16())
-	binary.LittleEndian.PutUint16(raw[58:58+2], peer.IPv6Port)
-	binary.LittleEndian.PutUint16(raw[60:60+2], peer.IPv6PortReportedInternal)
-	binary.LittleEndian.PutUint16(raw[62:62+2], peer.IPv6PortReportedExternal)
+// encodePeerRecord appends the encoded peer record to data.
+func encodePeerRecord(data []byte, peer *PeerRecord) (result []byte, err error) {
+	if len(peer.PublicKey) != ed25519.PublicKeySize {
+		return nil, errors.New("invalid peer ID size in peer record")
+	}
+	if len(peer.IPv4) > PeerRecordAddressesMax || len(peer.IPv6) > PeerRecordAddressesMax {
+		return nil, errors.New("too many addresses in peer record")
+	}
 
-	binary.LittleEndian.PutUint32(raw[64:64+4], peer.LastContact)
-	raw[68] = peer.Features
+	data = append(data, peer.PublicKey...)
+	data = append(data, peer.Features, byte(len(peer.IPv4)|len(peer.IPv6)<<2))
+
+	for n := range peer.IPv4 {
+		ip := peer.IPv4[n].IP.To4()
+		if ip == nil {
+			return nil, errors.New("invalid IPv4 address in peer record")
+		}
+		data = encodePeerRecordAddress(data, ip, &peer.IPv4[n])
+	}
+
+	for n := range peer.IPv6 {
+		ip := peer.IPv6[n].IP.To16()
+		if ip == nil || ip.To4() != nil {
+			return nil, errors.New("invalid IPv6 address in peer record")
+		}
+		data = encodePeerRecordAddress(data, ip, &peer.IPv6[n])
+	}
+
+	return data, nil
+}
+
+// encodePeerRecordAddress appends one encoded address of a peer record to data. ip is the IP address in its 4 or 16 byte form.
+func encodePeerRecordAddress(data []byte, ip net.IP, address *PeerRecordAddress) []byte {
+	data = append(data, ip...)
+	data = binary.LittleEndian.AppendUint16(data, address.Port)
+	data = binary.LittleEndian.AppendUint16(data, address.PortReportedInternal)
+	data = binary.LittleEndian.AppendUint16(data, address.PortReportedExternal)
+
+	return data
 }
 
 // encodeResponseRecord encodes the data of a response record.
@@ -265,22 +314,27 @@ func encodeResponseRecord(record *ResponseRecord) (data []byte, err error) {
 			data = append(data, record.Key...)
 		}
 
-		countField := uint16(len(record.Closest))
+		if len(record.Storing) > peerCountMax || len(record.Closest) > peerCountMax {
+			return nil, errors.New("too many peer records")
+		}
+
+		// The first count carries the last result flag. In B_RESPONSE_BLOCKCHAIN and B_RESPONSE_FILE it is the count of storing peers, followed by the count of closest peers.
+		countField := byte(len(record.Closest))
 		if record.Type == ResponseBBlockchain || record.Type == ResponseBFile {
-			countField = uint16(len(record.Storing))
+			countField = byte(len(record.Storing))
 		}
 		if record.IsLast {
 			countField |= peerCountLastFlag
 		}
-		data = binary.LittleEndian.AppendUint16(data, countField)
+		data = append(data, countField)
 
 		if record.Type == ResponseBBlockchain || record.Type == ResponseBFile {
-			data = binary.LittleEndian.AppendUint16(data, uint16(len(record.Closest)))
+			data = append(data, byte(len(record.Closest)))
 
 			for n := range record.Storing {
-				raw := make([]byte, peerRecordSize)
-				encodePeerRecord(raw, &record.Storing[n].PeerRecord)
-				data = append(data, raw...)
+				if data, err = encodePeerRecord(data, &record.Storing[n].PeerRecord); err != nil {
+					return nil, err
+				}
 
 				if record.Type == ResponseBBlockchain {
 					data = binary.LittleEndian.AppendUint64(data, record.Storing[n].BlockchainHeight)
@@ -290,9 +344,9 @@ func encodeResponseRecord(record *ResponseRecord) (data []byte, err error) {
 		}
 
 		for n := range record.Closest {
-			raw := make([]byte, peerRecordSize)
-			encodePeerRecord(raw, &record.Closest[n])
-			data = append(data, raw...)
+			if data, err = encodePeerRecord(data, &record.Closest[n]); err != nil {
+				return nil, err
+			}
 		}
 
 	case ResponseBFileEmbed:
