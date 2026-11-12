@@ -408,7 +408,8 @@ func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey ed25519.
 	err = c.Network.send(c.Address.IP, c.Address.Port, raw)
 
 	// Send Traverse message if the peer is behind a NAT or firewall and this is the first message. Only for Announcement.
-	if err == nil && isFirstPacket && (c.IsBehindNAT() || c.Firewall) && c.traversePeer != nil && packet.Command == protocol.CommandAnnouncement {
+	// A root peer must be reachable directly: the Traverse message is not sent if the receiver is a root peer.
+	if err == nil && isFirstPacket && (c.IsBehindNAT() || c.Firewall) && c.traversePeer != nil && packet.Command == protocol.CommandAnnouncement && rootPeers[publicKey2Array(receiverPublicKey)] == nil {
 		c.traversePeer.sendTraverse(packet, receiverPublicKey)
 	}
 

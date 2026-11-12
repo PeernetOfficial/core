@@ -7,6 +7,8 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"net"
 	"testing"
 
@@ -60,5 +62,60 @@ func TestTraverseAddresses(t *testing.T) {
 	msg := &protocol.MessageTraverse{IPv4: net.ParseIP("203.0.113.7").To4(), PortIPv4: 1001, PortIPv4ReportedExternal: 2001, IPv6: net.ParseIP("2001:db8::7"), PortIPv6: 1002}
 	if addresses := traverseAddresses(msg, false); len(addresses) != 2 || addresses[0].Port != 2001 || addresses[1].Port != 1002 {
 		t.Errorf("external port: unexpected addresses %v", addresses)
+	}
+}
+
+// TestTraverseForwardRootPeer checks that a Traverse message is forwarded to the end receiver, except if the end receiver is a root peer.
+func TestTraverseForwardRootPeer(t *testing.T) {
+	backend, network := testBackendLoopback(t)
+	testRootPeers(t)
+
+	traverseCount := 0
+	backend.Filters.PacketOut = func(packet *protocol.PacketRaw, receiverPublicKey ed25519.PublicKey, connection *Connection) {
+		if packet.Command == protocol.CommandTraverse {
+			traverseCount++
+		}
+	}
+
+	// The original sender is connected via a public address.
+	senderPublicKey, senderPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+	connectionSender := &Connection{Address: &net.UDPAddr{IP: net.ParseIP("203.0.113.7").To4(), Port: 1001}, PortInternal: 112}
+	sender := &PeerInfo{Backend: backend, PublicKey: senderPublicKey, connectionActive: []*Connection{connectionSender}, connectionLatest: connectionSender}
+
+	for _, isRootPeer := range []bool{false, true} {
+		// The end receiver is in the peer list.
+		targetPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+		_, addressTarget := testSocket(t)
+
+		if isRootPeer {
+			rootPeers[publicKey2Array(targetPublicKey)] = &rootPeer{publicKey: targetPublicKey, backend: backend}
+		}
+
+		target, _ := backend.PeerlistAdd(targetPublicKey, &Connection{backend: backend, Network: network, Address: addressTarget, PortInternal: uint16(addressTarget.Port)})
+		target.Features = 1 << protocol.FeatureIPv4Listen
+
+		// The Traverse message as the original sender creates it.
+		announcement := protocol.EncodeAnnouncement(true, &protocol.Requests{FindSelf: true}, 1<<protocol.FeatureIPv4Listen, 0, 0, "test")
+		embedded, err := protocol.PacketEncryptEmbedded(senderPrivateKey, targetPublicKey, backend.peerPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandAnnouncement, Payload: announcement[0]})
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload, err := protocol.EncodeTraverse(embedded, targetPublicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		msg, err := protocol.DecodeTraverse(&protocol.MessageRaw{PacketRaw: protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: payload}, SenderPublicKey: senderPublicKey})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		traverseCount = 0
+		sender.cmdTraverseForward(msg, connectionSender)
+
+		if isRootPeer && traverseCount != 0 {
+			t.Errorf("root peer: %d Traverse messages forwarded, expected none", traverseCount)
+		} else if !isRootPeer && traverseCount != 1 {
+			t.Errorf("peer: %d Traverse messages forwarded, expected 1", traverseCount)
+		}
 	}
 }

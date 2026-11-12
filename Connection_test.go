@@ -7,8 +7,15 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"net"
 	"testing"
+	"time"
+
+	"github.com/PeernetOfficial/core/blockchain"
+	"github.com/PeernetOfficial/core/dht"
+	"github.com/PeernetOfficial/core/protocol"
 )
 
 // TestGetConnection2Share checks which connection of a peer is shared: a local one only if allowed, and then preferred. A link-local or loopback one is not shared.
@@ -140,6 +147,105 @@ func TestGetConnections2Share(t *testing.T) {
 			if result[n] != test.expected[n] {
 				t.Errorf("allow local %t IPv4 %t IPv6 %t limit %d: connection %d is %s, expected %s", test.allowLocal, test.allowIPv4, test.allowIPv6, test.limit, n, result[n].Address.IP.String(), test.expected[n].Address.IP.String())
 			}
+		}
+	}
+}
+
+// testSocket returns a UDP socket listening on the loopback address. It is closed when the test ends.
+func testSocket(t *testing.T) (socket *net.UDPConn, address *net.UDPAddr) {
+	socket, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { socket.Close() })
+
+	return socket, socket.LocalAddr().(*net.UDPAddr)
+}
+
+// testBackendLoopback returns a backend with an empty peer list that sends via one network on the loopback address.
+func testBackendLoopback(t *testing.T) (backend *Backend, network *Network) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	backend = &Backend{peerPublicKey: publicKey, peerPrivateKey: privateKey, Config: &Config{}, UserBlockchain: &blockchain.Blockchain{}, peerList: make(map[[ed25519.PublicKeySize]byte]*PeerInfo)}
+	backend.initFilters()
+	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: publicKey}, 256, bucketSize, alpha)
+	backend.networks = &Networks{backend: backend, Sequences: protocol.NewSequenceManager(ReplyTimeout)}
+
+	socket, address := testSocket(t)
+	network = &Network{address: address, socket: socket, backend: backend, networkGroup: backend.networks}
+	backend.networks.networks4 = []*Network{network}
+
+	return backend, network
+}
+
+// testRootPeers replaces the root peer list with an empty one for the duration of the test.
+func testRootPeers(t *testing.T) {
+	previous := rootPeers
+	rootPeers = make(map[[ed25519.PublicKeySize]byte]*rootPeer)
+	t.Cleanup(func() { rootPeers = previous })
+}
+
+// TestSendTraverseRootPeer checks the first Announcement to a peer that was reported by another peer and is not in the peer list.
+// It is always sent directly. It is additionally sent as Traverse message via the reporting peer if the reported peer sets FIREWALL
+// or its internal port differs from the observed one, except if the reported peer is a root peer.
+func TestSendTraverseRootPeer(t *testing.T) {
+	backend, network := testBackendLoopback(t)
+	testRootPeers(t)
+
+	traverseCount := 0
+	backend.Filters.MessageOutTraverse = func(peer *PeerInfo, packet *protocol.PacketRaw, embeddedPacket *protocol.PacketRaw, receiverEnd ed25519.PublicKey) {
+		traverseCount++
+	}
+
+	// The reporting peer is in the peer list.
+	reportingPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	_, addressReporting := testSocket(t)
+	reporting, _ := backend.PeerlistAdd(reportingPublicKey, &Connection{backend: backend, Network: network, Address: addressReporting, PortInternal: uint16(addressReporting.Port)})
+
+	tests := []struct {
+		name          string
+		isRootPeer    bool
+		firewall      bool
+		portDiffers   bool
+		expectedCount int
+	}{
+		{"root peer, FIREWALL", true, true, false, 0},
+		{"root peer, internal port differs", true, false, true, 0},
+		{"peer, FIREWALL", false, true, false, 1},
+		{"peer, internal port differs", false, false, true, 1},
+	}
+
+	for _, test := range tests {
+		targetPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+		socketTarget, addressTarget := testSocket(t)
+
+		if test.isRootPeer {
+			rootPeers[publicKey2Array(targetPublicKey)] = &rootPeer{publicKey: targetPublicKey, backend: backend}
+		}
+
+		portInternal := uint16(addressTarget.Port)
+		if test.portDiffers {
+			portInternal = defaultPort // the socket listens on a port assigned by the system, which is never this one
+		}
+
+		traverseCount = 0
+		backend.contactArbitraryPeer(targetPublicKey, addressTarget, portInternal, test.firewall, reporting)
+
+		if traverseCount != test.expectedCount {
+			t.Errorf("%s: %d Traverse messages sent, expected %d", test.name, traverseCount, test.expectedCount)
+		}
+
+		// The direct Announcement was sent before contactArbitraryPeer returned. The deadline only ends the test if it is missing.
+		buffer := make([]byte, maxPacketSize)
+		socketTarget.SetReadDeadline(time.Now().Add(2 * time.Second))
+		length, _, err := socketTarget.ReadFromUDP(buffer)
+		if err != nil {
+			t.Errorf("%s: no direct Announcement received: %v", test.name, err)
+		} else if packet, sender, err := protocol.PacketDecrypt(buffer[:length], targetPublicKey); err != nil || packet.Command != protocol.CommandAnnouncement || !sender.Equal(backend.peerPublicKey) {
+			t.Errorf("%s: direct packet is not an Announcement of this peer: %v", test.name, err)
 		}
 	}
 }

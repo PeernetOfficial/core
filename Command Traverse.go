@@ -32,6 +32,11 @@ func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse, connecti
 		return
 	}
 
+	// A root peer must be reachable directly: a Traverse message to a root peer is dropped.
+	if peerTarget.IsRootPeer {
+		return
+	}
+
 	// Get the right IP:Port of the original sender to share to the target peer.
 	// A local address of the original sender is only shared if the message was received via a local connection and the target peer has a local connection.
 	// The message is then forwarded via that local connection, see sendConnectionLocal. A link-local or loopback address is not shared, see GetConnections2Share.
