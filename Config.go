@@ -1,6 +1,6 @@
 /*
 File Name:  Settings.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -48,8 +48,7 @@ type Config struct {
 	SeedListVersion    int        `yaml:"SeedListVersion"`
 
 	// Connection settings
-	EnableUPnP    bool `yaml:"EnableUPnP"`    // Enables support for UPnP.
-	LocalFirewall bool `yaml:"LocalFirewall"` // Indicates that a local firewall may drop unsolicited incoming packets.
+	EnableUPnP bool `yaml:"EnableUPnP"` // Enables support for UPnP.
 
 	// PortForward specifies an external port that was manually forwarded by the user. All listening IPs must have that same port number forwarded!
 	// If this setting is invalid, it will prohibit other peers from connecting. If set, it automatically disables UPnP.

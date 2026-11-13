@@ -30,7 +30,6 @@ SeedList:
 
 # Connection settings
 EnableUPnP:     true    # Enables support for UPnP.
-LocalFirewall:  false   # Indicates that a local firewall may drop unsolicited incoming packets.
 
 # PortForward specifies an external port that was manually forwarded by the user. All listening IPs must have that same port number forwarded!
 # If this setting is invalid, it will prohibit other peers from connecting. If set, it automatically disables UPnP.

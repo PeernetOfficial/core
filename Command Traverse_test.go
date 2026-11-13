@@ -119,3 +119,51 @@ func TestTraverseForwardRootPeer(t *testing.T) {
 		}
 	}
 }
+
+// TestTraverseReceiveAnswer checks that the Announcement embedded in a received Traverse message is answered with a Response to the original sender,
+// and that this answer is not accompanied by a Traverse message.
+func TestTraverseReceiveAnswer(t *testing.T) {
+	backend, network := testBackendLoopback(t)
+	testRootPeers(t)
+	traverse := testWatchTraverse(backend)
+
+	senderPublicKey, senderPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+
+	responseCount := 0
+	backend.Filters.MessageOutResponse = func(peer *PeerInfo, packet *protocol.PacketRaw, records []protocol.ResponseRecord) {
+		if peer.PublicKey.Equal(senderPublicKey) {
+			responseCount++
+		}
+	}
+
+	// The relay is in the peer list, connected via a local connection.
+	relayPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	_, addressRelay := testSocket(t)
+	connectionRelay := &Connection{backend: backend, Network: network, Address: addressRelay, PortInternal: uint16(addressRelay.Port)}
+	relay, _ := backend.PeerlistAdd(relayPublicKey, connectionRelay)
+
+	// The Traverse message as the relay forwards it. The address of the original sender is a local one, which is used since the message is received via a local connection.
+	announcement := protocol.EncodeAnnouncement(true, &protocol.Requests{FindSelf: true}, 1<<protocol.FeatureIPv4Listen, 0, 0, "test")
+	embedded, err := protocol.PacketEncryptEmbedded(senderPrivateKey, backend.peerPublicKey, relayPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandAnnouncement, Payload: announcement[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := protocol.EncodeTraverse(embedded, backend.peerPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := protocol.EncodeTraverseSetAddress(payload, net.ParseIP("10.0.0.7").To4(), 1001, 0, nil, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := protocol.DecodeTraverse(&protocol.MessageRaw{PacketRaw: protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: payload}, SenderPublicKey: relayPublicKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	relay.cmdTraverseReceive(msg, connectionRelay)
+
+	if responseCount != 1 {
+		t.Errorf("%d Responses sent to the original sender, expected 1", responseCount)
+	}
+	traverse.check(t, "answer to a received Traverse message", 0, nil, senderPublicKey)
+}

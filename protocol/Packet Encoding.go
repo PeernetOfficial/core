@@ -202,7 +202,7 @@ func publicKeyToSalsa20Key(publicKey ed25519.PublicKey) (key *[32]byte) {
 }
 
 // SetSelfReportedPorts sets the fields Internal Port and External Port according to the connection details.
-// This is important for the remote peer to make smart decisions whether this peer is behind a NAT/firewall and supports port forwarding/UPnP.
+// The remote peer uses them to detect whether this peer is behind a NAT and whether it uses port forwarding/UPnP.
 func (packet *PacketRaw) SetSelfReportedPorts(portI, portE uint16) {
 	if packet.Command != CommandAnnouncement && packet.Command != CommandResponse { // only for Announcement and Response messages
 		return
