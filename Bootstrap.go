@@ -106,8 +106,8 @@ func (peer *rootPeer) contact() {
 	}
 
 	for _, address := range peer.addresses {
-		// Port internal is always set to 0 for root peers. It disables NAT detection and will not send out a Traverse message.
-		peer.backend.contactArbitraryPeer(peer.publicKey, address, 0, false, nil)
+		// Port internal is always set to 0 for root peers.
+		peer.backend.contactArbitraryPeer(peer.publicKey, address, 0, nil)
 	}
 }
 
@@ -207,8 +207,8 @@ func (nets *Networks) autoMulticastBroadcast() {
 }
 
 // contactArbitraryPeer contacts a new arbitrary peer for the first time.
-// traversePeer is the peer that reported the new peer. If the new peer is behind a NAT or firewall, the announcement is additionally sent as Traverse message via that peer. It may be nil.
-func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, address *net.UDPAddr, receiverPortInternal uint16, receiverFirewall bool, traversePeer *PeerInfo) (contacted bool) {
+// traversePeer is the peer that reported the new peer. The announcement is additionally sent as Traverse message via that peer, except if the new peer is a root peer. It may be nil.
+func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, address *net.UDPAddr, receiverPortInternal uint16, traversePeer *PeerInfo) (contacted bool) {
 	findSelf := ShouldSendFindSelf()
 	_, blockchainHeight, blockchainVersion := backend.UserBlockchain.Header()
 	requests := &protocol.Requests{FindSelf: findSelf}
@@ -220,7 +220,7 @@ func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, addres
 
 	backend.Filters.MessageOutAnnouncement(publicKey, nil, raw, requests)
 
-	backend.networks.sendAllNetworks(publicKey, raw, address, receiverPortInternal, receiverFirewall, traversePeer, &bootstrapFindSelf{})
+	backend.networks.sendAllNetworks(publicKey, raw, address, receiverPortInternal, traversePeer, &bootstrapFindSelf{})
 
 	return true
 }
@@ -263,8 +263,8 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 			}
 
 			// Initiate contact. Once a response comes back, the peer will be actually added to the peer list.
-			// The peer that reported the contact relays the Traverse message in case the contact is behind a NAT or firewall.
-			peer.Backend.contactArbitraryPeer(closePeer.PublicKey, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, closePeer.Features&(1<<protocol.FeatureFirewall) > 0, peer)
+			// The Announcement is additionally sent as Traverse message via the peer that reported the contact.
+			peer.Backend.contactArbitraryPeer(closePeer.PublicKey, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, peer)
 		}
 	}
 }

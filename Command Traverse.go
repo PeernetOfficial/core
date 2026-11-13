@@ -25,8 +25,6 @@ func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse, connecti
 	}
 
 	// Check if the target peer is known in the peer list. If not, nothing will be done.
-	// The original sender should only send the Traverse message as answer to a Response that contains a reported peer that is behind a NAT.
-	// In that case the target peer should be still in this peers' peer list.
 	peerTarget := peer.Backend.PeerlistLookup(msg.TargetPeer)
 	if peerTarget == nil {
 		return

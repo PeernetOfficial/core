@@ -88,7 +88,7 @@ type PeerInfo struct {
 	messageSequence       uint32           // Sequence number. Increased with every message.
 	IsRootPeer            bool             // Whether the peer is a trusted root peer.
 	UserAgent             string           // User Agent reported by remote peer. Empty if no Announcement/Response message was yet received.
-	Features              uint8            // Feature bit array. 0 = IPv4_LISTEN, 1 = IPv6_LISTEN, 1 = FIREWALL
+	Features              uint8            // Feature bit array. 0 = IPv4_LISTEN, 1 = IPv6_LISTEN
 	isVirtual             bool             // Whether it is a virtual peer for establishing a connection.
 	targetAddresses       []*peerAddress   // Virtual peer: Addresses to send any replies.
 	traversePeer          *PeerInfo        // Virtual peer: Same field as in connection.

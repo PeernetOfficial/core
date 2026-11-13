@@ -62,7 +62,6 @@ type FileStore struct {
 const (
 	FeatureIPv4Listen = 0 // Sender listens on IPv4
 	FeatureIPv6Listen = 1 // Sender listens on IPv6
-	FeatureFirewall   = 2 // Sender indicates a potential firewall. This informs uncontacted peers that a Traverse message might be required to establish a connection.
 )
 
 // Request record types in the Announcement message. Names as in the whitepaper.

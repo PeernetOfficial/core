@@ -180,7 +180,6 @@ func (nets *Networks) packetWorker() {
 				// Update known internal/external port and User Agent
 				connection.PortInternal = announce.PortInternal
 				connection.PortExternal = announce.PortExternal
-				connection.Firewall = announce.Features&(1<<protocol.FeatureFirewall) > 0
 				if len(announce.UserAgent) > 0 {
 					peer.UserAgent = announce.UserAgent
 				}
@@ -216,7 +215,6 @@ func (nets *Networks) packetWorker() {
 				// Update known internal/external port and User Agent
 				connection.PortInternal = response.PortInternal
 				connection.PortExternal = response.PortExternal
-				connection.Firewall = response.Features&(1<<protocol.FeatureFirewall) > 0
 				if len(response.UserAgent) > 0 {
 					peer.UserAgent = response.UserAgent
 				}
@@ -406,9 +404,6 @@ func (backend *Backend) FeatureSupport() (feature byte) {
 	}
 	if backend.networks.countListen6 > 0 {
 		feature |= 1 << protocol.FeatureIPv6Listen
-	}
-	if backend.networks.localFirewall {
-		feature |= 1 << protocol.FeatureFirewall
 	}
 	return feature
 }

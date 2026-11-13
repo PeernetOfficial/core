@@ -188,17 +188,57 @@ func testRootPeers(t *testing.T) {
 	t.Cleanup(func() { rootPeers = previous })
 }
 
-// TestSendTraverseRootPeer checks the first Announcement to a peer that was reported by another peer and is not in the peer list.
-// It is always sent directly. It is additionally sent as Traverse message via the reporting peer if the reported peer sets FIREWALL
-// or its internal port differs from the observed one, except if the reported peer is a root peer.
-func TestSendTraverseRootPeer(t *testing.T) {
+// testTraverseOut records the Traverse messages a backend sends.
+type testTraverseOut struct {
+	count       int               // Count of Traverse messages sent.
+	relay       *PeerInfo         // Peer the last one was sent to.
+	receiverEnd ed25519.PublicKey // End receiver of the last one.
+}
+
+// testWatchTraverse records the Traverse messages the backend sends.
+func testWatchTraverse(backend *Backend) (traverse *testTraverseOut) {
+	traverse = &testTraverseOut{}
+	backend.Filters.MessageOutTraverse = func(peer *PeerInfo, packet *protocol.PacketRaw, embeddedPacket *protocol.PacketRaw, receiverEnd ed25519.PublicKey) {
+		traverse.count++
+		traverse.relay = peer
+		traverse.receiverEnd = receiverEnd
+	}
+
+	return traverse
+}
+
+// check compares the Traverse messages sent since the last check with the expected count. A Traverse message must be sent to the relay for the end receiver.
+func (traverse *testTraverseOut) check(t *testing.T, name string, expectedCount int, relay *PeerInfo, receiverEnd ed25519.PublicKey) {
+	if traverse.count != expectedCount {
+		t.Errorf("%s: %d Traverse messages sent, expected %d", name, traverse.count, expectedCount)
+	} else if traverse.count > 0 && (traverse.relay != relay || !traverse.receiverEnd.Equal(receiverEnd)) {
+		t.Errorf("%s: Traverse message sent to an unexpected relay or for an unexpected end receiver", name)
+	}
+
+	traverse.count = 0
+}
+
+// testExpectAnnouncement checks that an Announcement of the backend, sent directly to the peer with the public key, arrived at the socket of that peer.
+// It is called after the Announcement was sent. The deadline only ends the test if it is missing.
+func testExpectAnnouncement(t *testing.T, name string, backend *Backend, socket *net.UDPConn, publicKey ed25519.PublicKey) {
+	buffer := make([]byte, maxPacketSize)
+	socket.SetReadDeadline(time.Now().Add(2 * time.Second))
+	length, _, err := socket.ReadFromUDP(buffer)
+	if err != nil {
+		t.Errorf("%s: no direct Announcement received: %v", name, err)
+	} else if packet, sender, err := protocol.PacketDecrypt(buffer[:length], publicKey); err != nil || packet.Command != protocol.CommandAnnouncement || !sender.Equal(backend.peerPublicKey) {
+		t.Errorf("%s: direct packet is not an Announcement of this peer: %v", name, err)
+	}
+}
+
+// TestSendTraverseFirstContact checks the first Announcement to a peer that is not in the peer list.
+// It is always sent directly. If the peer was reported by another peer, it is additionally sent as Traverse message via the reporting peer,
+// whether or not the internal port of the reported peer differs from the observed one, except if the reported peer is a root peer.
+// All addresses are loopback addresses: the reported address is a local one and the reporting peer is connected via a local connection.
+func TestSendTraverseFirstContact(t *testing.T) {
 	backend, network := testBackendLoopback(t)
 	testRootPeers(t)
-
-	traverseCount := 0
-	backend.Filters.MessageOutTraverse = func(peer *PeerInfo, packet *protocol.PacketRaw, embeddedPacket *protocol.PacketRaw, receiverEnd ed25519.PublicKey) {
-		traverseCount++
-	}
+	traverse := testWatchTraverse(backend)
 
 	// The reporting peer is in the peer list.
 	reportingPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
@@ -208,14 +248,15 @@ func TestSendTraverseRootPeer(t *testing.T) {
 	tests := []struct {
 		name          string
 		isRootPeer    bool
-		firewall      bool
 		portDiffers   bool
+		reporting     *PeerInfo
 		expectedCount int
 	}{
-		{"root peer, FIREWALL", true, true, false, 0},
-		{"root peer, internal port differs", true, false, true, 0},
-		{"peer, FIREWALL", false, true, false, 1},
-		{"peer, internal port differs", false, false, true, 1},
+		{"root peer, internal port equal", true, false, reporting, 0},
+		{"root peer, internal port differs", true, true, reporting, 0},
+		{"peer, internal port differs", false, true, reporting, 1},
+		{"peer, internal port equal", false, false, reporting, 1},
+		{"peer, no reporting peer", false, false, nil, 0},
 	}
 
 	for _, test := range tests {
@@ -231,21 +272,63 @@ func TestSendTraverseRootPeer(t *testing.T) {
 			portInternal = defaultPort // the socket listens on a port assigned by the system, which is never this one
 		}
 
-		traverseCount = 0
-		backend.contactArbitraryPeer(targetPublicKey, addressTarget, portInternal, test.firewall, reporting)
+		backend.contactArbitraryPeer(targetPublicKey, addressTarget, portInternal, test.reporting)
 
-		if traverseCount != test.expectedCount {
-			t.Errorf("%s: %d Traverse messages sent, expected %d", test.name, traverseCount, test.expectedCount)
-		}
-
-		// The direct Announcement was sent before contactArbitraryPeer returned. The deadline only ends the test if it is missing.
-		buffer := make([]byte, maxPacketSize)
-		socketTarget.SetReadDeadline(time.Now().Add(2 * time.Second))
-		length, _, err := socketTarget.ReadFromUDP(buffer)
-		if err != nil {
-			t.Errorf("%s: no direct Announcement received: %v", test.name, err)
-		} else if packet, sender, err := protocol.PacketDecrypt(buffer[:length], targetPublicKey); err != nil || packet.Command != protocol.CommandAnnouncement || !sender.Equal(backend.peerPublicKey) {
-			t.Errorf("%s: direct packet is not an Announcement of this peer: %v", test.name, err)
-		}
+		traverse.check(t, test.name, test.expectedCount, reporting, targetPublicKey)
+		testExpectAnnouncement(t, test.name, backend, socketTarget, targetPublicKey)
 	}
+}
+
+// TestSendTraverseVirtualPeer checks an Announcement to a virtual peer, which is a peer that is not in the peer list.
+// It is always sent directly. A virtual peer created for a peer record of a Response has the reporting peer set: the Announcement is additionally sent as Traverse message via it.
+// A virtual peer created for the sender of a received Traverse message has none: no Traverse message is sent.
+// The virtual peers are created here since records2Nodes and traverseAddresses do not use loopback addresses.
+func TestSendTraverseVirtualPeer(t *testing.T) {
+	backend, network := testBackendLoopback(t)
+	testRootPeers(t)
+	traverse := testWatchTraverse(backend)
+
+	// The reporting peer is in the peer list.
+	reportingPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	_, addressReporting := testSocket(t)
+	reporting, _ := backend.PeerlistAdd(reportingPublicKey, &Connection{backend: backend, Network: network, Address: addressReporting, PortInternal: uint16(addressReporting.Port)})
+
+	tests := []struct {
+		name          string
+		traversePeer  *PeerInfo
+		expectedCount int
+	}{
+		{"peer record of a Response", reporting, 1},
+		{"sender of a received Traverse message", nil, 0},
+	}
+
+	for _, test := range tests {
+		targetPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+		socketTarget, addressTarget := testSocket(t)
+
+		// The internal port equals the observed one.
+		addresses := []*peerAddress{{IP: addressTarget.IP, Port: uint16(addressTarget.Port), PortInternal: uint16(addressTarget.Port)}}
+		virtual := &PeerInfo{Backend: backend, PublicKey: targetPublicKey, isVirtual: true, targetAddresses: addresses, traversePeer: test.traversePeer}
+
+		virtual.sendAnnouncement(true, &protocol.Requests{FindPeer: [][]byte{targetPublicKey}}, nil)
+
+		traverse.check(t, test.name, test.expectedCount, reporting, targetPublicKey)
+		testExpectAnnouncement(t, test.name, backend, socketTarget, targetPublicKey)
+	}
+}
+
+// TestSendTraverseKnownPeer checks the first Announcement to a peer that is in the peer list: it is sent directly only.
+func TestSendTraverseKnownPeer(t *testing.T) {
+	backend, network := testBackendLoopback(t)
+	testRootPeers(t)
+	traverse := testWatchTraverse(backend)
+
+	targetPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	socketTarget, addressTarget := testSocket(t)
+	target, _ := backend.PeerlistAdd(targetPublicKey, &Connection{backend: backend, Network: network, Address: addressTarget, PortInternal: uint16(addressTarget.Port)})
+
+	target.sendAnnouncement(true, &protocol.Requests{FindSelf: true}, &bootstrapFindSelf{})
+
+	traverse.check(t, "peer in the peer list", 0, nil, targetPublicKey)
+	testExpectAnnouncement(t, "peer in the peer list", backend, socketTarget, targetPublicKey)
 }
