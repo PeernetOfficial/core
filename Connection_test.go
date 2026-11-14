@@ -98,6 +98,34 @@ func TestGetConnection2Share(t *testing.T) {
 	if result := peer.GetConnection2Share(true, false, true); result != local6 {
 		t.Errorf("loopback IPv6, allow local: unexpected connection %v", result)
 	}
+
+	// A peer known only by a carrier-grade NAT address is not shared, over a local connection too.
+	carrierNAT4 := newConnection("100.64.0.1")
+	peer = &PeerInfo{connectionActive: []*Connection{carrierNAT4}, connectionLatest: carrierNAT4}
+
+	for _, allowLocal := range []bool{false, true} {
+		if result := peer.GetConnection2Share(allowLocal, true, true); result != nil {
+			t.Errorf("carrier-grade NAT only, allow local %t: unexpected connection %v", allowLocal, result)
+		}
+		if peer.IsConnectable(allowLocal, true, true) {
+			t.Errorf("carrier-grade NAT only, allow local %t: peer is connectable", allowLocal)
+		}
+		if record := peer.peer2Record(allowLocal, true, true, 3); record != nil {
+			t.Errorf("carrier-grade NAT only, allow local %t: unexpected peer record %v", allowLocal, record)
+		}
+	}
+
+	// With a public connection as well, the public one is shared, also if the carrier-grade NAT one is the latest connection.
+	peer = &PeerInfo{connectionActive: []*Connection{carrierNAT4, public4}, connectionLatest: carrierNAT4}
+
+	for _, allowLocal := range []bool{false, true} {
+		if result := peer.GetConnection2Share(allowLocal, true, false); result != public4 {
+			t.Errorf("carrier-grade NAT latest, allow local %t: unexpected connection %v", allowLocal, result)
+		}
+		if record := peer.peer2Record(allowLocal, true, true, 3); record == nil || len(record.IPv4) != 1 || !record.IPv4[0].IP.Equal(public4.Address.IP) {
+			t.Errorf("carrier-grade NAT latest, allow local %t: unexpected peer record %v", allowLocal, record)
+		}
+	}
 }
 
 // TestGetConnections2Share checks the order and the count of the connections shared.
@@ -116,7 +144,7 @@ func TestGetConnections2Share(t *testing.T) {
 	noInternalPort := &Connection{Address: &net.UDPAddr{IP: net.ParseIP("203.0.113.10"), Port: 112}}
 
 	// public4b is the latest connection.
-	peer := &PeerInfo{connectionActive: []*Connection{newConnection("127.0.0.1"), noInternalPort, public4a, local4a, public4b, sameAddress, public6, local4b, public4c, newConnection("169.254.1.7")}, connectionLatest: public4b}
+	peer := &PeerInfo{connectionActive: []*Connection{newConnection("127.0.0.1"), noInternalPort, public4a, local4a, public4b, sameAddress, public6, local4b, public4c, newConnection("169.254.1.7"), newConnection("100.64.0.1")}, connectionLatest: public4b}
 
 	tests := []struct {
 		allowLocal, allowIPv4, allowIPv6 bool

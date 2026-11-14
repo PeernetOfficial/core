@@ -115,7 +115,8 @@ func (peer *PeerInfo) localConnection() *Connection {
 }
 
 // isShareable checks if the connection may be shared with a peer that listens on the given IP versions.
-// allowLocal specifies whether a connection via a local address may be shared. A connection via a link-local or loopback address is not shared.
+// allowLocal specifies whether a connection via a local address may be shared.
+// A connection via a link-local, loopback or carrier-grade NAT address is not shared.
 func (c *Connection) isShareable(allowLocal, allowIPv4, allowIPv6 bool) bool {
 	// If the internal port is not known, which happens if no Announcement or Response was returned, do not share the peer details.
 	// This can happen if only other messages such as Ping/Pong were received, or the protocol implementation is not compatible. The external port is also likely not available.
@@ -124,7 +125,7 @@ func (c *Connection) isShareable(allowLocal, allowIPv4, allowIPv6 bool) bool {
 		return false
 	}
 
-	if isIPLinkLocalOrLoopback(c.Address.IP) || !allowLocal && c.IsLocal() {
+	if isIPLinkLocalOrLoopback(c.Address.IP) || isIPCarrierNAT(c.Address.IP) || !allowLocal && c.IsLocal() {
 		return false
 	}
 

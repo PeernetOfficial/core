@@ -40,6 +40,12 @@ func TestTraverseAddresses(t *testing.T) {
 		{"127.0.0.1", "2001:db8::7", true, []string{"2001:db8::7"}},
 		{"192.168.1.7", "fe80::7", true, []string{"192.168.1.7"}},
 		{"169.254.1.7", "fd00::7", true, []string{"fd00::7"}},
+
+		// carrier-grade NAT addresses
+		{"100.64.0.1", "::", false, nil},
+		{"100.64.0.1", "::", true, nil},
+		{"100.64.0.1", "2001:db8::7", false, []string{"2001:db8::7"}},
+		{"100.127.255.255", "fd00::7", true, []string{"fd00::7"}},
 	}
 
 	for _, test := range tests {

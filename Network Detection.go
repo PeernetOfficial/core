@@ -285,8 +285,16 @@ func isIPLinkLocalOrLoopback(ip net.IP) bool {
 	return ip.IsLinkLocalUnicast() || ip.IsLoopback()
 }
 
+// isIPCarrierNAT checks if the IP is in 100.64.0.0/10, the shared address space of carrier-grade NAT (RFC 6598).
+// Such an address is neither a local nor a public address. Like a link-local or loopback address it is used on the connection with that peer only.
+func isIPCarrierNAT(ip net.IP) bool {
+	ip4 := ip.To4()
+	return ip4 != nil && ip4[0] == 100 && ip4[1]&0xC0 == 64
+}
+
 // isReportedAddressUsable checks if an address of a peer that was reported by another peer may be used to contact that peer.
-// A local address is only used if allowLocal is set, which is the case if it was received via a local connection. A link-local or loopback address is not used.
+// A local address is only used if allowLocal is set, which is the case if it was received via a local connection.
+// A link-local, loopback or carrier-grade NAT address is not used.
 func isReportedAddressUsable(ip net.IP, allowLocal bool) bool {
-	return len(ip) > 0 && !ip.IsUnspecified() && !isIPLinkLocalOrLoopback(ip) && (allowLocal || !IsIPLocal(ip))
+	return len(ip) > 0 && !ip.IsUnspecified() && !isIPLinkLocalOrLoopback(ip) && !isIPCarrierNAT(ip) && (allowLocal || !IsIPLocal(ip))
 }

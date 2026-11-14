@@ -54,6 +54,12 @@ func TestPeerRecordToAddresses(t *testing.T) {
 		{[]string{"127.0.0.1", "192.168.1.7", "169.254.1.7"}, []string{"::1", "fe80::7", "fd00::7"}, true, []string{"192.168.1.7", "fd00::7"}},
 		{[]string{"127.0.0.1", "192.168.1.7", "169.254.1.7"}, []string{"::1", "fe80::7", "fd00::7"}, false, nil},
 
+		// carrier-grade NAT addresses
+		{[]string{"100.64.0.1"}, nil, false, nil},
+		{[]string{"100.64.0.1"}, nil, true, nil},
+		{[]string{"100.64.0.1", "203.0.113.7"}, []string{"2001:db8::7"}, false, []string{"203.0.113.7", "2001:db8::7"}},
+		{[]string{"100.127.255.255", "203.0.113.7", "10.0.0.7"}, nil, true, []string{"203.0.113.7", "10.0.0.7"}},
+
 		// unspecified addresses
 		{[]string{"0.0.0.0", "203.0.113.7"}, []string{"::"}, true, []string{"203.0.113.7"}},
 	}

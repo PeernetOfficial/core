@@ -44,7 +44,7 @@ func TestRecords2Nodes(t *testing.T) {
 	// A peer of the peer list is used as it is. An unknown peer becomes a virtual peer with the addresses of the record that may be used.
 	records := []protocol.PeerRecord{
 		{PublicKey: known, IPv4: testRecordAddresses(1001, "203.0.113.7")},
-		{PublicKey: other, IPv4: testRecordAddresses(1001, "203.0.113.8", "192.168.1.8", "127.0.0.1"), IPv6: testRecordAddresses(1002, "2001:db8::8", "fe80::8")},
+		{PublicKey: other, IPv4: testRecordAddresses(1001, "100.64.0.8", "203.0.113.8", "192.168.1.8", "127.0.0.1"), IPv6: testRecordAddresses(1002, "2001:db8::8", "fe80::8")},
 		{PublicKey: self, IPv4: testRecordAddresses(1001, "203.0.113.9")},
 	}
 
@@ -76,5 +76,10 @@ func TestRecords2Nodes(t *testing.T) {
 	// An unknown peer with only addresses that may not be used is skipped.
 	if nodes := peerSource.records2Nodes([]protocol.PeerRecord{{PublicKey: other, IPv4: testRecordAddresses(1001, "192.168.1.8", "169.254.1.8")}}, false); len(nodes) != 0 {
 		t.Fatalf("peer record with local addresses only: %d nodes", len(nodes))
+	}
+	for _, allowLocal := range []bool{false, true} {
+		if nodes := peerSource.records2Nodes([]protocol.PeerRecord{{PublicKey: other, IPv4: testRecordAddresses(1001, "100.64.0.8")}}, allowLocal); len(nodes) != 0 {
+			t.Fatalf("peer record with a carrier-grade NAT address only, allow local %t: %d nodes", allowLocal, len(nodes))
+		}
 	}
 }
