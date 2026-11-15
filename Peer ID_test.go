@@ -73,6 +73,14 @@ func TestRecords2Nodes(t *testing.T) {
 		}
 	}
 
+	// The virtual peer has the observed port and the reported external port of the record.
+	nodes = peerSource.records2Nodes([]protocol.PeerRecord{{PublicKey: other, IPv4: []protocol.PeerRecordAddress{{IP: net.ParseIP("203.0.113.8"), Port: 1001, PortReportedInternal: 112, PortReportedExternal: 2001}}}}, false)
+	if len(nodes) != 1 || len(nodes[0].Info.(*PeerInfo).targetAddresses) != 1 {
+		t.Fatalf("peer record with an external port: unexpected nodes %v", nodes)
+	} else if address := nodes[0].Info.(*PeerInfo).targetAddresses[0]; address.Port != 1001 || address.PortInternal != 112 || address.PortExternal != 2001 {
+		t.Errorf("peer record with an external port: port %d internal %d external %d", address.Port, address.PortInternal, address.PortExternal)
+	}
+
 	// An unknown peer with only addresses that may not be used is skipped.
 	if nodes := peerSource.records2Nodes([]protocol.PeerRecord{{PublicKey: other, IPv4: testRecordAddresses(1001, "192.168.1.8", "169.254.1.8")}}, false); len(nodes) != 0 {
 		t.Fatalf("peer record with local addresses only: %d nodes", len(nodes))

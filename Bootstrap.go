@@ -107,7 +107,7 @@ func (peer *rootPeer) contact() {
 
 	for _, address := range peer.addresses {
 		// Port internal is always set to 0 for root peers.
-		peer.backend.contactArbitraryPeer(peer.publicKey, address, 0, nil)
+		peer.backend.contactArbitraryPeer(peer.publicKey, &peerAddress{IP: address.IP, Port: uint16(address.Port)}, nil)
 	}
 }
 
@@ -208,7 +208,7 @@ func (nets *Networks) autoMulticastBroadcast() {
 
 // contactArbitraryPeer contacts a new arbitrary peer for the first time.
 // traversePeer is the peer that reported the new peer. The announcement is additionally sent as Traverse message via that peer, except if the new peer is a root peer. It may be nil.
-func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, address *net.UDPAddr, receiverPortInternal uint16, traversePeer *PeerInfo) (contacted bool) {
+func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, address *peerAddress, traversePeer *PeerInfo) (contacted bool) {
 	findSelf := ShouldSendFindSelf()
 	_, blockchainHeight, blockchainVersion := backend.UserBlockchain.Header()
 	requests := &protocol.Requests{FindSelf: findSelf}
@@ -220,7 +220,7 @@ func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, addres
 
 	backend.Filters.MessageOutAnnouncement(publicKey, nil, raw, requests)
 
-	backend.networks.sendAllNetworks(publicKey, raw, address, receiverPortInternal, traversePeer, &bootstrapFindSelf{})
+	backend.networks.sendAllNetworks(publicKey, raw, address, traversePeer, &bootstrapFindSelf{})
 
 	return true
 }
@@ -264,7 +264,7 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 
 			// Initiate contact. Once a response comes back, the peer will be actually added to the peer list.
 			// The Announcement is additionally sent as Traverse message via the peer that reported the contact.
-			peer.Backend.contactArbitraryPeer(closePeer.PublicKey, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, peer)
+			peer.Backend.contactArbitraryPeer(closePeer.PublicKey, address, peer)
 		}
 	}
 }
@@ -309,12 +309,7 @@ func peerRecordToAddresses(record *protocol.PeerRecord, allowLocal bool) (addres
 				continue
 			}
 
-			port := address.Port
-			if address.PortReportedExternal > 0 { // Use the external port if available
-				port = address.PortReportedExternal
-			}
-
-			addresses = append(addresses, &peerAddress{IP: address.IP, Port: port, PortInternal: address.PortReportedInternal})
+			addresses = append(addresses, &peerAddress{IP: address.IP, Port: address.Port, PortInternal: address.PortReportedInternal, PortExternal: address.PortReportedExternal})
 		}
 	}
 

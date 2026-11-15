@@ -64,10 +64,14 @@ func TestTraverseAddresses(t *testing.T) {
 		}
 	}
 
-	// The external port is used if reported.
+	// The observed port and the reported external port are both returned.
 	msg := &protocol.MessageTraverse{IPv4: net.ParseIP("203.0.113.7").To4(), PortIPv4: 1001, PortIPv4ReportedExternal: 2001, IPv6: net.ParseIP("2001:db8::7"), PortIPv6: 1002}
-	if addresses := traverseAddresses(msg, false); len(addresses) != 2 || addresses[0].Port != 2001 || addresses[1].Port != 1002 {
+	if addresses := traverseAddresses(msg, false); len(addresses) != 2 || addresses[0].Port != 1001 || addresses[0].PortExternal != 2001 || addresses[1].Port != 1002 || addresses[1].PortExternal != 0 {
 		t.Errorf("external port: unexpected addresses %v", addresses)
+	}
+	msg = &protocol.MessageTraverse{IPv4: net.ParseIP("203.0.113.7").To4(), PortIPv4: 1001, IPv6: net.ParseIP("2001:db8::7"), PortIPv6: 1002, PortIPv6ReportedExternal: 2002}
+	if addresses := traverseAddresses(msg, false); len(addresses) != 2 || addresses[0].Port != 1001 || addresses[0].PortExternal != 0 || addresses[1].Port != 1002 || addresses[1].PortExternal != 2002 {
+		t.Errorf("external port IPv6: unexpected addresses %v", addresses)
 	}
 }
 

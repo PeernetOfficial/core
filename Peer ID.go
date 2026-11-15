@@ -105,8 +105,9 @@ type PeerInfo struct {
 
 type peerAddress struct {
 	IP           net.IP
-	Port         uint16
-	PortInternal uint16
+	Port         uint16 // Port observed by the peer that reported the address.
+	PortInternal uint16 // Internal port as reported by the remote peer. 0 if not known.
+	PortExternal uint16 // External port as reported by the remote peer. 0 if not known.
 }
 
 // PeerlistAdd adds a new peer to the peer list. It does not validate the peer info. If the peer is already added, it does nothing. Connections must be live.

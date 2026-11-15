@@ -83,18 +83,10 @@ func (peer *PeerInfo) cmdTraverseForward(msg *protocol.MessageTraverse, connecti
 // A local address is only returned if allowLocal is set, which is the case if the message was received via a local connection. A link-local or loopback address is not returned.
 func traverseAddresses(msg *protocol.MessageTraverse, allowLocal bool) (addresses []*peerAddress) {
 	if isReportedAddressUsable(msg.IPv4, allowLocal) {
-		port := msg.PortIPv4
-		if msg.PortIPv4ReportedExternal > 0 {
-			port = msg.PortIPv4ReportedExternal
-		}
-		addresses = append(addresses, &peerAddress{IP: msg.IPv4, Port: port, PortInternal: 0})
+		addresses = append(addresses, &peerAddress{IP: msg.IPv4, Port: msg.PortIPv4, PortInternal: 0, PortExternal: msg.PortIPv4ReportedExternal})
 	}
 	if isReportedAddressUsable(msg.IPv6, allowLocal) {
-		port := msg.PortIPv6
-		if msg.PortIPv6ReportedExternal > 0 {
-			port = msg.PortIPv6ReportedExternal
-		}
-		addresses = append(addresses, &peerAddress{IP: msg.IPv6, Port: port, PortInternal: 0})
+		addresses = append(addresses, &peerAddress{IP: msg.IPv6, Port: msg.PortIPv6, PortInternal: 0, PortExternal: msg.PortIPv6ReportedExternal})
 	}
 
 	return addresses

@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"net"
@@ -300,7 +301,7 @@ func TestSendTraverseFirstContact(t *testing.T) {
 			portInternal = defaultPort // the socket listens on a port assigned by the system, which is never this one
 		}
 
-		backend.contactArbitraryPeer(targetPublicKey, addressTarget, portInternal, test.reporting)
+		backend.contactArbitraryPeer(targetPublicKey, &peerAddress{IP: addressTarget.IP, Port: uint16(addressTarget.Port), PortInternal: portInternal}, test.reporting)
 
 		traverse.check(t, test.name, test.expectedCount, reporting, targetPublicKey)
 		testExpectAnnouncement(t, test.name, backend, socketTarget, targetPublicKey)
@@ -359,4 +360,122 @@ func TestSendTraverseKnownPeer(t *testing.T) {
 
 	traverse.check(t, "peer in the peer list", 0, nil, targetPublicKey)
 	testExpectAnnouncement(t, "peer in the peer list", backend, socketTarget, targetPublicKey)
+}
+
+// testReadPacket returns the next packet of the backend that arrives at the socket of the peer with the public key within the timeout, nil if there is none.
+func testReadPacket(t *testing.T, name string, backend *Backend, socket *net.UDPConn, publicKey ed25519.PublicKey, timeout time.Duration) (packet *protocol.PacketRaw) {
+	buffer := make([]byte, maxPacketSize)
+	socket.SetReadDeadline(time.Now().Add(timeout))
+	length, _, err := socket.ReadFromUDP(buffer)
+	if err != nil {
+		return nil
+	}
+
+	packet, sender, err := protocol.PacketDecrypt(buffer[:length], publicKey)
+	if err != nil || !sender.Equal(backend.peerPublicKey) {
+		t.Fatalf("%s: received packet is not one of this peer: %v", name, err)
+	}
+
+	return packet
+}
+
+// TestSendExternalPort checks a packet to a peer that is not in the peer list and that reported an external port.
+// If the external port differs from the observed one, the packet is sent to both ports with the same sequence. Otherwise it is sent to the observed port only.
+// The count of Traverse messages is the same in all cases: one for an Announcement to a peer that was reported by another peer.
+// Two sockets on the loopback address are the observed and the external port of the peer.
+func TestSendExternalPort(t *testing.T) {
+	backend, network := testBackendLoopback(t)
+	testRootPeers(t)
+	traverse := testWatchTraverse(backend)
+
+	// The reporting peer is in the peer list.
+	reportingPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	_, addressReporting := testSocket(t)
+	reporting, _ := backend.PeerlistAdd(reportingPublicKey, &Connection{backend: backend, Network: network, Address: addressReporting, PortInternal: uint16(addressReporting.Port)})
+
+	const (
+		externalNone = iota
+		externalEqual
+		externalDiffers
+	)
+
+	ports := []struct {
+		name     string
+		external int
+	}{
+		{"no external port", externalNone},
+		{"external port equals the observed port", externalEqual},
+		{"external port differs from the observed port", externalDiffers},
+	}
+
+	// send sends the packet to the peer and returns the expected command, sequence if known before sending, and count of Traverse messages.
+	paths := []struct {
+		name string
+		send func(publicKey ed25519.PublicKey, address *peerAddress) (command uint8, sequence uint32, traverseCount int)
+	}{
+		{"bootstrap", func(publicKey ed25519.PublicKey, address *peerAddress) (uint8, uint32, int) {
+			backend.contactArbitraryPeer(publicKey, address, reporting)
+			return protocol.CommandAnnouncement, 0, 1
+		}},
+		{"virtual peer of a peer record", func(publicKey ed25519.PublicKey, address *peerAddress) (uint8, uint32, int) {
+			virtual := &PeerInfo{Backend: backend, PublicKey: publicKey, isVirtual: true, targetAddresses: []*peerAddress{address}, traversePeer: reporting}
+			virtual.sendAnnouncement(true, &protocol.Requests{FindPeer: [][]byte{publicKey}}, nil)
+			return protocol.CommandAnnouncement, 0, 1
+		}},
+		{"answer to a received Traverse message", func(publicKey ed25519.PublicKey, address *peerAddress) (uint8, uint32, int) {
+			virtual := &PeerInfo{Backend: backend, PublicKey: publicKey, isVirtual: true, targetAddresses: []*peerAddress{address}}
+			virtual.sendResponse(12345, true, nil, nil)
+			return protocol.CommandResponse, 12345, 0
+		}},
+	}
+
+	for _, path := range paths {
+		for _, port := range ports {
+			name := path.name + ", " + port.name
+			targetPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+			socketObserved, addressObserved := testSocket(t)
+			socketExternal, addressExternal := testSocket(t)
+
+			address := &peerAddress{IP: addressObserved.IP, Port: uint16(addressObserved.Port), PortInternal: uint16(addressObserved.Port)}
+			switch port.external {
+			case externalEqual:
+				address.PortExternal = uint16(addressObserved.Port)
+			case externalDiffers:
+				address.PortExternal = uint16(addressExternal.Port)
+			}
+
+			command, sequence, traverseCount := path.send(targetPublicKey, address)
+
+			traverse.check(t, name, traverseCount, reporting, targetPublicKey)
+
+			// Exactly one packet arrives at the observed port.
+			packetObserved := testReadPacket(t, name, backend, socketObserved, targetPublicKey, 2*time.Second)
+			if packetObserved == nil {
+				t.Errorf("%s: no packet received at the observed port", name)
+				continue
+			} else if packetObserved.Command != command || sequence != 0 && packetObserved.Sequence != sequence {
+				t.Errorf("%s: packet at the observed port has command %d sequence %d", name, packetObserved.Command, packetObserved.Sequence)
+			}
+			if testReadPacket(t, name, backend, socketObserved, targetPublicKey, 100*time.Millisecond) != nil {
+				t.Errorf("%s: more than one packet received at the observed port", name)
+			}
+
+			// The same packet arrives at the external port if it differs from the observed one.
+			packetExternal := testReadPacket(t, name, backend, socketExternal, targetPublicKey, 100*time.Millisecond)
+			if port.external != externalDiffers {
+				if packetExternal != nil {
+					t.Errorf("%s: packet received at a port that was not reported", name)
+				}
+				continue
+			}
+			if packetExternal == nil {
+				t.Errorf("%s: no packet received at the external port", name)
+			} else if packetExternal.Command != command || packetExternal.Sequence != packetObserved.Sequence || !bytes.Equal(packetExternal.Payload, packetObserved.Payload) {
+				t.Errorf("%s: packet at the external port has command %d sequence %d, expected the packet of the observed port with sequence %d", name, packetExternal.Command, packetExternal.Sequence, packetObserved.Sequence)
+			}
+			if testReadPacket(t, name, backend, socketExternal, targetPublicKey, 100*time.Millisecond) != nil {
+				t.Errorf("%s: more than one packet received at the external port", name)
+			}
+		}
+	}
 }

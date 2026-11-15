@@ -80,9 +80,9 @@ func TestPeerRecordToAddresses(t *testing.T) {
 		}
 	}
 
-	// The external port is used if reported.
+	// The observed port and the reported external port are both returned.
 	record := &protocol.PeerRecord{IPv4: []protocol.PeerRecordAddress{{IP: net.ParseIP("203.0.113.7"), Port: 1001, PortReportedInternal: 112, PortReportedExternal: 2001}, {IP: net.ParseIP("203.0.113.8"), Port: 1002, PortReportedInternal: 112}}}
-	if addresses := peerRecordToAddresses(record, false); len(addresses) != 2 || addresses[0].Port != 2001 || addresses[0].PortInternal != 112 || addresses[1].Port != 1002 || addresses[1].PortInternal != 112 {
+	if addresses := peerRecordToAddresses(record, false); len(addresses) != 2 || addresses[0].Port != 1001 || addresses[0].PortInternal != 112 || addresses[0].PortExternal != 2001 || addresses[1].Port != 1002 || addresses[1].PortInternal != 112 || addresses[1].PortExternal != 0 {
 		t.Errorf("external port: unexpected addresses %v", addresses)
 	}
 }

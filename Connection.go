@@ -415,7 +415,7 @@ func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey ed25519.
 func (peer *PeerInfo) send(packet *protocol.PacketRaw) (err error) {
 	if peer.isVirtual { // special case for peers that were not contacted before
 		for _, address := range peer.targetAddresses {
-			peer.Backend.networks.sendAllNetworks(peer.PublicKey, packet, &net.UDPAddr{IP: address.IP, Port: int(address.Port)}, address.PortInternal, peer.traversePeer, nil)
+			peer.Backend.networks.sendAllNetworks(peer.PublicKey, packet, address, peer.traversePeer, nil)
 		}
 		return
 	}
@@ -483,11 +483,14 @@ func (peer *PeerInfo) sendConnectionLocal(packet *protocol.PacketRaw, connection
 	return err
 }
 
-// sendAllNetworks sends a raw packet via all networks. It assigns a new sequence for each sent packet.
-// receiverPortInternal is the internal port reported for the remote peer. traversePeer is the peer that reported the remote peer, if any.
-func (nets *Networks) sendAllNetworks(receiverPublicKey ed25519.PublicKey, packet *protocol.PacketRaw, remote *net.UDPAddr, receiverPortInternal uint16, traversePeer *PeerInfo, sequenceData interface{}) (err error) {
+// sendAllNetworks sends a raw packet via all networks. It assigns a new sequence for each network.
+// If the remote peer reported an external port that differs from the observed one, the packet is sent to both ports of the address, with the same sequence.
+// address is the address reported for the remote peer. traversePeer is the peer that reported the remote peer, if any.
+func (nets *Networks) sendAllNetworks(receiverPublicKey ed25519.PublicKey, packet *protocol.PacketRaw, address *peerAddress, traversePeer *PeerInfo, sequenceData interface{}) (err error) {
 	nets.RLock()
 	defer nets.RUnlock()
+
+	remote := &net.UDPAddr{IP: address.IP, Port: int(address.Port)}
 
 	networksTarget := nets.networks4
 	if IsIPv6(remote.IP.To16()) {
@@ -506,11 +509,20 @@ func (nets *Networks) sendAllNetworks(receiverPublicKey ed25519.PublicKey, packe
 		if sequenceData != nil {
 			packet.Sequence = nets.Sequences.ArbitrarySequence(receiverPublicKey, sequenceData).SequenceNumber
 		}
-		err = (&Connection{backend: nets.backend, Network: network, Address: remote, PortInternal: receiverPortInternal, traversePeer: traversePeer}).send(packet, receiverPublicKey, isFirstPacket)
+		err = (&Connection{backend: nets.backend, Network: network, Address: remote, PortInternal: address.PortInternal, PortExternal: address.PortExternal, traversePeer: traversePeer}).send(packet, receiverPublicKey, isFirstPacket)
 		isFirstPacket = false
 
 		if err == nil {
 			successCount++
+		}
+
+		if address.PortExternal > 0 && address.PortExternal != address.Port {
+			remoteExternal := &net.UDPAddr{IP: address.IP, Port: int(address.PortExternal)}
+			err = (&Connection{backend: nets.backend, Network: network, Address: remoteExternal, PortInternal: address.PortInternal, PortExternal: address.PortExternal}).send(packet, receiverPublicKey, false)
+
+			if err == nil {
+				successCount++
+			}
 		}
 	}
 
