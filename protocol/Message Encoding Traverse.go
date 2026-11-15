@@ -14,7 +14,7 @@ Offset  Size   Info
 58      2      IPv6 external port as reported by the original sender
 60      ?      Embedded packet. Its size follows from the size of the payload.
 
-The embedded packet has the packet structure without the nonce and without the randomized garbage, see PacketEncryptEmbedded.
+The embedded packet has the packet structure without the randomized garbage, see PacketEncryptEmbedded.
 */
 
 package protocol
@@ -50,7 +50,7 @@ func DecodeTraverse(msg *MessageRaw) (result *MessageTraverse, err error) {
 		MessageRaw: msg,
 	}
 
-	if len(msg.Payload) < traversePayloadHeaderSize+PacketLengthMinEmbedded {
+	if len(msg.Payload) < traversePayloadHeaderSize+PacketLengthMin {
 		return nil, errors.New("traverse: invalid minimum length")
 	}
 
