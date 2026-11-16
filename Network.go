@@ -158,6 +158,18 @@ func (nets *Networks) packetWorker() {
 			continue
 		}
 
+		// Via broadcast and multicast only the Local Discovery message is accepted, and it is accepted only via these.
+		// Its signature is verified against the sender's public key of the packet and removed from the payload.
+		if decoded.Command == protocol.CommandLocalDiscovery {
+			if packet.unicast {
+				continue
+			} else if decoded.Payload, err = protocol.LocalDiscoveryVerify(decoded.Payload, senderPublicKey, packet.receiverPublicKey); err != nil {
+				continue
+			}
+		} else if !packet.unicast {
+			continue
+		}
+
 		connection := &Connection{backend: nets.backend, Network: packet.network, Address: packet.sender, Status: ConnectionActive}
 
 		nets.backend.Filters.PacketIn(decoded, senderPublicKey, connection)
