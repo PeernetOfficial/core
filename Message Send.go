@@ -9,6 +9,7 @@ package core
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"errors"
 	"time"
 
 	"github.com/PeernetOfficial/core/protocol"
@@ -114,6 +115,74 @@ func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd ed255
 	peer.Backend.Filters.MessageOutTraverse(peer, raw, packet, receiverEnd)
 
 	return peer.send(raw)
+}
+
+// sendRelay sends a packet to the end receiver in a relay message via the peer, which is the relay. The packet must be an Announcement or a Response.
+// The embedded packet is encrypted for the end receiver, with the Peer ID of the relay followed by the command number of the Relay message as additional authenticated data.
+func (peer *PeerInfo) sendRelay(packet *protocol.PacketRaw, receiverEnd ed25519.PublicKey) (err error) {
+	switch packet.Command {
+	case protocol.CommandAnnouncement:
+		if packet, err = relayAnnouncement(packet); err != nil {
+			return err
+		}
+	case protocol.CommandResponse:
+	default:
+		return errors.New("relay: packet is not an Announcement or a Response")
+	}
+
+	packet.Protocol = protocol.ProtocolVersion
+
+	embeddedPacketRaw, err := protocol.PacketEncryptRelay(peer.Backend.peerKeyPair, receiverEnd, peer.PublicKey, packet)
+	if err != nil {
+		return err
+	}
+
+	packetRaw, err := protocol.EncodeRelay(embeddedPacketRaw, receiverEnd)
+	if err != nil {
+		return err
+	}
+
+	return peer.send(&protocol.PacketRaw{Command: protocol.CommandRelay, Payload: packetRaw})
+}
+
+// relayTimeout is the time to wait for a Response to an Announcement that was sent directly and in a Traverse message, before it is sent in a Relay message.
+const relayTimeout = 2 * time.Second
+
+// sendRelayNoResponse sends the Announcement to the end receiver in a relay message via the peer, if the end receiver does not respond within relayTimeout.
+// packet is the Announcement that was sent to the end receiver directly and in a Traverse message. The peer is the one that reported the end receiver.
+// The end receiver responded if it is in the peer list, which the sender of every received packet is added to.
+// The Announcement in the relay message has the same sequence: a Response that arrives directly and via the relay is processed once.
+func (peer *PeerInfo) sendRelayNoResponse(packet *protocol.PacketRaw, receiverEnd ed25519.PublicKey) {
+	time.AfterFunc(relayTimeout, func() {
+		if peer.Backend.PeerlistLookup(receiverEnd) == nil {
+			peer.sendRelay(packet, receiverEnd)
+		}
+	})
+}
+
+// relayAnnouncement returns the Announcement as it is sent in a relay message. An Announcement in a relay message carries no B_FIND_FILE_EMBED request:
+// such requests are sent as B_FIND_FILE. An Announcement without them is returned as is.
+func relayAnnouncement(packet *protocol.PacketRaw) (relayed *protocol.PacketRaw, err error) {
+	announce, err := protocol.DecodeAnnouncement(&protocol.MessageRaw{PacketRaw: *packet})
+	if err != nil {
+		return nil, err
+	} else if len(announce.FindFileEmbed) == 0 {
+		return packet, nil
+	}
+
+	requests := announce.Requests
+	requests.FindFile = append(requests.FindFile, requests.FindFileEmbed...)
+	requests.FindFileEmbed = nil
+
+	payloads := protocol.EncodeAnnouncement(announce.UserAgent != "", &requests, announce.Features, announce.BlockchainHeight, announce.BlockchainVersion, announce.UserAgent)
+	if len(payloads) != 1 {
+		return nil, errors.New("relay: announcement does not fit into one message")
+	}
+
+	relayed = &protocol.PacketRaw{Protocol: packet.Protocol, Command: packet.Command, Sequence: packet.Sequence, Payload: payloads[0]}
+	relayed.SetSelfReportedPorts(announce.PortInternal, announce.PortExternal)
+
+	return relayed, nil
 }
 
 // sendTransfer sends a transfer message

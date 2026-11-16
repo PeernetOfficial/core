@@ -414,8 +414,17 @@ func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey ed25519.
 // send sends a raw packet to the peer. Only uses active connections.
 func (peer *PeerInfo) send(packet *protocol.PacketRaw) (err error) {
 	if peer.isVirtual { // special case for peers that were not contacted before
+		if peer.relayPeer != nil {
+			return peer.relayPeer.sendRelay(packet, peer.PublicKey)
+		}
+
 		for _, address := range peer.targetAddresses {
 			peer.Backend.networks.sendAllNetworks(peer.PublicKey, packet, address, peer.traversePeer, nil)
+		}
+
+		// An Announcement to a peer that was reported by another peer is sent in a Relay message via that peer if no Response arrives.
+		if packet.Command == protocol.CommandAnnouncement && peer.traversePeer != nil {
+			peer.traversePeer.sendRelayNoResponse(packet, peer.PublicKey)
 		}
 		return
 	}

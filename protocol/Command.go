@@ -15,6 +15,7 @@ const (
 	CommandPong           = 3 // Response to ping (no payload).
 	CommandLocalDiscovery = 4 // Local discovery
 	CommandTraverse       = 5 // Help establish the initial connection between 2 remote peers
+	CommandRelay          = 6 // Relay Announcement and Response messages between 2 peers that cannot establish a direct connection
 
 	// Blockchain
 	CommandGetBlock = 7 // Request blocks for specified peer.

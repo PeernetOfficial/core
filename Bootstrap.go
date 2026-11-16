@@ -208,13 +208,14 @@ func (nets *Networks) autoMulticastBroadcast() {
 
 // contactArbitraryPeer contacts a new arbitrary peer for the first time.
 // traversePeer is the peer that reported the new peer. The announcement is additionally sent as Traverse message via that peer, except if the new peer is a root peer. It may be nil.
-func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, address *peerAddress, traversePeer *PeerInfo) (contacted bool) {
+// It returns the announcement as it was sent, nil if none was sent.
+func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, address *peerAddress, traversePeer *PeerInfo) (announcement *protocol.PacketRaw) {
 	findSelf := ShouldSendFindSelf()
 	_, blockchainHeight, blockchainVersion := backend.UserBlockchain.Header()
 	requests := &protocol.Requests{FindSelf: findSelf}
 	packets := protocol.EncodeAnnouncement(true, requests, backend.FeatureSupport(), blockchainHeight, blockchainVersion, backend.userAgent)
 	if len(packets) == 0 {
-		return false
+		return nil
 	}
 	raw := &protocol.PacketRaw{Command: protocol.CommandAnnouncement, Payload: packets[0]}
 
@@ -222,7 +223,7 @@ func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, addres
 
 	backend.networks.sendAllNetworks(publicKey, raw, address, traversePeer, &bootstrapFindSelf{})
 
-	return true
+	return raw
 }
 
 // bootstrapFindSelf is a dummy structure assigned to sequences when sending the Announcement message.
@@ -256,6 +257,8 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 			continue
 		}
 
+		var announcement *protocol.PacketRaw
+
 		for _, address := range peerRecordToAddresses(&closePeer, allowLocal) {
 			// Check if the specific IP:Port was already contacted in the last 5-10 minutes.
 			if recent.IsAddressContacted(address) {
@@ -263,8 +266,15 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 			}
 
 			// Initiate contact. Once a response comes back, the peer will be actually added to the peer list.
-			// The Announcement is additionally sent as Traverse message via the peer that reported the contact.
-			peer.Backend.contactArbitraryPeer(closePeer.PublicKey, address, peer)
+			// The Announcement is additionally sent as Traverse message via the peer that reported the contact, see reportingPeer.
+			if sent := peer.Backend.contactArbitraryPeer(closePeer.PublicKey, address, peer.reportingPeer()); sent != nil {
+				announcement = sent
+			}
+		}
+
+		// The Announcement is sent in a Relay message via the peer that reported the contact if no Response arrives.
+		if reporting := peer.reportingPeer(); announcement != nil && reporting != nil {
+			reporting.sendRelayNoResponse(announcement, closePeer.PublicKey)
 		}
 	}
 }

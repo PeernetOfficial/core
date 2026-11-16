@@ -48,7 +48,7 @@ type Filters struct {
 	// IPv4 broadcast, IPv6 multicast, and Traverse messages are not covered.
 	PacketOut func(packet *protocol.PacketRaw, receiverPublicKey ed25519.PublicKey, connection *Connection)
 
-	// MessageIn is a high-level filter for decoded incoming messages. message is of type nil, MessageAnnouncement, MessageResponse, or MessageTraverse
+	// MessageIn is a high-level filter for decoded incoming messages. message is of type nil, MessageAnnouncement, MessageResponse, MessageTraverse, or MessageRelay
 	MessageIn func(peer *PeerInfo, raw *protocol.MessageRaw, message interface{})
 
 	// MessageOutAnnouncement is a high-level filter for outgoing announcements. Peer is nil on first contact.
