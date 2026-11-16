@@ -23,7 +23,7 @@ The packet key is derived from a key agreement between the sender and the receiv
 The Ed25519 keys are converted to X25519 keys. The shared secret is the X25519 function of the own private key and the public key of the other peer.
 The packet key is the blake3 hash of the shared secret followed by the sender's public key and the receiver's public key. The two directions between two peers use different packet keys.
 
-A packet embedded in a Traverse message has the same structure without the randomized garbage. Its additional authenticated data is the Peer ID of the relaying peer.
+A packet embedded in a Traverse message has the same structure without the randomized garbage. Its additional authenticated data is the Peer ID of the relaying peer followed by the command number of the Traverse message (1 byte).
 It is therefore valid only inside a Traverse message sent by that relay, and not as a packet sent directly.
 */
 
@@ -193,14 +193,22 @@ func PacketDecrypt(raw []byte, receiver *KeyPair, keys *PacketKeys) (packet *Pac
 	return packet, senderPublicKey, err
 }
 
+// embeddedAdditionalData returns the additional authenticated data of an embedded packet:
+// the Peer ID of the relaying peer followed by the command number of the message the packet is embedded in (1 byte).
+func embeddedAdditionalData(relayPublicKey ed25519.PublicKey, command uint8) (additionalData []byte) {
+	additionalData = make([]byte, 0, ed25519.PublicKeySize+1)
+	additionalData = append(additionalData, relayPublicKey...)
+	return append(additionalData, command)
+}
+
 // PacketDecryptEmbedded decrypts a packet embedded in a Traverse message, verifies its authentication tag and returns a high-level version of the packet.
-// The additional authenticated data is the Peer ID of the relaying peer, which is the peer that sent the Traverse message.
+// The additional authenticated data is the Peer ID of the relaying peer, which is the peer that sent the Traverse message, followed by the command number of the Traverse message.
 func PacketDecryptEmbedded(raw []byte, receiver *KeyPair, relayPublicKey ed25519.PublicKey) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, err error) {
 	if len(relayPublicKey) != ed25519.PublicKeySize {
 		return nil, nil, errors.New("embedded packet: invalid relay peer ID")
 	}
 
-	packet, senderPublicKey, sizeGarbage, err := packetDecrypt(raw, receiver, relayPublicKey, nil)
+	packet, senderPublicKey, sizeGarbage, err := packetDecrypt(raw, receiver, embeddedAdditionalData(relayPublicKey, CommandTraverse), nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -297,7 +305,7 @@ func PacketEncrypt(sender *KeyPair, receiverPublicKey ed25519.PublicKey, packet 
 }
 
 // PacketEncryptEmbedded encrypts a packet to be embedded in a Traverse message. It has its own nonce and no randomized garbage.
-// The additional authenticated data is the Peer ID of the relaying peer, which is the peer the Traverse message is sent to.
+// The additional authenticated data is the Peer ID of the relaying peer, which is the peer the Traverse message is sent to, followed by the command number of the Traverse message.
 func PacketEncryptEmbedded(sender *KeyPair, receiverPublicKey, relayPublicKey ed25519.PublicKey, packet *PacketRaw) (raw []byte, err error) {
 	if len(relayPublicKey) != ed25519.PublicKeySize {
 		return nil, errors.New("embedded packet: invalid relay peer ID")
@@ -308,7 +316,7 @@ func PacketEncryptEmbedded(sender *KeyPair, receiverPublicKey, relayPublicKey ed
 		return nil, err
 	}
 
-	return packetEncrypt(sender, receiverPublicKey, nonce, relayPublicKey, packet, nil, nil)
+	return packetEncrypt(sender, receiverPublicKey, nonce, embeddedAdditionalData(relayPublicKey, CommandTraverse), packet, nil, nil)
 }
 
 // packetEncrypt encrypts and authenticates a packet. additionalData is empty for a direct packet.
