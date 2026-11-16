@@ -97,6 +97,7 @@ type PeerInfo struct {
 	isVirtual             bool             // Whether it is a virtual peer for establishing a connection.
 	targetAddresses       []*peerAddress   // Virtual peer: Addresses to send any replies.
 	traversePeer          *PeerInfo        // Virtual peer: Same field as in connection.
+	relayPeer             *PeerInfo        // Virtual peer: The peer that relays packets to and from this peer. Packets to this peer are sent in Relay messages via it.
 	BlockchainHeight      uint64           // Blockchain height
 	BlockchainVersion     uint64           // Blockchain version
 	blockchainLastRefresh time.Time        // Last refresh of the blockchain info.
@@ -222,19 +223,29 @@ func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord, allowLo
 			continue
 		} else if peer = peerSource.Backend.PeerlistLookup(record.PublicKey); peer == nil {
 			// Create temporary peer which is not added to the global list and not added to Kademlia.
-			// traversePeer is set to the peer who provided the node information.
+			// traversePeer is set to the peer who provided the node information, see reportingPeer.
 			addresses := peerRecordToAddresses(&record, allowLocal)
 			if len(addresses) == 0 {
 				continue
 			}
 
-			peer = &PeerInfo{Backend: peerSource.Backend, PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, messageSequence: mathrand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource, Features: record.Features}
+			peer = &PeerInfo{Backend: peerSource.Backend, PublicKey: record.PublicKey, connectionActive: nil, connectionLatest: nil, messageSequence: mathrand.Uint32(), isVirtual: true, targetAddresses: addresses, traversePeer: peerSource.reportingPeer(), Features: record.Features}
 		}
 
 		nodes = append(nodes, &dht.Node{ID: peer.PublicKey, LastSeen: time.Now(), Info: peer})
 	}
 
 	return
+}
+
+// reportingPeer returns the peer as the one that forwards Traverse messages to the peers it reported.
+// It is nil if the peer is reached via a relay: only Announcement and Response messages are sent via a relay.
+func (peer *PeerInfo) reportingPeer() *PeerInfo {
+	if peer.relayPeer != nil {
+		return nil
+	}
+
+	return peer
 }
 
 // selfPeerRecord returns self as storing peer record. It carries no address: the receiver reaches this peer via the connection the response comes from.

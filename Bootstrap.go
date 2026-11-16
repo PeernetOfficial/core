@@ -263,8 +263,8 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 			}
 
 			// Initiate contact. Once a response comes back, the peer will be actually added to the peer list.
-			// The Announcement is additionally sent as Traverse message via the peer that reported the contact.
-			peer.Backend.contactArbitraryPeer(closePeer.PublicKey, address, peer)
+			// The Announcement is additionally sent as Traverse message via the peer that reported the contact, see reportingPeer.
+			peer.Backend.contactArbitraryPeer(closePeer.PublicKey, address, peer.reportingPeer())
 		}
 	}
 }

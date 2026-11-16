@@ -37,7 +37,7 @@ const respondPeerRecordsSizeTarget = 380
 // announcementMaxKeys is the maximum number of keys answered per announcement across A_FIND_PEER, B_FIND_BLOCKCHAIN and B_FIND_FILE. Keys beyond that are declined (no response record).
 const announcementMaxKeys = 20
 
-// cmdAnouncement handles an incoming announcement. Connection may be nil for traverse relayed messages.
+// cmdAnouncement handles an incoming announcement. Connection is nil for an announcement that was embedded in a Traverse or Relay message.
 func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connection *Connection) {
 	// Filter function to only share peers that are "connectable" to the remote one. It checks IPv4, IPv6, and local connection.
 	filterFunc := func(allowLocal, allowIPv4, allowIPv6 bool) dht.NodeFilterFunc {
@@ -192,13 +192,13 @@ func limitPeerRecordsSize(records []protocol.PeerRecord, sizeMax int) {
 	}
 }
 
-// cmdResponse handles the response to the announcement
+// cmdResponse handles the response to the announcement. Connection is nil for a response that was embedded in a Relay message.
 func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Connection) {
 	// The sequence data is used to correlate this response with the announcement.
 	if msg.SequenceInfo == nil || msg.SequenceInfo.Data == nil {
 		// If there is no sequence data but there were results returned, it means we received unsolicited response data. It will be rejected.
 		if len(msg.Records) > 0 {
-			peer.Backend.LogError("cmdResponse", "unsolicited response data received from %s\n", connection.Address.String())
+			peer.Backend.LogError("cmdResponse", "unsolicited response data received from %s\n", hex.EncodeToString(peer.PublicKey))
 		}
 
 		return
@@ -209,7 +209,7 @@ func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Con
 		for _, record := range msg.Records {
 			// Make sure no garbage is returned. Only A_RESPONSE_SELF is expected.
 			if record.Type != protocol.ResponseASelf {
-				peer.Backend.LogError("cmdResponse", "incoming response to bootstrap A_FIND_SELF contains invalid data from %s\n", connection.Address.String())
+				peer.Backend.LogError("cmdResponse", "incoming response to bootstrap A_FIND_SELF contains invalid data from %s\n", hex.EncodeToString(peer.PublicKey))
 				return
 			}
 

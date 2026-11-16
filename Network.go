@@ -308,6 +308,12 @@ func (nets *Networks) packetWorker() {
 				}
 			}
 
+		case protocol.CommandRelay:
+			if relay, _ := protocol.DecodeRelay(raw); relay != nil {
+				nets.backend.Filters.MessageIn(peer, raw, relay)
+				peer.cmdRelay(relay)
+			}
+
 		case protocol.CommandTransfer:
 			if msg, _ := protocol.DecodeTransfer(raw); msg != nil {
 				// Validate sequence number which prevents unsolicited responses.
