@@ -96,7 +96,7 @@ func traverseAddresses(msg *protocol.MessageTraverse, allowLocal bool) (addresse
 func (peer *PeerInfo) cmdTraverseReceive(msg *protocol.MessageTraverse, connection *Connection) {
 	// ---- fork packetWorker to decode and validate embedded packet ---
 	// Due to missing connection and other embedded details in the message (such as ports), the packet is not just simply queued to rawPacketsIncoming.
-	// The sender of the embedded packet is the original sender. The embedded packet is encrypted for self, with the Peer ID of the relay that sent this message as additional authenticated data.
+	// The sender of the embedded packet is the original sender. The embedded packet is encrypted for self, with the Peer ID of the relay that sent this message followed by the command number of the Traverse message as additional authenticated data.
 	decoded, senderPublicKey, err := protocol.PacketDecryptEmbedded(msg.EmbeddedPacketRaw, peer.Backend.peerKeyPair, peer.PublicKey)
 	if err != nil {
 		return

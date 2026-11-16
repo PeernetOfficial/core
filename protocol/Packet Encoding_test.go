@@ -66,7 +66,7 @@ func TestPacketVector(t *testing.T) {
 	packet := &PacketRaw{Protocol: 0, Command: 1, Sequence: 0x01020304, Payload: []byte("Peernet")}
 
 	vectorDirect := fromHex(t, "000102030405060708090a0b973aaf461f9e9e39c748b95c1c9f40e79bf35d140d613746347134957ee92b34ee9cd13863e0a5fdb40c6b5e10a5c7017083798785b26c6d065bdb6d21d441")
-	vectorEmbedded := fromHex(t, "000102030405060708090a0b973aaf461f9e9e39c748b95c1c9f40e79bf35d140d613746347134957ee92b34ee9cd13863e0a5fdb40c6b5e10a5c72d5d1836dffe4c3306f66374bc987e77")
+	vectorEmbedded := fromHex(t, "000102030405060708090a0b973aaf461f9e9e39c748b95c1c9f40e79bf35d140d613746347134957ee92b34ee9cd13863e0a5fdb40c6b5e10a5c701453429f72b9ab6b167e058f5cd229a")
 
 	// keys
 	for _, test := range []struct {
@@ -125,7 +125,7 @@ func TestPacketVector(t *testing.T) {
 		t.Errorf("direct packet is\n%x, expected\n%x", direct, vectorDirect)
 	}
 
-	embedded, err := packetEncrypt(sender, receiver.PublicKey, nonce, relay.PublicKey, packet, nil, nil)
+	embedded, err := packetEncrypt(sender, receiver.PublicKey, nonce, embeddedAdditionalData(relay.PublicKey, CommandTraverse), packet, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	} else if !bytes.Equal(embedded, vectorEmbedded) {
@@ -531,15 +531,30 @@ func TestPacketEmbeddedInvalid(t *testing.T) {
 
 	// randomized garbage after the payload, authenticated by the sender for the relay
 	for sizeGarbage := 1; sizeGarbage < maxRandomGarbage; sizeGarbage++ {
-		withGarbage, err := packetEncrypt(sender, receiver.PublicKey, nonce, relay.PublicKey, packet, make([]byte, sizeGarbage), nil)
+		withGarbage, err := packetEncrypt(sender, receiver.PublicKey, nonce, embeddedAdditionalData(relay.PublicKey, CommandTraverse), packet, make([]byte, sizeGarbage), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, _, garbage, err := packetDecrypt(withGarbage, receiver, relay.PublicKey, nil); err != nil || garbage != sizeGarbage {
+		if _, _, garbage, err := packetDecrypt(withGarbage, receiver, embeddedAdditionalData(relay.PublicKey, CommandTraverse), nil); err != nil || garbage != sizeGarbage {
 			t.Fatalf("embedded packet with %d bytes garbage: %d bytes garbage, %v", sizeGarbage, garbage, err)
 		}
 		if _, _, err := PacketDecryptEmbedded(withGarbage, receiver, relay.PublicKey); err == nil || err.Error() != "embedded packet: invalid length" {
 			t.Fatalf("embedded packet with %d bytes garbage: %v, expected invalid length", sizeGarbage, err)
+		}
+	}
+
+	// The additional authenticated data includes the command number of the Traverse message: an embedded packet that is authenticated
+	// with the Peer ID of the relay alone, or with the Peer ID of the relay followed by another command number, is rejected by the authentication tag.
+	for _, additionalData := range [][]byte{relay.PublicKey, embeddedAdditionalData(relay.PublicKey, CommandTraverse+1)} {
+		invalid, err := packetEncrypt(sender, receiver.PublicKey, nonce, additionalData, packet, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, _, err := packetDecrypt(invalid, receiver, additionalData, nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := PacketDecryptEmbedded(invalid, receiver, relay.PublicKey); err == nil || err.Error() != "invalid authentication tag" {
+			t.Fatalf("embedded packet with %d bytes additional authenticated data: %v, expected invalid authentication tag", len(additionalData), err)
 		}
 	}
 
