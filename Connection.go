@@ -421,6 +421,11 @@ func (peer *PeerInfo) send(packet *protocol.PacketRaw) (err error) {
 		for _, address := range peer.targetAddresses {
 			peer.Backend.networks.sendAllNetworks(peer.PublicKey, packet, address, peer.traversePeer, nil)
 		}
+
+		// An Announcement to a peer that was reported by another peer is sent in a Relay message via that peer if no Response arrives.
+		if packet.Command == protocol.CommandAnnouncement && peer.traversePeer != nil {
+			peer.traversePeer.sendRelayNoResponse(packet, peer.PublicKey)
+		}
 		return
 	}
 	if len(peer.connectionActive) == 0 {

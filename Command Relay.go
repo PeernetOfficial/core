@@ -8,6 +8,7 @@ The message has the same form when sent to the relay and when sent by the relay.
 if the embedded packet is a valid packet from the peer named in the message to itself. Otherwise it is the relay.
 
 For now the 2 peers keep no state about each other: a peer that is reached via a relay is not added to the peer list and the routing table, and it is not pinged.
+Every Announcement to a reported peer is first sent directly and in a Traverse message, and in a Relay message if no Response arrives, see sendRelayNoResponse.
 */
 
 package core

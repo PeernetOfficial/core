@@ -11,6 +11,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -530,5 +531,140 @@ func TestRelayRoundTrip(t *testing.T) {
 	// A and B are not in the peer list of each other.
 	if backendA.PeerlistLookup(backendB.peerPublicKey) != nil || backendB.PeerlistLookup(backendA.peerPublicKey) != nil {
 		t.Error("A and B are in the peer list of each other")
+	}
+}
+
+// TestSendRelayNoResponse checks the Announcement to a peer that was reported by another peer: if the reported peer does not respond within relayTimeout,
+// the Announcement is sent in a Relay message via the reporting peer, once per Announcement and with the sequence of the Announcement that was sent directly.
+// It is not sent in a Relay message if the reported peer is in the peer list by then, or if no peer reported it.
+func TestSendRelayNoResponse(t *testing.T) {
+	backend, network := testBackendLoopback(t)
+	testRootPeers(t)
+
+	previous := recentContacts
+	recentContacts = make(map[[ed25519.PublicKeySize]byte]*recentContactInfo)
+	t.Cleanup(func() { recentContacts = previous })
+
+	// The Relay and Traverse messages are sent to the reporting peer. The Relay messages are sent by a timer.
+	var mutex sync.Mutex
+	relays := make(map[[ed25519.PublicKeySize]byte][]*protocol.MessageRelay) // by the peer named in the message
+	traverseCount := 0
+	backend.Filters.PacketOut = func(packet *protocol.PacketRaw, receiverPublicKey ed25519.PublicKey, connection *Connection) {
+		mutex.Lock()
+		defer mutex.Unlock()
+
+		switch packet.Command {
+		case protocol.CommandTraverse:
+			traverseCount++
+		case protocol.CommandRelay:
+			if msg, err := protocol.DecodeRelay(&protocol.MessageRaw{PacketRaw: *packet}); err == nil {
+				relays[publicKey2Array(msg.Peer)] = append(relays[publicKey2Array(msg.Peer)], msg)
+			}
+		}
+	}
+
+	reporting, _, _ := testPeerSocket(t, backend, network)
+
+	// newTarget returns a peer that listens on a socket on the loopback address and does not respond.
+	newTarget := func() (publicKey ed25519.PublicKey, privateKey ed25519.PrivateKey, socket *net.UDPConn, addresses []*peerAddress) {
+		publicKey, privateKey, _ = ed25519.GenerateKey(rand.Reader)
+		socket, address := testSocket(t)
+		return publicKey, privateKey, socket, []*peerAddress{{IP: address.IP, Port: uint16(address.Port), PortInternal: uint16(address.Port)}}
+	}
+
+	keyFile := protocol.HashData([]byte("file"))
+
+	// 1. A virtual peer of a peer record that does not respond.
+	silentPublicKey, silentPrivateKey, socketSilent, addresses := newTarget()
+	silent := &PeerInfo{Backend: backend, PublicKey: silentPublicKey, isVirtual: true, targetAddresses: addresses, traversePeer: reporting}
+	silent.sendAnnouncement(true, &protocol.Requests{FindFileEmbed: [][]byte{keyFile}}, &dht.InformationRequest{})
+
+	direct := testReadPacket(t, "no response", backend, socketSilent, silentPrivateKey, 2*time.Second)
+	if direct == nil || direct.Command != protocol.CommandAnnouncement {
+		t.Fatal("no response: no direct Announcement received")
+	}
+
+	// 2. A virtual peer of a peer record that is in the peer list before the timeout: a packet of it was received.
+	respondingPublicKey, _, _, addresses := newTarget()
+	responding := &PeerInfo{Backend: backend, PublicKey: respondingPublicKey, isVirtual: true, targetAddresses: addresses, traversePeer: reporting}
+	responding.sendAnnouncement(true, &protocol.Requests{FindSelf: true}, &dht.InformationRequest{})
+	backend.PeerlistAdd(respondingPublicKey, &Connection{backend: backend, Network: network, Address: &net.UDPAddr{IP: addresses[0].IP, Port: int(addresses[0].Port)}})
+
+	// 3. A virtual peer without reporting peer, as created for the sender of a received Traverse message.
+	unreportedPublicKey, _, _, addresses := newTarget()
+	unreported := &PeerInfo{Backend: backend, PublicKey: unreportedPublicKey, isVirtual: true, targetAddresses: addresses}
+	unreported.sendAnnouncement(true, &protocol.Requests{FindSelf: true}, &dht.InformationRequest{})
+
+	// 4. A peer with 2 addresses reported in the response to the bootstrap announcement. The addresses are private ones, received via a local connection.
+	bootstrapPublicKey, bootstrapPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+	record := protocol.PeerRecord{PublicKey: bootstrapPublicKey, Features: 1 << protocol.FeatureIPv4Listen, IPv4: testRecordAddresses(1001, "10.0.0.7", "10.0.0.8")}
+	reporting.cmdResponseBootstrapFindSelf(nil, []protocol.PeerRecord{record}, true)
+
+	mutex.Lock()
+	if len(relays) != 0 {
+		t.Errorf("%d peers named in Relay messages before the timeout, expected none", len(relays))
+	}
+	mutex.Unlock()
+
+	time.Sleep(relayTimeout + 500*time.Millisecond)
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	// embedded returns the Announcement embedded in the single Relay message that names the peer, as the peer decrypts it.
+	embedded := func(name string, publicKey ed25519.PublicKey, privateKey ed25519.PrivateKey) (decoded *protocol.PacketRaw, announce *protocol.MessageAnnouncement) {
+		sent := relays[publicKey2Array(publicKey)]
+		if len(sent) != 1 {
+			t.Fatalf("%s: %d Relay messages sent, expected 1", name, len(sent))
+		}
+		decoded, err := protocol.PacketDecryptRelay(sent[0].EmbeddedPacketRaw, testKeyPair(t, privateKey), backend.peerPublicKey, reporting.PublicKey, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if announce, err = protocol.DecodeAnnouncement(&protocol.MessageRaw{PacketRaw: *decoded}); err != nil || decoded.Command != protocol.CommandAnnouncement {
+			t.Fatalf("%s: embedded packet has command %d: %v", name, decoded.Command, err)
+		}
+		return decoded, announce
+	}
+
+	// 1. The Announcement that was sent directly, with B_FIND_FILE_EMBED sent as B_FIND_FILE.
+	decoded, announce := embedded("no response", silentPublicKey, silentPrivateKey)
+	directAnnounce, err := protocol.DecodeAnnouncement(&protocol.MessageRaw{PacketRaw: *direct})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Sequence != direct.Sequence {
+		t.Errorf("no response: sequence %d in the Relay message, %d sent directly", decoded.Sequence, direct.Sequence)
+	}
+	if len(directAnnounce.FindFileEmbed) != 1 || len(directAnnounce.FindFile) != 0 || len(announce.FindFileEmbed) != 0 || len(announce.FindFile) != 1 || !bytes.Equal(announce.FindFile[0], keyFile) {
+		t.Errorf("no response: requests sent directly %+v, in the Relay message %+v", directAnnounce.Requests, announce.Requests)
+	}
+	if announce.UserAgent != directAnnounce.UserAgent || announce.Features != directAnnounce.Features || announce.PortInternal != directAnnounce.PortInternal || announce.PortExternal != directAnnounce.PortExternal || announce.PortInternal == 0 {
+		t.Errorf("no response: header in the Relay message differs from the one sent directly: internal port %d and %d", announce.PortInternal, directAnnounce.PortInternal)
+	}
+
+	// 2. and 3.
+	if count := len(relays[publicKey2Array(respondingPublicKey)]); count != 0 {
+		t.Errorf("peer in the peer list: %d Relay messages sent, expected none", count)
+	}
+	if count := len(relays[publicKey2Array(unreportedPublicKey)]); count != 0 {
+		t.Errorf("no reporting peer: %d Relay messages sent, expected none", count)
+	}
+
+	// 4. One Relay message for the peer, with the sequence of a bootstrap announcement.
+	decoded, announce = embedded("bootstrap", bootstrapPublicKey, bootstrapPrivateKey)
+	if !announce.FindSelf {
+		t.Error("bootstrap: the Announcement in the Relay message carries no A_FIND_SELF")
+	}
+	sequenceInfo, valid, _ := backend.networks.Sequences.ValidateSequence(bootstrapPublicKey, decoded.Sequence, true, false)
+	if !valid {
+		t.Errorf("bootstrap: sequence %d of the Announcement in the Relay message is not registered", decoded.Sequence)
+	} else if _, ok := sequenceInfo.Data.(*bootstrapFindSelf); !ok {
+		t.Error("bootstrap: the sequence is not the one of a bootstrap announcement")
+	}
+
+	// A Traverse message accompanied the first Announcement of 1, 2 and 4, where the direct packet could be sent.
+	if traverseCount < 2 {
+		t.Errorf("%d Traverse messages sent, expected at least 2", traverseCount)
 	}
 }
