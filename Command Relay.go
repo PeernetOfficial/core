@@ -4,8 +4,7 @@ Copyright:  2026 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 
 A Relay message carries an Announcement or a Response between 2 peers that cannot establish a direct connection.
-The message has the same form when sent to the relay and when sent by the relay. A peer that receives one is the end receiver
-if the embedded packet is a valid packet from the peer named in the message to itself. Otherwise it is the relay.
+The relay sets the FORWARDED flag in the message it forwards. A peer that receives a Relay message with the flag is the end receiver. Otherwise it is the relay.
 
 For now the 2 peers keep no state about each other: a peer that is reached via a relay is not added to the peer list and the routing table, and it is not pinged.
 Every Announcement to a reported peer is first sent directly and in a Traverse message, and in a Relay message if no Response arrives, see sendRelayNoResponse.
@@ -14,7 +13,6 @@ Every Announcement to a reported peer is first sent directly and in a Traverse m
 package core
 
 import (
-	"crypto/ed25519"
 	"math/rand"
 
 	"github.com/PeernetOfficial/core/protocol"
@@ -26,10 +24,9 @@ func (peer *PeerInfo) cmdRelay(msg *protocol.MessageRelay) {
 		return
 	}
 
-	// This peer is the end receiver if the embedded packet is a valid packet from the peer named in the message to it. The sender of the message is then the relay.
-	// The additional authenticated data of the embedded packet is the Peer ID of the relay followed by the command number of the Relay message.
-	if decoded, err := protocol.PacketDecryptRelay(msg.EmbeddedPacketRaw, peer.Backend.peerKeyPair, msg.Peer, peer.PublicKey, peer.Backend.packetKeys(msg.Peer)); err == nil {
-		peer.cmdRelayReceive(msg.Peer, decoded)
+	// This peer is the end receiver if the FORWARDED flag is set. The sender of the message is then the relay.
+	if msg.Forwarded {
+		peer.cmdRelayReceive(msg)
 		return
 	}
 
@@ -37,14 +34,14 @@ func (peer *PeerInfo) cmdRelay(msg *protocol.MessageRelay) {
 }
 
 // cmdRelayForward forwards a relay message to the peer named in it, if that peer is in the peer list. peer is the original sender.
-// The Peer ID in the message is replaced with the one of the original sender. The embedded packet is forwarded unchanged; the relay (self) cannot read it.
+// The FORWARDED flag is set and the Peer ID in the message is replaced with the one of the original sender. The embedded packet is forwarded unchanged; the relay (self) cannot read it.
 func (peer *PeerInfo) cmdRelayForward(msg *protocol.MessageRelay) {
 	peerTarget := peer.Backend.PeerlistLookup(msg.Peer)
 	if peerTarget == nil {
 		return
 	}
 
-	payload, err := protocol.EncodeRelay(msg.EmbeddedPacketRaw, peer.PublicKey)
+	payload, err := protocol.EncodeRelay(msg.EmbeddedPacketRaw, peer.PublicKey, true)
 	if err != nil {
 		return
 	}
@@ -52,11 +49,17 @@ func (peer *PeerInfo) cmdRelayForward(msg *protocol.MessageRelay) {
 	peerTarget.send(&protocol.PacketRaw{Command: protocol.CommandRelay, Payload: payload})
 }
 
-// cmdRelayReceive handles the packet embedded in a relay message for this peer. peer is the relay that sent the message, senderPublicKey the original sender.
-// The embedded packet must be an Announcement or a Response. It is processed as if it were sent from the original sender directly.
+// cmdRelayReceive handles the packet embedded in a relay message for this peer. peer is the relay that sent the message, the peer named in the message the original sender.
+// The embedded packet is encrypted for self, with the Peer ID of the relay followed by the command number of the Relay message as additional authenticated data.
+// It must be an Announcement or a Response. It is processed as if it were sent from the original sender directly.
 // The original sender is a virtual peer that is reached via the relay: a Response to it is sent in a relay message to the relay, see sendRelay.
-func (peer *PeerInfo) cmdRelayReceive(senderPublicKey ed25519.PublicKey, decoded *protocol.PacketRaw) {
-	if decoded.Protocol != 0 {
+func (peer *PeerInfo) cmdRelayReceive(msg *protocol.MessageRelay) {
+	senderPublicKey := msg.Peer
+
+	decoded, err := protocol.PacketDecryptRelay(msg.EmbeddedPacketRaw, peer.Backend.peerKeyPair, senderPublicKey, peer.PublicKey, peer.Backend.packetKeys(senderPublicKey))
+	if err != nil {
+		return
+	} else if decoded.Protocol != 0 {
 		return
 	}
 

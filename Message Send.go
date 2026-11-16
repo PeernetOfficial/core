@@ -137,7 +137,7 @@ func (peer *PeerInfo) sendRelay(packet *protocol.PacketRaw, receiverEnd ed25519.
 		return err
 	}
 
-	packetRaw, err := protocol.EncodeRelay(embeddedPacketRaw, receiverEnd)
+	packetRaw, err := protocol.EncodeRelay(embeddedPacketRaw, receiverEnd, false)
 	if err != nil {
 		return err
 	}
