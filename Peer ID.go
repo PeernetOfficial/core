@@ -33,7 +33,9 @@ func (backend *Backend) initPeerID() {
 		if err == nil {
 			backend.peerPrivateKey = ed25519.NewKeyFromSeed(configPK)
 			backend.peerPublicKey = backend.peerPrivateKey.Public().(ed25519.PublicKey)
-
+			backend.peerKeyPair, err = protocol.NewKeyPair(backend.peerPrivateKey)
+		}
+		if err == nil {
 			if backend.Config.AutoUpdateSeedList {
 				backend.configUpdateSeedList()
 			}
@@ -47,6 +49,9 @@ func (backend *Backend) initPeerID() {
 	// if the peer ID is empty, create a new user public-private key pair
 	var err error
 	backend.peerPublicKey, backend.peerPrivateKey, err = NewPrivateKey()
+	if err == nil {
+		backend.peerKeyPair, err = protocol.NewKeyPair(backend.peerPrivateKey)
+	}
 	if err != nil {
 		backend.LogError("initPeerID", "generating public-private key pairs: %s\n", err.Error())
 		os.Exit(ExitPrivateKeyCreate)

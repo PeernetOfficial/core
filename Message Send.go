@@ -99,7 +99,7 @@ func (peer *PeerInfo) sendResponse(sequence uint32, sendUA bool, records []proto
 func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd ed25519.PublicKey) (err error) {
 	packet.Protocol = protocol.ProtocolVersion
 
-	embeddedPacketRaw, err := protocol.PacketEncryptEmbedded(peer.Backend.peerPrivateKey, receiverEnd, peer.PublicKey, packet)
+	embeddedPacketRaw, err := protocol.PacketEncryptEmbedded(peer.Backend.peerKeyPair, receiverEnd, peer.PublicKey, packet)
 	if err != nil {
 		return err
 	}

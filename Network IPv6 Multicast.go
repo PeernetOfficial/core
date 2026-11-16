@@ -1,6 +1,6 @@
 /*
 File Name:  Network IPv6 Multicast.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 
 IPv6 Multicast implementation to support discovery of peers within the same network (Site-local).
@@ -34,21 +34,23 @@ const ipv6MulticastGroup = "ff05::112"
 const ipv6MulticastPort = 12912
 
 // special Public-Private Key pair for local discovery
-var ipv6MulticastPrivateKey ed25519.PrivateKey
+var ipv6MulticastKeyPair *protocol.KeyPair
 var ipv6MulticastPublicKey ed25519.PublicKey
 
 const ipv6MulticastPrivateKeyH = "016ad30bfb369926523bf18d136298b6c31d0817e9fb6c21feed89ae22cad788"
 
 func initMulticastIPv6() {
 	if configPK, err := hex.DecodeString(ipv6MulticastPrivateKeyH); err == nil && len(configPK) == ed25519.SeedSize {
-		ipv6MulticastPrivateKey = ed25519.NewKeyFromSeed(configPK)
-		ipv6MulticastPublicKey = ipv6MulticastPrivateKey.Public().(ed25519.PublicKey)
+		if keyPair, err := protocol.NewKeyPair(ed25519.NewKeyFromSeed(configPK)); err == nil {
+			ipv6MulticastKeyPair = keyPair
+			ipv6MulticastPublicKey = keyPair.PublicKey
+		}
 	}
 }
 
 // MulticastIPv6Join joins the Multicast group
 func (network *Network) MulticastIPv6Join() (err error) {
-	if ipv6MulticastPrivateKey == nil || ipv6MulticastPublicKey == nil {
+	if ipv6MulticastKeyPair == nil || ipv6MulticastPublicKey == nil {
 		return
 	}
 
@@ -132,7 +134,7 @@ func (network *Network) MulticastIPv6Listen() {
 		}
 
 		// send the packet to a channel which is processed by multiple workers.
-		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender.(*net.UDPAddr), raw: buffer[:length], receiverPublicKey: ipv6MulticastPublicKey, unicast: false}
+		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender.(*net.UDPAddr), raw: buffer[:length], receiverKeyPair: ipv6MulticastKeyPair, unicast: false}
 	}
 }
 
@@ -144,7 +146,7 @@ func (network *Network) MulticastIPv6Send() (err error) {
 		return errors.New("error encoding multicast announcement")
 	}
 
-	raw, err := protocol.PacketEncrypt(network.backend.peerPrivateKey, ipv6MulticastPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: packets[0]})
+	raw, err := protocol.PacketEncrypt(network.backend.peerKeyPair, ipv6MulticastPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: protocol.LocalDiscoverySign(packets[0], network.backend.peerPrivateKey, ipv6MulticastPublicKey)})
 	if err != nil {
 		return err
 	}

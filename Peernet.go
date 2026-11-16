@@ -12,6 +12,7 @@ import (
 
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/dht"
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/search"
 	"github.com/PeernetOfficial/core/store"
 	"github.com/PeernetOfficial/core/warehouse"
@@ -102,6 +103,7 @@ type Backend struct {
 	// peerID is the current peer's ID. It is an Ed25519 public key. It is also the peer's key in the DHT.
 	peerPrivateKey ed25519.PrivateKey
 	peerPublicKey  ed25519.PublicKey
+	peerKeyPair    *protocol.KeyPair // Key pair for encrypting and decrypting packets.
 
 	// peerList keeps track of all peers
 	peerList      map[[ed25519.PublicKeySize]byte]*PeerInfo
