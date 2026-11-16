@@ -5,33 +5,43 @@ Author:     Peter Kleissner
 
 Basic packet structure of ALL packets:
 Offset  Size   Info
-0       4      Nonce
-4       1      Protocol version = 0
-5       1      Command
-6       4      Sequence
-10      32     Sender's public key (= sender's Peer ID)
-42      2      Size of payload data
-44      ?      Payload
+0       12     Nonce
+12      32     Sender's public key (= sender's Peer ID)
+44      1      Protocol version = 0
+45      1      Command
+46      4      Sequence
+50      2      Size of payload data
+52      ?      Payload
         ?      Randomized garbage
-?       64     Signature Ed25519 by the sender over all preceding bytes
+?       16     Authentication tag (Poly1305)
 
-Everything after the nonce is encrypted with Salsa20 using the receiver's public key as key, including the signature.
-The signature is applied on the entire packet as transmitted (i.e. encrypted), which guarantees that the signature becomes invalid should someone try to forge the receiver (i.e. forward the packet).
-Because the signature could be a possible fingerprint, it is encrypted itself.
+The nonce is 12 random bytes, generated for every packet.
+The sender's public key is encrypted with ChaCha20 using the receiver's public key as key and the nonce.
+The fields from the protocol version to the randomized garbage are encrypted and authenticated with ChaCha20-Poly1305 using the packet key and the same nonce.
 
-A packet embedded in a Traverse message has the same structure without the nonce field and without the randomized garbage. Its Salsa20 nonce is the first 8 bytes of the Peer ID of the relaying peer.
-The signature covers all preceding bytes of the embedded packet. It is therefore valid only inside a Traverse message sent by that relay, and not as a packet sent directly.
+The packet key is derived from a key agreement between the sender and the receiver. Each derives it from its own private key and the public key of the other:
+The Ed25519 keys are converted to X25519 keys. The shared secret is the X25519 function of the own private key and the public key of the other peer.
+The packet key is the blake3 hash of the shared secret followed by the sender's public key and the receiver's public key. The two directions between two peers use different packet keys.
+
+A packet embedded in a Traverse message has the same structure without the randomized garbage. Its additional authenticated data is the Peer ID of the relaying peer.
+It is therefore valid only inside a Traverse message sent by that relay, and not as a packet sent directly.
 */
 
 package protocol
 
 import (
+	"crypto/ecdh"
 	"crypto/ed25519"
+	cryptorand "crypto/rand"
+	"crypto/sha512"
 	"encoding/binary"
 	"errors"
 	"math/rand"
 
-	"golang.org/x/crypto/salsa20"
+	"filippo.io/edwards25519"
+	"golang.org/x/crypto/chacha20"
+	"golang.org/x/crypto/chacha20poly1305"
+	"lukechampine.com/blake3"
 )
 
 // PacketRaw is a decrypted P2P message
@@ -42,131 +52,235 @@ type PacketRaw struct {
 	Payload  []byte // Payload
 }
 
-// The minimum packet size is 44 bytes (header) + 64 bytes (signature)
-const PacketLengthMin = packetHeaderSize + signatureSize
-const packetHeaderSize = 44
-const packetNonceSize = 4
+// The minimum packet size is 52 bytes (header) + 16 bytes (authentication tag)
+const PacketLengthMin = packetHeaderSize + packetTagSize
+const packetHeaderSize = packetOffsetEncrypted + 8
+const packetNonceSize = chacha20poly1305.NonceSize
+const packetTagSize = chacha20poly1305.Overhead
 
-// PacketLengthMinEmbedded is the minimum size of a packet embedded in a Traverse message. It has no nonce field. Its size is the minimum size plus the size of the payload.
-const PacketLengthMinEmbedded = PacketLengthMin - packetNonceSize
-const signatureSize = ed25519.SignatureSize
+// packetOffsetEncrypted is the offset of the protocol version, the first field that is encrypted with the packet key. The nonce and the sender's public key precede it.
+const packetOffsetEncrypted = packetNonceSize + ed25519.PublicKeySize
+
+// PacketLengthMinEmbedded is the minimum size of a packet embedded in a Traverse message. Its size is the minimum size plus the size of the payload.
+const PacketLengthMinEmbedded = PacketLengthMin
 const maxRandomGarbage = 20
 
-// PacketDecrypt decrypts the packet, verifies its signature and returns a high-level version of the packet.
-func PacketDecrypt(raw []byte, receiverPublicKey ed25519.PublicKey) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, err error) {
-	// Packet is assumed to be already checked for minimum length.
-
-	// Prepare Salsa20 nonce and key. Nonce = 2x first 4 bytes. For size reasons, only 4 bytes (instead of 8 bytes) is supplied in the packet.
-	// This could be a risk, but considering we only use the PUBLIC key as decryption key, it is negligible.
-	nonce := make([]byte, 8)
-	copy(nonce[0:4], raw[0:4])
-	copy(nonce[4:8], raw[0:4])
-
-	return packetDecrypt(raw, packetNonceSize, nonce, receiverPublicKey)
+// KeyPair is the key pair of a peer for encrypting and decrypting packets. It holds the X25519 private key that is derived from the Ed25519 private key.
+// It is created once per key pair and used for all packets.
+type KeyPair struct {
+	PublicKey ed25519.PublicKey // Public key (= Peer ID)
+	x25519    *ecdh.PrivateKey  // X25519 private key for the key agreement
 }
 
-// PacketDecryptEmbedded decrypts a packet embedded in a Traverse message, verifies its signature and returns a high-level version of the packet.
-// The Salsa20 nonce is the first 8 bytes of the Peer ID of the relaying peer. The relay passes its own Peer ID, the end receiver the Peer ID of the peer that sent the Traverse message.
-func PacketDecryptEmbedded(raw []byte, receiverPublicKey, relayPublicKey ed25519.PublicKey) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, err error) {
-	if len(raw) < PacketLengthMinEmbedded {
-		return nil, nil, errors.New("embedded packet: invalid minimum length")
-	} else if len(relayPublicKey) != ed25519.PublicKeySize {
+// NewKeyPair returns the key pair for encrypting and decrypting packets.
+// The X25519 private key is the first 32 bytes of the SHA-512 hash of the 32-byte Ed25519 private key.
+func NewKeyPair(privateKey ed25519.PrivateKey) (keyPair *KeyPair, err error) {
+	if len(privateKey) != ed25519.PrivateKeySize {
+		return nil, errors.New("invalid private key")
+	}
+
+	hash := sha512.Sum512(privateKey.Seed())
+
+	keyPair = &KeyPair{PublicKey: privateKey.Public().(ed25519.PublicKey)}
+	if keyPair.x25519, err = ecdh.X25519().NewPrivateKey(hash[:32]); err != nil {
+		return nil, err
+	}
+
+	return keyPair, nil
+}
+
+// packetKey returns the key for packets from the sender to the receiver. One of them is the key pair, otherPublicKey is the other one.
+// It fails if the other public key is not a valid Ed25519 public key or if the shared secret is all zero.
+func (keyPair *KeyPair) packetKey(otherPublicKey, senderPublicKey, receiverPublicKey ed25519.PublicKey) (key []byte, err error) {
+	if len(otherPublicKey) != ed25519.PublicKeySize {
+		return nil, errors.New("invalid public key")
+	}
+
+	// X25519 public key u = (1 + y) / (1 - y), where y is the y-coordinate encoded in the Ed25519 public key
+	point, err := new(edwards25519.Point).SetBytes(otherPublicKey)
+	if err != nil {
+		return nil, errors.New("invalid public key")
+	}
+	x25519PublicKey, err := ecdh.X25519().NewPublicKey(point.BytesMontgomery())
+	if err != nil {
+		return nil, err
+	}
+
+	// ECDH returns an error if the shared secret is all zero.
+	sharedSecret, err := keyPair.x25519.ECDH(x25519PublicKey)
+	if err != nil {
+		return nil, errors.New("invalid shared secret")
+	}
+
+	data := make([]byte, 0, len(sharedSecret)+2*ed25519.PublicKeySize)
+	data = append(data, sharedSecret...)
+	data = append(data, senderPublicKey...)
+	data = append(data, receiverPublicKey...)
+	hash := blake3.Sum256(data)
+
+	return hash[:], nil
+}
+
+// packetSenderXOR encrypts or decrypts the sender's public key of a packet with ChaCha20 using the receiver's public key as key and the nonce of the packet.
+func packetSenderXOR(dst, src, nonce []byte, receiverPublicKey ed25519.PublicKey) (err error) {
+	cipher, err := chacha20.NewUnauthenticatedCipher(receiverPublicKey, nonce)
+	if err != nil {
+		return err
+	}
+
+	cipher.XORKeyStream(dst, src)
+	return nil
+}
+
+// PacketDecrypt decrypts the packet, verifies its authentication tag and returns a high-level version of the packet.
+// receiver is the key pair that the packet is encrypted for.
+func PacketDecrypt(raw []byte, receiver *KeyPair) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, err error) {
+	packet, senderPublicKey, _, err = packetDecrypt(raw, receiver, nil)
+	return packet, senderPublicKey, err
+}
+
+// PacketDecryptEmbedded decrypts a packet embedded in a Traverse message, verifies its authentication tag and returns a high-level version of the packet.
+// The additional authenticated data is the Peer ID of the relaying peer, which is the peer that sent the Traverse message.
+func PacketDecryptEmbedded(raw []byte, receiver *KeyPair, relayPublicKey ed25519.PublicKey) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, err error) {
+	if len(relayPublicKey) != ed25519.PublicKeySize {
 		return nil, nil, errors.New("embedded packet: invalid relay peer ID")
 	}
 
-	if packet, senderPublicKey, err = packetDecrypt(raw, 0, relayPublicKey[:8], receiverPublicKey); err != nil {
+	packet, senderPublicKey, sizeGarbage, err := packetDecrypt(raw, receiver, relayPublicKey)
+	if err != nil {
 		return nil, nil, err
 	}
 
 	// The embedded packet has no randomized garbage.
-	if len(raw) != PacketLengthMinEmbedded+len(packet.Payload) {
+	if sizeGarbage != 0 {
 		return nil, nil, errors.New("embedded packet: invalid length")
 	}
 
 	return packet, senderPublicKey, nil
 }
 
-// packetDecrypt decrypts and verifies a packet. nonceFieldSize is the size of the nonce field at the start of the packet, which is 0 for an embedded packet.
-func packetDecrypt(raw []byte, nonceFieldSize int, nonce []byte, receiverPublicKey ed25519.PublicKey) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, err error) {
-	// Decrypt the packet (everything after the nonce field, including the signature) using Salsa20.
-	bufferDecrypted := make([]byte, len(raw)-nonceFieldSize)
-	salsa20.XORKeyStream(bufferDecrypted, raw[nonceFieldSize:], nonce, publicKeyToSalsa20Key(receiverPublicKey))
+// PacketEmbeddedSender returns the sender's public key of a packet embedded in a Traverse message. receiverPublicKey is the Peer ID of the end receiver.
+// The relaying peer uses it; it cannot read the other fields of the embedded packet. The sender is not authenticated.
+func PacketEmbeddedSender(raw []byte, receiverPublicKey ed25519.PublicKey) (senderPublicKey ed25519.PublicKey, err error) {
+	if len(raw) < PacketLengthMinEmbedded {
+		return nil, errors.New("embedded packet: invalid minimum length")
+	}
 
-	// Verify the signature using the sender's public key transmitted in the packet. The signature covers all preceding bytes as transmitted.
 	senderPublicKey = make(ed25519.PublicKey, ed25519.PublicKeySize)
-	copy(senderPublicKey, bufferDecrypted[6:6+ed25519.PublicKeySize])
-	signature := bufferDecrypted[len(bufferDecrypted)-signatureSize:]
+	if err = packetSenderXOR(senderPublicKey, raw[packetNonceSize:packetOffsetEncrypted], raw[:packetNonceSize], receiverPublicKey); err != nil {
+		return nil, err
+	}
 
-	if !ed25519.Verify(senderPublicKey, raw[:len(raw)-signatureSize], signature) {
-		return nil, nil, errors.New("invalid signature")
+	return senderPublicKey, nil
+}
+
+// packetDecrypt decrypts and verifies a packet. sizeGarbage is the size of the randomized garbage after the payload.
+func packetDecrypt(raw []byte, receiver *KeyPair, additionalData []byte) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, sizeGarbage int, err error) {
+	if receiver == nil {
+		return nil, nil, 0, errors.New("invalid receiver key pair")
+	} else if len(raw) < PacketLengthMin {
+		return nil, nil, 0, errors.New("invalid minimum length")
+	}
+
+	nonce := raw[:packetNonceSize]
+
+	// Decrypt the sender's public key and derive the packet key.
+	senderPublicKey = make(ed25519.PublicKey, ed25519.PublicKeySize)
+	if err = packetSenderXOR(senderPublicKey, raw[packetNonceSize:packetOffsetEncrypted], nonce, receiver.PublicKey); err != nil {
+		return nil, nil, 0, err
+	}
+
+	key, err := receiver.packetKey(senderPublicKey, senderPublicKey, receiver.PublicKey)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	aead, err := chacha20poly1305.New(key)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	// Decrypt the fields from the protocol version to the randomized garbage and verify the authentication tag.
+	decrypted, err := aead.Open(nil, nonce, raw[packetOffsetEncrypted:], additionalData)
+	if err != nil {
+		return nil, nil, 0, errors.New("invalid authentication tag")
 	}
 
 	// copy all fields
-	packet = &PacketRaw{Protocol: bufferDecrypted[0], Command: bufferDecrypted[1]}
-	packet.Sequence = binary.LittleEndian.Uint32(bufferDecrypted[2:6])
+	packet = &PacketRaw{Protocol: decrypted[0], Command: decrypted[1]}
+	packet.Sequence = binary.LittleEndian.Uint32(decrypted[2:6])
 
-	sizePayload := binary.LittleEndian.Uint16(bufferDecrypted[38:40])
-	if int(sizePayload) > len(bufferDecrypted)-40-signatureSize { // invalid length?
-		return nil, nil, errors.New("invalid length field")
+	sizePayload := int(binary.LittleEndian.Uint16(decrypted[6:8]))
+	if sizePayload > len(decrypted)-8 { // invalid length?
+		return nil, nil, 0, errors.New("invalid length field")
 	}
 	if sizePayload > 0 {
-		packet.Payload = make([]byte, int(sizePayload))
-		copy(packet.Payload, bufferDecrypted[40:40+int(sizePayload)])
+		packet.Payload = make([]byte, sizePayload)
+		copy(packet.Payload, decrypted[8:8+sizePayload])
 	}
 
-	return packet, senderPublicKey, nil
+	return packet, senderPublicKey, len(decrypted) - 8 - sizePayload, nil
 }
 
-// PacketEncrypt encrypts a packet using the provided senders private key and receivers public key.
-func PacketEncrypt(senderPrivateKey ed25519.PrivateKey, receiverPublicKey ed25519.PublicKey, packet *PacketRaw) (raw []byte, err error) {
-	nonceC := rand.Uint32()
-	nonce := make([]byte, 8)
-	binary.LittleEndian.PutUint32(nonce[0:4], nonceC)
-	binary.LittleEndian.PutUint32(nonce[4:8], nonceC)
+// PacketEncrypt encrypts a packet using the provided senders key pair and receivers public key.
+func PacketEncrypt(sender *KeyPair, receiverPublicKey ed25519.PublicKey, packet *PacketRaw) (raw []byte, err error) {
+	nonce := make([]byte, packetNonceSize)
+	if _, err = cryptorand.Read(nonce); err != nil {
+		return nil, err
+	}
 
-	return packetEncrypt(senderPrivateKey, receiverPublicKey, nonce[0:4], nonce, packet, packetGarbage(PacketLengthMin+len(packet.Payload))), nil
+	return packetEncrypt(sender, receiverPublicKey, nonce, nil, packet, packetGarbage(PacketLengthMin+len(packet.Payload)))
 }
 
-// PacketEncryptEmbedded encrypts a packet to be embedded in a Traverse message. It has no nonce field and no randomized garbage.
-// The Salsa20 nonce is the first 8 bytes of the Peer ID of the relaying peer, which is the peer the Traverse message is sent to.
-func PacketEncryptEmbedded(senderPrivateKey ed25519.PrivateKey, receiverPublicKey, relayPublicKey ed25519.PublicKey, packet *PacketRaw) (raw []byte, err error) {
+// PacketEncryptEmbedded encrypts a packet to be embedded in a Traverse message. It has its own nonce and no randomized garbage.
+// The additional authenticated data is the Peer ID of the relaying peer, which is the peer the Traverse message is sent to.
+func PacketEncryptEmbedded(sender *KeyPair, receiverPublicKey, relayPublicKey ed25519.PublicKey, packet *PacketRaw) (raw []byte, err error) {
 	if len(relayPublicKey) != ed25519.PublicKeySize {
 		return nil, errors.New("embedded packet: invalid relay peer ID")
 	}
 
-	return packetEncrypt(senderPrivateKey, receiverPublicKey, nil, relayPublicKey[:8], packet, nil), nil
+	nonce := make([]byte, packetNonceSize)
+	if _, err = cryptorand.Read(nonce); err != nil {
+		return nil, err
+	}
+
+	return packetEncrypt(sender, receiverPublicKey, nonce, relayPublicKey, packet, nil)
 }
 
-// packetEncrypt encrypts and signs a packet. nonceField is transmitted at the start of the packet; it is empty for an embedded packet.
+// packetEncrypt encrypts and authenticates a packet. additionalData is empty for a direct packet.
 // garbage is appended to the payload; it is empty for an embedded packet.
-func packetEncrypt(senderPrivateKey ed25519.PrivateKey, receiverPublicKey ed25519.PublicKey, nonceField, nonce []byte, packet *PacketRaw, garbage []byte) (raw []byte) {
-	o := len(nonceField) // offset of the encrypted fields
-	lengthMin := o + packetHeaderSize - packetNonceSize + signatureSize
+func packetEncrypt(sender *KeyPair, receiverPublicKey ed25519.PublicKey, nonce, additionalData []byte, packet *PacketRaw, garbage []byte) (raw []byte, err error) {
+	if sender == nil {
+		return nil, errors.New("invalid sender key pair")
+	}
 
-	raw = make([]byte, lengthMin+len(packet.Payload)+len(garbage))
+	key, err := sender.packetKey(receiverPublicKey, sender.PublicKey, receiverPublicKey)
+	if err != nil {
+		return nil, err
+	}
+	aead, err := chacha20poly1305.New(key)
+	if err != nil {
+		return nil, err
+	}
 
-	copy(raw[0:o], nonceField)
+	sizeData := packetHeaderSize + len(packet.Payload) + len(garbage)
+	raw = make([]byte, sizeData, sizeData+packetTagSize)
 
+	copy(raw[0:packetNonceSize], nonce)
+
+	if err = packetSenderXOR(raw[packetNonceSize:packetOffsetEncrypted], sender.PublicKey, nonce, receiverPublicKey); err != nil {
+		return nil, err
+	}
+
+	o := packetOffsetEncrypted
 	raw[o] = packet.Protocol
 	raw[o+1] = packet.Command
-
 	binary.LittleEndian.PutUint32(raw[o+2:o+6], uint32(packet.Sequence))
-	copy(raw[o+6:o+38], senderPrivateKey.Public().(ed25519.PublicKey))
-	binary.LittleEndian.PutUint16(raw[o+38:o+40], uint16(len(packet.Payload)))
-	copy(raw[o+40:], packet.Payload)
-	copy(raw[o+40+len(packet.Payload):o+40+len(packet.Payload)+len(garbage)], garbage)
+	binary.LittleEndian.PutUint16(raw[o+6:o+8], uint16(len(packet.Payload)))
+	copy(raw[o+8:], packet.Payload)
+	copy(raw[o+8+len(packet.Payload):], garbage)
 
-	// encrypt it using Salsa20. One continuous key stream covers everything after the nonce field, including the signature added below.
-	keyStream := make([]byte, len(raw)-o)
-	salsa20.XORKeyStream(keyStream, keyStream, nonce, publicKeyToSalsa20Key(receiverPublicKey))
-	xorBytes(raw[o:len(raw)-signatureSize], keyStream[:len(keyStream)-signatureSize])
-
-	// add signature over all preceding bytes as transmitted, then encrypt it
-	signature := ed25519.Sign(senderPrivateKey, raw[:len(raw)-signatureSize])
-	xorBytes(signature, keyStream[len(keyStream)-signatureSize:])
-	copy(raw[len(raw)-signatureSize:], signature)
-
-	return raw
+	// Encrypt the fields from the protocol version to the randomized garbage in place. The authentication tag is appended.
+	return aead.Seal(raw[:o], nonce, raw[o:], additionalData), nil
 }
 
 func packetGarbage(packetLength int) (random []byte) {
@@ -186,19 +300,6 @@ func packetGarbage(packetLength int) (random []byte) {
 		return nil
 	}
 	return b
-}
-
-// xorBytes XORs each byte of data with the corresponding byte of mask, in place. Both must have the same length.
-func xorBytes(data, mask []byte) {
-	for n := range data {
-		data[n] ^= mask[n]
-	}
-}
-
-func publicKeyToSalsa20Key(publicKey ed25519.PublicKey) (key *[32]byte) {
-	key = new([32]byte)
-	copy(key[:], publicKey)
-	return key
 }
 
 // SetSelfReportedPorts sets the fields Internal Port and External Port according to the connection details.

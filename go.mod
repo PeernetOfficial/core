@@ -3,6 +3,7 @@ module github.com/PeernetOfficial/core
 go 1.26.0
 
 require (
+	filippo.io/edwards25519 v1.2.0
 	github.com/IncSW/geoip2 v0.1.4
 	github.com/akrylysov/pogreb v0.10.2
 	github.com/enfipy/locker v1.1.0

@@ -23,21 +23,23 @@ import (
 const ipv4BroadcastPort = 12912
 
 // special Public-Private Key pair for local discovery
-var ipv4BroadcastPrivateKey ed25519.PrivateKey
+var ipv4BroadcastKeyPair *protocol.KeyPair
 var ipv4BroadcastPublicKey ed25519.PublicKey
 
 const ipv4BroadcastPrivateKeyH = "5e27ecc8e54a24e71dca9ba84a9bf465400e27b8c46a977d34962d3d88558c8e"
 
 func initBroadcastIPv4() {
 	if configPK, err := hex.DecodeString(ipv4BroadcastPrivateKeyH); err == nil && len(configPK) == ed25519.SeedSize {
-		ipv4BroadcastPrivateKey = ed25519.NewKeyFromSeed(configPK)
-		ipv4BroadcastPublicKey = ipv4BroadcastPrivateKey.Public().(ed25519.PublicKey)
+		if keyPair, err := protocol.NewKeyPair(ed25519.NewKeyFromSeed(configPK)); err == nil {
+			ipv4BroadcastKeyPair = keyPair
+			ipv4BroadcastPublicKey = keyPair.PublicKey
+		}
 	}
 }
 
 // BroadcastIPv4 prepares sending Broadcasts
 func (network *Network) BroadcastIPv4() (err error) {
-	if ipv4BroadcastPrivateKey == nil || ipv4BroadcastPublicKey == nil {
+	if ipv4BroadcastKeyPair == nil || ipv4BroadcastPublicKey == nil {
 		return
 	}
 
@@ -87,7 +89,7 @@ func (network *Network) BroadcastIPv4Listen() {
 		}
 
 		// send the packet to a channel which is processed by multiple workers.
-		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender.(*net.UDPAddr), raw: buffer[:length], receiverPublicKey: ipv4BroadcastPublicKey, unicast: false}
+		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender.(*net.UDPAddr), raw: buffer[:length], receiverKeyPair: ipv4BroadcastKeyPair, unicast: false}
 	}
 }
 
@@ -99,7 +101,7 @@ func (network *Network) BroadcastIPv4Send() (err error) {
 		return errors.New("error encoding broadcast announcement")
 	}
 
-	raw, err := protocol.PacketEncrypt(network.backend.peerPrivateKey, ipv4BroadcastPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: protocol.LocalDiscoverySign(packets[0], network.backend.peerPrivateKey, ipv4BroadcastPublicKey)})
+	raw, err := protocol.PacketEncrypt(network.backend.peerKeyPair, ipv4BroadcastPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: protocol.LocalDiscoverySign(packets[0], network.backend.peerPrivateKey, ipv4BroadcastPublicKey)})
 	if err != nil {
 		return err
 	}

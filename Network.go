@@ -125,7 +125,7 @@ func (network *Network) Listen() {
 		if isLite, err := network.networkGroup.LiteRouter.IsPacketLite(buffer[:length]); isLite && err != nil {
 			continue
 		} else if isLite {
-			network.networkGroup.litePacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverPublicKey: network.backend.peerPublicKey, unicast: true}
+			network.networkGroup.litePacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverKeyPair: network.backend.peerKeyPair, unicast: true}
 			continue
 		}
 
@@ -135,14 +135,14 @@ func (network *Network) Listen() {
 		}
 
 		// send the packet to a channel which is processed by multiple workers.
-		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverPublicKey: network.backend.peerPublicKey, unicast: true}
+		network.networkGroup.rawPacketsIncoming <- networkWire{network: network, sender: sender, raw: buffer[:length], receiverKeyPair: network.backend.peerKeyPair, unicast: true}
 	}
 }
 
 // packetWorker handles incoming packets.
 func (nets *Networks) packetWorker() {
 	for packet := range nets.rawPacketsIncoming {
-		decoded, senderPublicKey, err := protocol.PacketDecrypt(packet.raw, packet.receiverPublicKey)
+		decoded, senderPublicKey, err := protocol.PacketDecrypt(packet.raw, packet.receiverKeyPair)
 		if err != nil {
 			//LogError("packetWorker", "decrypting packet from '%s': %s\n", packet.sender.String(), err.Error())  // Only log for debug purposes.
 			continue
@@ -163,7 +163,7 @@ func (nets *Networks) packetWorker() {
 		if decoded.Command == protocol.CommandLocalDiscovery {
 			if packet.unicast {
 				continue
-			} else if decoded.Payload, err = protocol.LocalDiscoveryVerify(decoded.Payload, senderPublicKey, packet.receiverPublicKey); err != nil {
+			} else if decoded.Payload, err = protocol.LocalDiscoveryVerify(decoded.Payload, senderPublicKey, packet.receiverKeyPair.PublicKey); err != nil {
 				continue
 			}
 		} else if !packet.unicast {

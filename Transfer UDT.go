@@ -21,7 +21,7 @@ import (
 var transferSequenceTimeout = time.Minute * 1
 
 // maxFlowWinSize is the maximum number of unacknowledged packets to permit. A higher number means using more memory, but reduces potential overhead since it does not stop so quickly for missing packets.
-// Each unacknowledged packet may store protocol.TransferMaxEmbedSize (currently 1121 bytes) payload data in memory. A too high number may impact the speed of real-time streaming in case of lost packets.
+// Each unacknowledged packet may store protocol.TransferMaxEmbedSize (currently 1130 bytes) payload data in memory. A too high number may impact the speed of real-time streaming in case of lost packets.
 // The actual used number will be negotiated through the UDT handshake and must be a minimum of 32.
 const maxFlowWinSize = 64
 

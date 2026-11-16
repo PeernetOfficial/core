@@ -29,7 +29,7 @@ func main() {
 
 ## Encryption and Hashing functions
 
-* Salsa20 is used for encrypting the packets.
+* X25519 and ChaCha20-Poly1305 are used for encrypting and authenticating the packets.
 * Ed25519 is used for peer IDs (public keys) and signatures.
 * blake3 is used as hashing algorithm for the DHT and for the block hashes.
 

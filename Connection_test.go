@@ -191,6 +191,15 @@ func testSocket(t *testing.T) (socket *net.UDPConn, address *net.UDPAddr) {
 	return socket, socket.LocalAddr().(*net.UDPAddr)
 }
 
+// testKeyPair returns the key pair for encrypting and decrypting packets.
+func testKeyPair(t *testing.T, privateKey ed25519.PrivateKey) (keyPair *protocol.KeyPair) {
+	keyPair, err := protocol.NewKeyPair(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return keyPair
+}
+
 // testBackendLoopback returns a backend with an empty peer list that sends via one network on the loopback address.
 func testBackendLoopback(t *testing.T) (backend *Backend, network *Network) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
@@ -198,7 +207,7 @@ func testBackendLoopback(t *testing.T) (backend *Backend, network *Network) {
 		t.Fatal(err)
 	}
 
-	backend = &Backend{peerPublicKey: publicKey, peerPrivateKey: privateKey, Config: &Config{}, UserBlockchain: &blockchain.Blockchain{}, peerList: make(map[[ed25519.PublicKeySize]byte]*PeerInfo)}
+	backend = &Backend{peerPublicKey: publicKey, peerPrivateKey: privateKey, peerKeyPair: testKeyPair(t, privateKey), Config: &Config{}, UserBlockchain: &blockchain.Blockchain{}, peerList: make(map[[ed25519.PublicKeySize]byte]*PeerInfo)}
 	backend.initFilters()
 	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: publicKey}, 256, bucketSize, alpha)
 	backend.networks = &Networks{backend: backend, Sequences: protocol.NewSequenceManager(ReplyTimeout)}
@@ -247,15 +256,15 @@ func (traverse *testTraverseOut) check(t *testing.T, name string, expectedCount 
 	traverse.count = 0
 }
 
-// testExpectAnnouncement checks that an Announcement of the backend, sent directly to the peer with the public key, arrived at the socket of that peer.
+// testExpectAnnouncement checks that an Announcement of the backend, sent directly to the peer with the private key, arrived at the socket of that peer.
 // It is called after the Announcement was sent. The deadline only ends the test if it is missing.
-func testExpectAnnouncement(t *testing.T, name string, backend *Backend, socket *net.UDPConn, publicKey ed25519.PublicKey) {
+func testExpectAnnouncement(t *testing.T, name string, backend *Backend, socket *net.UDPConn, privateKey ed25519.PrivateKey) {
 	buffer := make([]byte, maxPacketSize)
 	socket.SetReadDeadline(time.Now().Add(2 * time.Second))
 	length, _, err := socket.ReadFromUDP(buffer)
 	if err != nil {
 		t.Errorf("%s: no direct Announcement received: %v", name, err)
-	} else if packet, sender, err := protocol.PacketDecrypt(buffer[:length], publicKey); err != nil || packet.Command != protocol.CommandAnnouncement || !sender.Equal(backend.peerPublicKey) {
+	} else if packet, sender, err := protocol.PacketDecrypt(buffer[:length], testKeyPair(t, privateKey)); err != nil || packet.Command != protocol.CommandAnnouncement || !sender.Equal(backend.peerPublicKey) {
 		t.Errorf("%s: direct packet is not an Announcement of this peer: %v", name, err)
 	}
 }
@@ -289,7 +298,7 @@ func TestSendTraverseFirstContact(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		targetPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+		targetPublicKey, targetPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 		socketTarget, addressTarget := testSocket(t)
 
 		if test.isRootPeer {
@@ -304,7 +313,7 @@ func TestSendTraverseFirstContact(t *testing.T) {
 		backend.contactArbitraryPeer(targetPublicKey, &peerAddress{IP: addressTarget.IP, Port: uint16(addressTarget.Port), PortInternal: portInternal}, test.reporting)
 
 		traverse.check(t, test.name, test.expectedCount, reporting, targetPublicKey)
-		testExpectAnnouncement(t, test.name, backend, socketTarget, targetPublicKey)
+		testExpectAnnouncement(t, test.name, backend, socketTarget, targetPrivateKey)
 	}
 }
 
@@ -332,7 +341,7 @@ func TestSendTraverseVirtualPeer(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		targetPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+		targetPublicKey, targetPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 		socketTarget, addressTarget := testSocket(t)
 
 		// The internal port equals the observed one.
@@ -342,7 +351,7 @@ func TestSendTraverseVirtualPeer(t *testing.T) {
 		virtual.sendAnnouncement(true, &protocol.Requests{FindPeer: [][]byte{targetPublicKey}}, nil)
 
 		traverse.check(t, test.name, test.expectedCount, reporting, targetPublicKey)
-		testExpectAnnouncement(t, test.name, backend, socketTarget, targetPublicKey)
+		testExpectAnnouncement(t, test.name, backend, socketTarget, targetPrivateKey)
 	}
 }
 
@@ -352,18 +361,18 @@ func TestSendTraverseKnownPeer(t *testing.T) {
 	testRootPeers(t)
 	traverse := testWatchTraverse(backend)
 
-	targetPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	targetPublicKey, targetPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 	socketTarget, addressTarget := testSocket(t)
 	target, _ := backend.PeerlistAdd(targetPublicKey, &Connection{backend: backend, Network: network, Address: addressTarget, PortInternal: uint16(addressTarget.Port)})
 
 	target.sendAnnouncement(true, &protocol.Requests{FindSelf: true}, &bootstrapFindSelf{})
 
 	traverse.check(t, "peer in the peer list", 0, nil, targetPublicKey)
-	testExpectAnnouncement(t, "peer in the peer list", backend, socketTarget, targetPublicKey)
+	testExpectAnnouncement(t, "peer in the peer list", backend, socketTarget, targetPrivateKey)
 }
 
-// testReadPacket returns the next packet of the backend that arrives at the socket of the peer with the public key within the timeout, nil if there is none.
-func testReadPacket(t *testing.T, name string, backend *Backend, socket *net.UDPConn, publicKey ed25519.PublicKey, timeout time.Duration) (packet *protocol.PacketRaw) {
+// testReadPacket returns the next packet of the backend that arrives at the socket of the peer with the private key within the timeout, nil if there is none.
+func testReadPacket(t *testing.T, name string, backend *Backend, socket *net.UDPConn, privateKey ed25519.PrivateKey, timeout time.Duration) (packet *protocol.PacketRaw) {
 	buffer := make([]byte, maxPacketSize)
 	socket.SetReadDeadline(time.Now().Add(timeout))
 	length, _, err := socket.ReadFromUDP(buffer)
@@ -371,7 +380,7 @@ func testReadPacket(t *testing.T, name string, backend *Backend, socket *net.UDP
 		return nil
 	}
 
-	packet, sender, err := protocol.PacketDecrypt(buffer[:length], publicKey)
+	packet, sender, err := protocol.PacketDecrypt(buffer[:length], testKeyPair(t, privateKey))
 	if err != nil || !sender.Equal(backend.peerPublicKey) {
 		t.Fatalf("%s: received packet is not one of this peer: %v", name, err)
 	}
@@ -432,7 +441,7 @@ func TestSendExternalPort(t *testing.T) {
 	for _, path := range paths {
 		for _, port := range ports {
 			name := path.name + ", " + port.name
-			targetPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+			targetPublicKey, targetPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 			socketObserved, addressObserved := testSocket(t)
 			socketExternal, addressExternal := testSocket(t)
 
@@ -449,19 +458,19 @@ func TestSendExternalPort(t *testing.T) {
 			traverse.check(t, name, traverseCount, reporting, targetPublicKey)
 
 			// Exactly one packet arrives at the observed port.
-			packetObserved := testReadPacket(t, name, backend, socketObserved, targetPublicKey, 2*time.Second)
+			packetObserved := testReadPacket(t, name, backend, socketObserved, targetPrivateKey, 2*time.Second)
 			if packetObserved == nil {
 				t.Errorf("%s: no packet received at the observed port", name)
 				continue
 			} else if packetObserved.Command != command || sequence != 0 && packetObserved.Sequence != sequence {
 				t.Errorf("%s: packet at the observed port has command %d sequence %d", name, packetObserved.Command, packetObserved.Sequence)
 			}
-			if testReadPacket(t, name, backend, socketObserved, targetPublicKey, 100*time.Millisecond) != nil {
+			if testReadPacket(t, name, backend, socketObserved, targetPrivateKey, 100*time.Millisecond) != nil {
 				t.Errorf("%s: more than one packet received at the observed port", name)
 			}
 
 			// The same packet arrives at the external port if it differs from the observed one.
-			packetExternal := testReadPacket(t, name, backend, socketExternal, targetPublicKey, 100*time.Millisecond)
+			packetExternal := testReadPacket(t, name, backend, socketExternal, targetPrivateKey, 100*time.Millisecond)
 			if port.external != externalDiffers {
 				if packetExternal != nil {
 					t.Errorf("%s: packet received at a port that was not reported", name)
@@ -473,7 +482,7 @@ func TestSendExternalPort(t *testing.T) {
 			} else if packetExternal.Command != command || packetExternal.Sequence != packetObserved.Sequence || !bytes.Equal(packetExternal.Payload, packetObserved.Payload) {
 				t.Errorf("%s: packet at the external port has command %d sequence %d, expected the packet of the observed port with sequence %d", name, packetExternal.Command, packetExternal.Sequence, packetObserved.Sequence)
 			}
-			if testReadPacket(t, name, backend, socketExternal, targetPublicKey, 100*time.Millisecond) != nil {
+			if testReadPacket(t, name, backend, socketExternal, targetPrivateKey, 100*time.Millisecond) != nil {
 				t.Errorf("%s: more than one packet received at the external port", name)
 			}
 		}

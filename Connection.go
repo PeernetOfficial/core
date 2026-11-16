@@ -393,7 +393,7 @@ func (c *Connection) send(packet *protocol.PacketRaw, receiverPublicKey ed25519.
 
 	c.backend.Filters.PacketOut(packet, receiverPublicKey, c)
 
-	raw, err := protocol.PacketEncrypt(c.backend.peerPrivateKey, receiverPublicKey, packet)
+	raw, err := protocol.PacketEncrypt(c.backend.peerKeyPair, receiverPublicKey, packet)
 	if err != nil {
 		return err
 	}

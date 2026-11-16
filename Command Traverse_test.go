@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"net"
@@ -75,6 +76,30 @@ func TestTraverseAddresses(t *testing.T) {
 	}
 }
 
+// testTraverse returns the decoded Traverse message as the peer with the public key sends it to the relay: the packet of the original sender for the end receiver, embedded for the relay.
+func testTraverse(t *testing.T, sender *protocol.KeyPair, receiverEnd, relay, traverseSender ed25519.PublicKey, command uint8, payload []byte) (msg *protocol.MessageTraverse) {
+	embedded, err := protocol.PacketEncryptEmbedded(sender, receiverEnd, relay, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: command, Payload: payload})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return testTraverseEmbedded(t, embedded, receiverEnd, traverseSender)
+}
+
+// testTraverseEmbedded returns the decoded Traverse message with the embedded packet as the peer with the public key sends it.
+func testTraverseEmbedded(t *testing.T, embedded []byte, receiverEnd, traverseSender ed25519.PublicKey) (msg *protocol.MessageTraverse) {
+	payload, err := protocol.EncodeTraverse(embedded, receiverEnd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err = protocol.DecodeTraverse(&protocol.MessageRaw{PacketRaw: protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: payload}, SenderPublicKey: traverseSender})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return msg
+}
+
 // TestTraverseForwardRootPeer checks that a Traverse message is forwarded to the end receiver, except if the end receiver is a root peer.
 func TestTraverseForwardRootPeer(t *testing.T) {
 	backend, network := testBackendLoopback(t)
@@ -106,18 +131,7 @@ func TestTraverseForwardRootPeer(t *testing.T) {
 
 		// The Traverse message as the original sender creates it.
 		announcement := protocol.EncodeAnnouncement(true, &protocol.Requests{FindSelf: true}, 1<<protocol.FeatureIPv4Listen, 0, 0, "test")
-		embedded, err := protocol.PacketEncryptEmbedded(senderPrivateKey, targetPublicKey, backend.peerPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandAnnouncement, Payload: announcement[0]})
-		if err != nil {
-			t.Fatal(err)
-		}
-		payload, err := protocol.EncodeTraverse(embedded, targetPublicKey)
-		if err != nil {
-			t.Fatal(err)
-		}
-		msg, err := protocol.DecodeTraverse(&protocol.MessageRaw{PacketRaw: protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: payload}, SenderPublicKey: senderPublicKey})
-		if err != nil {
-			t.Fatal(err)
-		}
+		msg := testTraverse(t, testKeyPair(t, senderPrivateKey), targetPublicKey, backend.peerPublicKey, senderPublicKey, protocol.CommandAnnouncement, announcement[0])
 
 		traverseCount = 0
 		sender.cmdTraverseForward(msg, connectionSender)
@@ -154,21 +168,8 @@ func TestTraverseReceiveAnswer(t *testing.T) {
 
 	// The Traverse message as the relay forwards it. The address of the original sender is a local one, which is used since the message is received via a local connection.
 	announcement := protocol.EncodeAnnouncement(true, &protocol.Requests{FindSelf: true}, 1<<protocol.FeatureIPv4Listen, 0, 0, "test")
-	embedded, err := protocol.PacketEncryptEmbedded(senderPrivateKey, backend.peerPublicKey, relayPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandAnnouncement, Payload: announcement[0]})
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload, err := protocol.EncodeTraverse(embedded, backend.peerPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := protocol.EncodeTraverseSetAddress(payload, net.ParseIP("10.0.0.7").To4(), 1001, 0, nil, 0, 0); err != nil {
-		t.Fatal(err)
-	}
-	msg, err := protocol.DecodeTraverse(&protocol.MessageRaw{PacketRaw: protocol.PacketRaw{Command: protocol.CommandTraverse, Payload: payload}, SenderPublicKey: relayPublicKey})
-	if err != nil {
-		t.Fatal(err)
-	}
+	msg := testTraverse(t, testKeyPair(t, senderPrivateKey), backend.peerPublicKey, relayPublicKey, relayPublicKey, protocol.CommandAnnouncement, announcement[0])
+	msg.IPv4, msg.PortIPv4 = net.ParseIP("10.0.0.7").To4(), 1001
 
 	relay.cmdTraverseReceive(msg, connectionRelay)
 
@@ -176,4 +177,143 @@ func TestTraverseReceiveAnswer(t *testing.T) {
 		t.Errorf("%d Responses sent to the original sender, expected 1", responseCount)
 	}
 	traverse.check(t, "answer to a received Traverse message", 0, nil, senderPublicKey)
+}
+
+// TestTraverseForwardSender checks that the relay forwards a Traverse message only if the sender of the embedded packet is the sender of the Traverse message.
+// The relay reads only the sender of the embedded packet: an embedded packet that is not an Announcement is forwarded.
+func TestTraverseForwardSender(t *testing.T) {
+	backend, network := testBackendLoopback(t)
+	testRootPeers(t)
+
+	var forwarded []*protocol.PacketRaw
+	backend.Filters.PacketOut = func(packet *protocol.PacketRaw, receiverPublicKey ed25519.PublicKey, connection *Connection) {
+		if packet.Command == protocol.CommandTraverse {
+			forwarded = append(forwarded, packet)
+		}
+	}
+
+	// The original sender is connected via a public address.
+	senderPublicKey, senderPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+	connectionSender := &Connection{Address: &net.UDPAddr{IP: net.ParseIP("203.0.113.7").To4(), Port: 1001}, PortInternal: 112}
+	sender := &PeerInfo{Backend: backend, PublicKey: senderPublicKey, connectionActive: []*Connection{connectionSender}, connectionLatest: connectionSender}
+
+	_, otherPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+	otherPublicKey := otherPrivateKey.Public().(ed25519.PublicKey)
+
+	// The end receiver is in the peer list.
+	targetPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	_, addressTarget := testSocket(t)
+	target, _ := backend.PeerlistAdd(targetPublicKey, &Connection{backend: backend, Network: network, Address: addressTarget, PortInternal: uint16(addressTarget.Port)})
+	target.Features = 1 << protocol.FeatureIPv4Listen
+
+	announcement := protocol.EncodeAnnouncement(true, &protocol.Requests{FindSelf: true}, 1<<protocol.FeatureIPv4Listen, 0, 0, "test")[0]
+
+	// An embedded packet of the minimum size whose sender's public key does not decrypt to the sender of the Traverse message.
+	random := make([]byte, protocol.PacketLengthMinEmbedded)
+	rand.Read(random)
+
+	tests := []struct {
+		name      string
+		msg       *protocol.MessageTraverse
+		forwarded bool
+	}{
+		{"embedded Announcement of the sender", testTraverse(t, testKeyPair(t, senderPrivateKey), targetPublicKey, backend.peerPublicKey, senderPublicKey, protocol.CommandAnnouncement, announcement), true},
+		{"embedded Ping of the sender", testTraverse(t, testKeyPair(t, senderPrivateKey), targetPublicKey, backend.peerPublicKey, senderPublicKey, protocol.CommandPing, nil), true},
+		{"embedded Announcement of another peer", testTraverse(t, testKeyPair(t, otherPrivateKey), targetPublicKey, backend.peerPublicKey, senderPublicKey, protocol.CommandAnnouncement, announcement), false},
+		{"embedded Announcement of the sender for another end receiver", testTraverseEmbedded(t, testTraverse(t, testKeyPair(t, senderPrivateKey), otherPublicKey, backend.peerPublicKey, senderPublicKey, protocol.CommandAnnouncement, announcement).EmbeddedPacketRaw, targetPublicKey, senderPublicKey), false},
+		{"random embedded packet", testTraverseEmbedded(t, random, targetPublicKey, senderPublicKey), false},
+	}
+
+	for _, test := range tests {
+		forwarded = nil
+		sender.cmdTraverseForward(test.msg, connectionSender)
+
+		if !test.forwarded && len(forwarded) != 0 {
+			t.Errorf("%s: %d Traverse messages forwarded, expected none", test.name, len(forwarded))
+		} else if test.forwarded && len(forwarded) != 1 {
+			t.Errorf("%s: %d Traverse messages forwarded, expected 1", test.name, len(forwarded))
+		} else if test.forwarded {
+			// The embedded packet is forwarded unchanged, with the address of the original sender set.
+			traverse, err := protocol.DecodeTraverse(&protocol.MessageRaw{PacketRaw: *forwarded[0]})
+			if err != nil {
+				t.Errorf("%s: %v", test.name, err)
+			} else if !bytes.Equal(traverse.EmbeddedPacketRaw, test.msg.EmbeddedPacketRaw) || !traverse.TargetPeer.Equal(targetPublicKey) || !traverse.IPv4.Equal(connectionSender.Address.IP) || traverse.PortIPv4 != 1001 {
+				t.Errorf("%s: forwarded Traverse message mismatch", test.name)
+			}
+		}
+	}
+}
+
+// TestTraverseReceiveInvalid checks that the end receiver drops a Traverse message whose embedded packet is not an Announcement, was built for another relay or another end receiver,
+// is a packet for direct sending, or was changed.
+func TestTraverseReceiveInvalid(t *testing.T) {
+	backend, network := testBackendLoopback(t)
+	testRootPeers(t)
+
+	responseCount := 0
+	backend.Filters.MessageOutResponse = func(peer *PeerInfo, packet *protocol.PacketRaw, records []protocol.ResponseRecord) {
+		responseCount++
+	}
+
+	// The relay is in the peer list, connected via a local connection.
+	relayPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	_, addressRelay := testSocket(t)
+	connectionRelay := &Connection{backend: backend, Network: network, Address: addressRelay, PortInternal: uint16(addressRelay.Port)}
+	relay, _ := backend.PeerlistAdd(relayPublicKey, connectionRelay)
+
+	otherPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+
+	announcement := protocol.EncodeAnnouncement(true, &protocol.Requests{FindSelf: true}, 1<<protocol.FeatureIPv4Listen, 0, 0, "test")[0]
+
+	tests := []struct {
+		name     string
+		accepted bool
+		msg      func(sender *protocol.KeyPair) *protocol.MessageTraverse // the Traverse message as the relay delivers it
+	}{
+		{"embedded Announcement", true, func(sender *protocol.KeyPair) *protocol.MessageTraverse {
+			return testTraverse(t, sender, backend.peerPublicKey, relayPublicKey, relayPublicKey, protocol.CommandAnnouncement, announcement)
+		}},
+		{"embedded Ping", false, func(sender *protocol.KeyPair) *protocol.MessageTraverse {
+			return testTraverse(t, sender, backend.peerPublicKey, relayPublicKey, relayPublicKey, protocol.CommandPing, nil)
+		}},
+		{"embedded Response", false, func(sender *protocol.KeyPair) *protocol.MessageTraverse {
+			return testTraverse(t, sender, backend.peerPublicKey, relayPublicKey, relayPublicKey, protocol.CommandResponse, announcement)
+		}},
+		{"embedded Announcement built for another relay", false, func(sender *protocol.KeyPair) *protocol.MessageTraverse {
+			return testTraverse(t, sender, backend.peerPublicKey, otherPublicKey, relayPublicKey, protocol.CommandAnnouncement, announcement)
+		}},
+		{"embedded Announcement built for another end receiver", false, func(sender *protocol.KeyPair) *protocol.MessageTraverse {
+			embedded := testTraverse(t, sender, otherPublicKey, relayPublicKey, relayPublicKey, protocol.CommandAnnouncement, announcement).EmbeddedPacketRaw
+			return testTraverseEmbedded(t, embedded, backend.peerPublicKey, relayPublicKey)
+		}},
+		{"Announcement for direct sending", false, func(sender *protocol.KeyPair) *protocol.MessageTraverse {
+			direct, err := protocol.PacketEncrypt(sender, backend.peerPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandAnnouncement, Payload: announcement})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return testTraverseEmbedded(t, direct, backend.peerPublicKey, relayPublicKey)
+		}},
+		{"embedded Announcement with a changed byte", false, func(sender *protocol.KeyPair) *protocol.MessageTraverse {
+			msg := testTraverse(t, sender, backend.peerPublicKey, relayPublicKey, relayPublicKey, protocol.CommandAnnouncement, announcement)
+			msg.EmbeddedPacketRaw[len(msg.EmbeddedPacketRaw)-1] ^= 1
+			return msg
+		}},
+	}
+
+	for _, test := range tests {
+		// Each case has its own original sender. Its address is a local one, which is used since the message is received via a local connection.
+		_, senderPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+
+		msg := test.msg(testKeyPair(t, senderPrivateKey))
+		msg.IPv4, msg.PortIPv4 = net.ParseIP("10.0.0.7").To4(), 1001
+
+		responseCount = 0
+		relay.cmdTraverseReceive(msg, connectionRelay)
+
+		if test.accepted && responseCount != 1 {
+			t.Errorf("%s: %d Responses sent, expected 1", test.name, responseCount)
+		} else if !test.accepted && responseCount != 0 {
+			t.Errorf("%s: %d Responses sent, expected none", test.name, responseCount)
+		}
+	}
 }
