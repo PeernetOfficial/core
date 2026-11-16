@@ -30,9 +30,9 @@ const (
 // respondPeerRecordsSizeTarget is the target size in bytes of the peer records of the closest peers per request key.
 // Each peer keeps one address per family; further addresses are only reported while the target size holds. 5 peer records with one IPv4 and one IPv6 address each fit.
 // The value is what a packet of 508 bytes (UDP minimum no fragmentation) leaves for the peer records of an A_RESPONSE_PEER record:
-// 508 - packet 108 - message header 23 - record count 1 - record header 3 - key 32 - peer record count 1.
+// 508 - packet 68 - message header 23 - record count 1 - record header 3 - key 32 - peer record count 1.
 // A response that carries the User Agent or a storing peer record is larger.
-const respondPeerRecordsSizeTarget = 340
+const respondPeerRecordsSizeTarget = 380
 
 // announcementMaxKeys is the maximum number of keys answered per announcement across A_FIND_PEER, B_FIND_BLOCKCHAIN and B_FIND_FILE. Keys beyond that are declined (no response record).
 const announcementMaxKeys = 20
