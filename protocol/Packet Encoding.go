@@ -30,6 +30,7 @@ It is therefore valid only inside a Traverse message sent by that relay, and not
 package protocol
 
 import (
+	"bytes"
 	"crypto/ecdh"
 	"crypto/ed25519"
 	cryptorand "crypto/rand"
@@ -37,6 +38,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math/rand"
+	"sync"
 
 	"filippo.io/edwards25519"
 	"golang.org/x/crypto/chacha20"
@@ -89,9 +91,9 @@ func NewKeyPair(privateKey ed25519.PrivateKey) (keyPair *KeyPair, err error) {
 	return keyPair, nil
 }
 
-// packetKey returns the key for packets from the sender to the receiver. One of them is the key pair, otherPublicKey is the other one.
+// sharedSecret returns the shared secret between the key pair and the other peer.
 // It fails if the other public key is not a valid Ed25519 public key or if the shared secret is all zero.
-func (keyPair *KeyPair) packetKey(otherPublicKey, senderPublicKey, receiverPublicKey ed25519.PublicKey) (key []byte, err error) {
+func (keyPair *KeyPair) sharedSecret(otherPublicKey ed25519.PublicKey) (sharedSecret []byte, err error) {
 	if len(otherPublicKey) != ed25519.PublicKeySize {
 		return nil, errors.New("invalid public key")
 	}
@@ -107,18 +109,69 @@ func (keyPair *KeyPair) packetKey(otherPublicKey, senderPublicKey, receiverPubli
 	}
 
 	// ECDH returns an error if the shared secret is all zero.
-	sharedSecret, err := keyPair.x25519.ECDH(x25519PublicKey)
-	if err != nil {
+	if sharedSecret, err = keyPair.x25519.ECDH(x25519PublicKey); err != nil {
 		return nil, errors.New("invalid shared secret")
 	}
 
+	return sharedSecret, nil
+}
+
+// packetKey returns the key for packets from the sender to the receiver: the blake3 hash of the shared secret followed by the sender's public key and the receiver's public key.
+func packetKey(sharedSecret []byte, senderPublicKey, receiverPublicKey ed25519.PublicKey) (key []byte) {
 	data := make([]byte, 0, len(sharedSecret)+2*ed25519.PublicKeySize)
 	data = append(data, sharedSecret...)
 	data = append(data, senderPublicKey...)
 	data = append(data, receiverPublicKey...)
 	hash := blake3.Sum256(data)
 
-	return hash[:], nil
+	return hash[:]
+}
+
+// PacketKeys caches the two packet keys between a key pair and one other peer. Both are derived and stored when the first packet needs one of them.
+// The zero value is an empty cache. It is safe for concurrent use.
+type PacketKeys struct {
+	sync.RWMutex
+	publicKey ed25519.PublicKey // Public key of the other peer that the keys were derived for.
+	send      []byte            // Key for packets from the key pair to the other peer.
+	receive   []byte            // Key for packets from the other peer to the key pair.
+}
+
+// packetKeyCached returns the key for packets from the key pair to the other peer (send), or from the other peer to the key pair.
+// It is taken from the cache if it is there, otherwise the keys are derived and stored. keys may be nil, in which case they are derived.
+// The cached keys are only used if they were derived for the other public key. The sender's public key of a received packet is not authenticated before the packet key is known:
+// with the cached key of another peer, a packet of that peer would be accepted under the sender's public key it carries.
+func (keyPair *KeyPair) packetKeyCached(keys *PacketKeys, otherPublicKey ed25519.PublicKey, send bool) (key []byte, err error) {
+	var keySend, keyReceive []byte
+	found, empty := false, false
+
+	if keys != nil {
+		keys.RLock()
+		found, empty = bytes.Equal(keys.publicKey, otherPublicKey), keys.publicKey == nil
+		keySend, keyReceive = keys.send, keys.receive
+		keys.RUnlock()
+	}
+
+	if !found {
+		sharedSecret, err := keyPair.sharedSecret(otherPublicKey)
+		if err != nil {
+			return nil, err
+		}
+		keySend = packetKey(sharedSecret, keyPair.PublicKey, otherPublicKey)
+		keyReceive = packetKey(sharedSecret, otherPublicKey, keyPair.PublicKey)
+
+		if empty {
+			keys.Lock()
+			if keys.publicKey == nil {
+				keys.publicKey, keys.send, keys.receive = bytes.Clone(otherPublicKey), keySend, keyReceive
+			}
+			keys.Unlock()
+		}
+	}
+
+	if send {
+		return keySend, nil
+	}
+	return keyReceive, nil
 }
 
 // packetSenderXOR encrypts or decrypts the sender's public key of a packet with ChaCha20 using the receiver's public key as key and the nonce of the packet.
@@ -134,8 +187,9 @@ func packetSenderXOR(dst, src, nonce []byte, receiverPublicKey ed25519.PublicKey
 
 // PacketDecrypt decrypts the packet, verifies its authentication tag and returns a high-level version of the packet.
 // receiver is the key pair that the packet is encrypted for.
-func PacketDecrypt(raw []byte, receiver *KeyPair) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, err error) {
-	packet, senderPublicKey, _, err = packetDecrypt(raw, receiver, nil)
+// keys is the cache of the packet keys between the receiver and the sender of the packet, see PacketSender. It may be nil.
+func PacketDecrypt(raw []byte, receiver *KeyPair, keys *PacketKeys) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, err error) {
+	packet, senderPublicKey, _, err = packetDecrypt(raw, receiver, nil, keys)
 	return packet, senderPublicKey, err
 }
 
@@ -146,7 +200,7 @@ func PacketDecryptEmbedded(raw []byte, receiver *KeyPair, relayPublicKey ed25519
 		return nil, nil, errors.New("embedded packet: invalid relay peer ID")
 	}
 
-	packet, senderPublicKey, sizeGarbage, err := packetDecrypt(raw, receiver, relayPublicKey)
+	packet, senderPublicKey, sizeGarbage, err := packetDecrypt(raw, receiver, relayPublicKey, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -166,6 +220,16 @@ func PacketEmbeddedSender(raw []byte, receiverPublicKey ed25519.PublicKey) (send
 		return nil, errors.New("embedded packet: invalid minimum length")
 	}
 
+	return PacketSender(raw, receiverPublicKey)
+}
+
+// PacketSender returns the sender's public key of a packet. receiverPublicKey is the Peer ID of the receiver. The sender is not authenticated.
+// The receiver uses it to find the cached packet keys of the sender before it decrypts the packet.
+func PacketSender(raw []byte, receiverPublicKey ed25519.PublicKey) (senderPublicKey ed25519.PublicKey, err error) {
+	if len(raw) < PacketLengthMin {
+		return nil, errors.New("invalid minimum length")
+	}
+
 	senderPublicKey = make(ed25519.PublicKey, ed25519.PublicKeySize)
 	if err = packetSenderXOR(senderPublicKey, raw[packetNonceSize:packetOffsetEncrypted], raw[:packetNonceSize], receiverPublicKey); err != nil {
 		return nil, err
@@ -175,7 +239,7 @@ func PacketEmbeddedSender(raw []byte, receiverPublicKey ed25519.PublicKey) (send
 }
 
 // packetDecrypt decrypts and verifies a packet. sizeGarbage is the size of the randomized garbage after the payload.
-func packetDecrypt(raw []byte, receiver *KeyPair, additionalData []byte) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, sizeGarbage int, err error) {
+func packetDecrypt(raw []byte, receiver *KeyPair, additionalData []byte, keys *PacketKeys) (packet *PacketRaw, senderPublicKey ed25519.PublicKey, sizeGarbage int, err error) {
 	if receiver == nil {
 		return nil, nil, 0, errors.New("invalid receiver key pair")
 	} else if len(raw) < PacketLengthMin {
@@ -190,7 +254,7 @@ func packetDecrypt(raw []byte, receiver *KeyPair, additionalData []byte) (packet
 		return nil, nil, 0, err
 	}
 
-	key, err := receiver.packetKey(senderPublicKey, senderPublicKey, receiver.PublicKey)
+	key, err := receiver.packetKeyCached(keys, senderPublicKey, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -222,13 +286,14 @@ func packetDecrypt(raw []byte, receiver *KeyPair, additionalData []byte) (packet
 }
 
 // PacketEncrypt encrypts a packet using the provided senders key pair and receivers public key.
-func PacketEncrypt(sender *KeyPair, receiverPublicKey ed25519.PublicKey, packet *PacketRaw) (raw []byte, err error) {
+// keys is the cache of the packet keys between the sender and the receiver. It may be nil.
+func PacketEncrypt(sender *KeyPair, receiverPublicKey ed25519.PublicKey, packet *PacketRaw, keys *PacketKeys) (raw []byte, err error) {
 	nonce := make([]byte, packetNonceSize)
 	if _, err = cryptorand.Read(nonce); err != nil {
 		return nil, err
 	}
 
-	return packetEncrypt(sender, receiverPublicKey, nonce, nil, packet, packetGarbage(PacketLengthMin+len(packet.Payload)))
+	return packetEncrypt(sender, receiverPublicKey, nonce, nil, packet, packetGarbage(PacketLengthMin+len(packet.Payload)), keys)
 }
 
 // PacketEncryptEmbedded encrypts a packet to be embedded in a Traverse message. It has its own nonce and no randomized garbage.
@@ -243,17 +308,17 @@ func PacketEncryptEmbedded(sender *KeyPair, receiverPublicKey, relayPublicKey ed
 		return nil, err
 	}
 
-	return packetEncrypt(sender, receiverPublicKey, nonce, relayPublicKey, packet, nil)
+	return packetEncrypt(sender, receiverPublicKey, nonce, relayPublicKey, packet, nil, nil)
 }
 
 // packetEncrypt encrypts and authenticates a packet. additionalData is empty for a direct packet.
 // garbage is appended to the payload; it is empty for an embedded packet.
-func packetEncrypt(sender *KeyPair, receiverPublicKey ed25519.PublicKey, nonce, additionalData []byte, packet *PacketRaw, garbage []byte) (raw []byte, err error) {
+func packetEncrypt(sender *KeyPair, receiverPublicKey ed25519.PublicKey, nonce, additionalData []byte, packet *PacketRaw, garbage []byte, keys *PacketKeys) (raw []byte, err error) {
 	if sender == nil {
 		return nil, errors.New("invalid sender key pair")
 	}
 
-	key, err := sender.packetKey(receiverPublicKey, sender.PublicKey, receiverPublicKey)
+	key, err := sender.packetKeyCached(keys, receiverPublicKey, true)
 	if err != nil {
 		return nil, err
 	}

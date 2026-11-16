@@ -142,7 +142,15 @@ func (network *Network) Listen() {
 // packetWorker handles incoming packets.
 func (nets *Networks) packetWorker() {
 	for packet := range nets.rawPacketsIncoming {
-		decoded, senderPublicKey, err := protocol.PacketDecrypt(packet.raw, packet.receiverKeyPair)
+		// The packet keys of a peer in the peer list are cached. They are the keys for packets that are encrypted for the key pair of this peer.
+		var keys *protocol.PacketKeys
+		if packet.receiverKeyPair == nets.backend.peerKeyPair {
+			if sender, err := protocol.PacketSender(packet.raw, nets.backend.peerPublicKey); err == nil {
+				keys = nets.backend.packetKeys(sender)
+			}
+		}
+
+		decoded, senderPublicKey, err := protocol.PacketDecrypt(packet.raw, packet.receiverKeyPair, keys)
 		if err != nil {
 			//LogError("packetWorker", "decrypting packet from '%s': %s\n", packet.sender.String(), err.Error())  // Only log for debug purposes.
 			continue

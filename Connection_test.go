@@ -264,7 +264,7 @@ func testExpectAnnouncement(t *testing.T, name string, backend *Backend, socket 
 	length, _, err := socket.ReadFromUDP(buffer)
 	if err != nil {
 		t.Errorf("%s: no direct Announcement received: %v", name, err)
-	} else if packet, sender, err := protocol.PacketDecrypt(buffer[:length], testKeyPair(t, privateKey)); err != nil || packet.Command != protocol.CommandAnnouncement || !sender.Equal(backend.peerPublicKey) {
+	} else if packet, sender, err := protocol.PacketDecrypt(buffer[:length], testKeyPair(t, privateKey), nil); err != nil || packet.Command != protocol.CommandAnnouncement || !sender.Equal(backend.peerPublicKey) {
 		t.Errorf("%s: direct packet is not an Announcement of this peer: %v", name, err)
 	}
 }
@@ -380,7 +380,7 @@ func testReadPacket(t *testing.T, name string, backend *Backend, socket *net.UDP
 		return nil
 	}
 
-	packet, sender, err := protocol.PacketDecrypt(buffer[:length], testKeyPair(t, privateKey))
+	packet, sender, err := protocol.PacketDecrypt(buffer[:length], testKeyPair(t, privateKey), nil)
 	if err != nil || !sender.Equal(backend.peerPublicKey) {
 		t.Fatalf("%s: received packet is not one of this peer: %v", name, err)
 	}

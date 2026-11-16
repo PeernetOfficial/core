@@ -287,7 +287,7 @@ func TestTraverseReceiveInvalid(t *testing.T) {
 			return testTraverseEmbedded(t, embedded, backend.peerPublicKey, relayPublicKey)
 		}},
 		{"Announcement for direct sending", false, func(sender *protocol.KeyPair) *protocol.MessageTraverse {
-			direct, err := protocol.PacketEncrypt(sender, backend.peerPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandAnnouncement, Payload: announcement})
+			direct, err := protocol.PacketEncrypt(sender, backend.peerPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandAnnouncement, Payload: announcement}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

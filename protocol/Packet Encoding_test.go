@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net"
+	"sync"
 	"testing"
 
 	"filippo.io/edwards25519"
@@ -97,15 +98,15 @@ func TestPacketVector(t *testing.T) {
 
 	// The sender and the receiver derive the same packet key. The key of the other direction is another one.
 	const vectorPacketKey = "f70ceef250387a6627662a74f7aa920ae5555e83171fdc9c0d5c6ac14e9b1ba0"
-	keySender, err := sender.packetKey(receiver.PublicKey, sender.PublicKey, receiver.PublicKey)
+	keySender, err := sender.packetKeyCached(nil, receiver.PublicKey, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	keyReceiver, err := receiver.packetKey(sender.PublicKey, sender.PublicKey, receiver.PublicKey)
+	keyReceiver, err := receiver.packetKeyCached(nil, sender.PublicKey, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	keyReverse, err := receiver.packetKey(sender.PublicKey, receiver.PublicKey, sender.PublicKey)
+	keyReverse, err := receiver.packetKeyCached(nil, sender.PublicKey, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,14 +118,14 @@ func TestPacketVector(t *testing.T) {
 	}
 
 	// encode
-	direct, err := packetEncrypt(sender, receiver.PublicKey, nonce, nil, packet, nil)
+	direct, err := packetEncrypt(sender, receiver.PublicKey, nonce, nil, packet, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	} else if !bytes.Equal(direct, vectorDirect) {
 		t.Errorf("direct packet is\n%x, expected\n%x", direct, vectorDirect)
 	}
 
-	embedded, err := packetEncrypt(sender, receiver.PublicKey, nonce, relay.PublicKey, packet, nil)
+	embedded, err := packetEncrypt(sender, receiver.PublicKey, nonce, relay.PublicKey, packet, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	} else if !bytes.Equal(embedded, vectorEmbedded) {
@@ -132,7 +133,7 @@ func TestPacketVector(t *testing.T) {
 	}
 
 	// decode
-	decoded, senderPublicKey, err := PacketDecrypt(vectorDirect, receiver)
+	decoded, senderPublicKey, err := PacketDecrypt(vectorDirect, receiver, nil)
 	if err != nil {
 		t.Fatalf("direct packet: %v", err)
 	} else if !senderPublicKey.Equal(sender.PublicKey) || decoded.Protocol != 0 || decoded.Command != 1 || decoded.Sequence != 0x01020304 || string(decoded.Payload) != "Peernet" {
@@ -175,13 +176,13 @@ func TestPacketRoundTrip(t *testing.T) {
 		packet := &PacketRaw{Protocol: ProtocolVersion, Command: CommandAnnouncement, Sequence: 0xFEDCBA98, Payload: payload}
 
 		// direct, as sent
-		raw, err := PacketEncrypt(sender, receiver.PublicKey, packet)
+		raw, err := PacketEncrypt(sender, receiver.PublicKey, packet, nil)
 		if err != nil {
 			t.Fatal(err)
 		} else if len(raw) < PacketLengthMin+len(payload) || len(raw) >= PacketLengthMin+len(payload)+maxRandomGarbage {
 			t.Fatalf("direct packet with %d bytes payload has %d bytes", len(payload), len(raw))
 		}
-		decoded, senderPublicKey, err := PacketDecrypt(raw, receiver)
+		decoded, senderPublicKey, err := PacketDecrypt(raw, receiver, nil)
 		check("direct", packet, decoded, senderPublicKey, err)
 
 		// direct, with every size of randomized garbage
@@ -191,13 +192,13 @@ func TestPacketRoundTrip(t *testing.T) {
 			garbage := make([]byte, sizeGarbage)
 			rand.Read(garbage)
 
-			raw, err := packetEncrypt(sender, receiver.PublicKey, nonce, nil, packet, garbage)
+			raw, err := packetEncrypt(sender, receiver.PublicKey, nonce, nil, packet, garbage, nil)
 			if err != nil {
 				t.Fatal(err)
 			} else if len(raw) != PacketLengthMin+len(payload)+sizeGarbage {
 				t.Fatalf("direct packet with %d bytes payload and %d bytes garbage has %d bytes", len(payload), sizeGarbage, len(raw))
 			}
-			decoded, senderPublicKey, err := PacketDecrypt(raw, receiver)
+			decoded, senderPublicKey, err := PacketDecrypt(raw, receiver, nil)
 			check("direct with garbage", packet, decoded, senderPublicKey, err)
 		}
 
@@ -225,12 +226,12 @@ func TestPacketOtherReceiver(t *testing.T) {
 
 	packet := &PacketRaw{Protocol: ProtocolVersion, Command: CommandAnnouncement, Sequence: 1, Payload: []byte("payload")}
 
-	raw, err := PacketEncrypt(sender, receiver.PublicKey, packet)
+	raw, err := PacketEncrypt(sender, receiver.PublicKey, packet, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if _, _, err := PacketDecrypt(raw, other); err == nil {
+	if _, _, err := PacketDecrypt(raw, other, nil); err == nil {
 		t.Fatal("packet accepted by another peer")
 	}
 
@@ -242,12 +243,12 @@ func TestPacketOtherReceiver(t *testing.T) {
 	if redirectedSender, err := PacketEmbeddedSender(redirected, other.PublicKey); err != nil || !redirectedSender.Equal(sender.PublicKey) {
 		t.Fatalf("redirected packet does not carry the sender for the other peer: %v", err)
 	}
-	if _, _, err := PacketDecrypt(redirected, other); err == nil || err.Error() != "invalid authentication tag" {
+	if _, _, err := PacketDecrypt(redirected, other, nil); err == nil || err.Error() != "invalid authentication tag" {
 		t.Fatalf("redirected packet at another peer: %v, expected invalid authentication tag", err)
 	}
 
 	// The packet is not valid in the other direction.
-	if _, _, err := PacketDecrypt(raw, sender); err == nil {
+	if _, _, err := PacketDecrypt(raw, sender, nil); err == nil {
 		t.Fatal("packet accepted by its sender")
 	}
 }
@@ -260,12 +261,12 @@ func TestPacketBitFlip(t *testing.T) {
 
 	packet := &PacketRaw{Protocol: ProtocolVersion, Command: CommandAnnouncement, Sequence: 1, Payload: []byte("payload")}
 
-	direct, err := PacketEncrypt(sender, receiver.PublicKey, packet)
+	direct, err := PacketEncrypt(sender, receiver.PublicKey, packet, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for bit := 0; bit < len(direct)*8; bit++ {
-		if _, _, err := PacketDecrypt(flipBit(direct, bit), receiver); err == nil {
+		if _, _, err := PacketDecrypt(flipBit(direct, bit), receiver, nil); err == nil {
 			t.Fatalf("direct packet with flipped bit %d accepted", bit)
 		}
 	}
@@ -294,7 +295,7 @@ func TestPacketSenderSignBit(t *testing.T) {
 	sender := generateKeyPair(t)
 	receiver := generateKeyPair(t)
 
-	raw, err := PacketEncrypt(sender, receiver.PublicKey, &PacketRaw{Protocol: ProtocolVersion, Command: CommandAnnouncement, Sequence: 1, Payload: []byte("payload")})
+	raw, err := PacketEncrypt(sender, receiver.PublicKey, &PacketRaw{Protocol: ProtocolVersion, Command: CommandAnnouncement, Sequence: 1, Payload: []byte("payload")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +318,7 @@ func TestPacketSenderSignBit(t *testing.T) {
 		t.Fatal("the sender's public key with the top bit flipped converts to another X25519 public key")
 	}
 
-	if _, _, err := PacketDecrypt(flipped, receiver); err == nil || err.Error() != "invalid authentication tag" {
+	if _, _, err := PacketDecrypt(flipped, receiver, nil); err == nil || err.Error() != "invalid authentication tag" {
 		t.Fatalf("packet with the top bit of the sender's public key flipped: %v, expected invalid authentication tag", err)
 	}
 }
@@ -361,10 +362,10 @@ func TestPacketSenderInvalid(t *testing.T) {
 			t.Fatalf("%s is not a point of low order", keyHex)
 		}
 
-		if _, _, err := PacketDecrypt(packetFromSender(t, key, receiver.PublicKey), receiver); err == nil || err.Error() != "invalid shared secret" {
+		if _, _, err := PacketDecrypt(packetFromSender(t, key, receiver.PublicKey), receiver, nil); err == nil || err.Error() != "invalid shared secret" {
 			t.Errorf("packet from %s: %v, expected invalid shared secret", keyHex, err)
 		}
-		if _, err := PacketEncrypt(sender, key, packet); err == nil || err.Error() != "invalid shared secret" {
+		if _, err := PacketEncrypt(sender, key, packet, nil); err == nil || err.Error() != "invalid shared secret" {
 			t.Errorf("packet to %s: %v, expected invalid shared secret", keyHex, err)
 		}
 	}
@@ -379,28 +380,28 @@ func TestPacketSenderInvalid(t *testing.T) {
 		}
 	}
 
-	if _, _, err := PacketDecrypt(packetFromSender(t, invalid, receiver.PublicKey), receiver); err == nil || err.Error() != "invalid public key" {
+	if _, _, err := PacketDecrypt(packetFromSender(t, invalid, receiver.PublicKey), receiver, nil); err == nil || err.Error() != "invalid public key" {
 		t.Errorf("packet from %x: %v, expected invalid public key", invalid, err)
 	}
-	if _, err := PacketEncrypt(sender, invalid, packet); err == nil || err.Error() != "invalid public key" {
+	if _, err := PacketEncrypt(sender, invalid, packet, nil); err == nil || err.Error() != "invalid public key" {
 		t.Errorf("packet to %x: %v, expected invalid public key", invalid, err)
 	}
-	if _, err := PacketEncrypt(sender, invalid[:31], packet); err == nil {
+	if _, err := PacketEncrypt(sender, invalid[:31], packet, nil); err == nil {
 		t.Error("packet to a public key of 31 bytes created")
 	}
 
 	// a valid sender's public key with random encrypted fields and authentication tag
 	for n := 0; n < 1000; n++ {
-		if _, _, err := PacketDecrypt(packetFromSender(t, sender.PublicKey, receiver.PublicKey), receiver); err == nil || err.Error() != "invalid authentication tag" {
+		if _, _, err := PacketDecrypt(packetFromSender(t, sender.PublicKey, receiver.PublicKey), receiver, nil); err == nil || err.Error() != "invalid authentication tag" {
 			t.Fatalf("random packet from a valid sender: %v, expected invalid authentication tag", err)
 		}
 	}
 
 	// without key pair
-	if _, err := PacketEncrypt(nil, receiver.PublicKey, packet); err == nil {
+	if _, err := PacketEncrypt(nil, receiver.PublicKey, packet, nil); err == nil {
 		t.Error("packet created without key pair of the sender")
 	}
-	if _, _, err := PacketDecrypt(packetFromSender(t, sender.PublicKey, receiver.PublicKey), nil); err == nil {
+	if _, _, err := PacketDecrypt(packetFromSender(t, sender.PublicKey, receiver.PublicKey), nil, nil); err == nil {
 		t.Error("packet accepted without key pair of the receiver")
 	}
 	if _, err := NewKeyPair(nil); err == nil {
@@ -416,7 +417,7 @@ func TestPacketTruncated(t *testing.T) {
 
 	packet := &PacketRaw{Protocol: ProtocolVersion, Command: CommandAnnouncement, Sequence: 1}
 
-	direct, err := packetEncrypt(sender, receiver.PublicKey, make([]byte, packetNonceSize), nil, packet, nil)
+	direct, err := packetEncrypt(sender, receiver.PublicKey, make([]byte, packetNonceSize), nil, packet, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +430,7 @@ func TestPacketTruncated(t *testing.T) {
 	}
 
 	for n := 0; n < PacketLengthMin; n++ {
-		if _, _, err := PacketDecrypt(direct[:n], receiver); err == nil {
+		if _, _, err := PacketDecrypt(direct[:n], receiver, nil); err == nil {
 			t.Fatalf("direct packet of %d bytes accepted", n)
 		}
 		if _, _, err := PacketDecryptEmbedded(embedded[:n], receiver, relay.PublicKey); err == nil {
@@ -441,16 +442,16 @@ func TestPacketTruncated(t *testing.T) {
 	}
 
 	// The size of payload data is 8, the packet carries 7 bytes after the field. It is authenticated by the sender.
-	key, err := sender.packetKey(receiver.PublicKey, sender.PublicKey, receiver.PublicKey)
+	key, err := sender.packetKeyCached(nil, receiver.PublicKey, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	exceed, err := packetEncrypt(sender, receiver.PublicKey, make([]byte, packetNonceSize), nil, &PacketRaw{Payload: make([]byte, 7)}, nil)
+	exceed, err := packetEncrypt(sender, receiver.PublicKey, make([]byte, packetNonceSize), nil, &PacketRaw{Payload: make([]byte, 7)}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	exceed = packetSeal(t, key, exceed, func(fields []byte) { fields[6] = 8 }, nil)
-	if _, _, err := PacketDecrypt(exceed, receiver); err == nil || err.Error() != "invalid length field" {
+	if _, _, err := PacketDecrypt(exceed, receiver, nil); err == nil || err.Error() != "invalid length field" {
 		t.Fatalf("packet whose payload size exceeds the packet: %v, expected invalid length field", err)
 	}
 }
@@ -499,18 +500,18 @@ func TestPacketEmbeddedInvalid(t *testing.T) {
 	}
 
 	// The embedded packet sent directly has the size of a direct packet without randomized garbage. Only the authentication tag rejects it.
-	if _, _, err := PacketDecrypt(embedded, receiver); err == nil || err.Error() != "invalid authentication tag" {
+	if _, _, err := PacketDecrypt(embedded, receiver, nil); err == nil || err.Error() != "invalid authentication tag" {
 		t.Fatalf("embedded packet as direct packet: %v, expected invalid authentication tag", err)
 	}
 
 	// A direct packet without randomized garbage inside a Traverse message has the size of an embedded packet. Only the authentication tag rejects it.
 	nonce := make([]byte, packetNonceSize)
 	rand.Read(nonce)
-	direct, err := packetEncrypt(sender, receiver.PublicKey, nonce, nil, packet, nil)
+	direct, err := packetEncrypt(sender, receiver.PublicKey, nonce, nil, packet, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := PacketDecrypt(direct, receiver); err != nil {
+	if _, _, err := PacketDecrypt(direct, receiver, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := PacketDecryptEmbedded(direct, receiver, relay.PublicKey); err == nil || err.Error() != "invalid authentication tag" {
@@ -519,7 +520,7 @@ func TestPacketEmbeddedInvalid(t *testing.T) {
 
 	// direct packets as sent, with randomized garbage
 	for n := 0; n < 100; n++ {
-		direct, err := PacketEncrypt(sender, receiver.PublicKey, packet)
+		direct, err := PacketEncrypt(sender, receiver.PublicKey, packet, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -530,11 +531,11 @@ func TestPacketEmbeddedInvalid(t *testing.T) {
 
 	// randomized garbage after the payload, authenticated by the sender for the relay
 	for sizeGarbage := 1; sizeGarbage < maxRandomGarbage; sizeGarbage++ {
-		withGarbage, err := packetEncrypt(sender, receiver.PublicKey, nonce, relay.PublicKey, packet, make([]byte, sizeGarbage))
+		withGarbage, err := packetEncrypt(sender, receiver.PublicKey, nonce, relay.PublicKey, packet, make([]byte, sizeGarbage), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, _, garbage, err := packetDecrypt(withGarbage, receiver, relay.PublicKey); err != nil || garbage != sizeGarbage {
+		if _, _, garbage, err := packetDecrypt(withGarbage, receiver, relay.PublicKey, nil); err != nil || garbage != sizeGarbage {
 			t.Fatalf("embedded packet with %d bytes garbage: %d bytes garbage, %v", sizeGarbage, garbage, err)
 		}
 		if _, _, err := PacketDecryptEmbedded(withGarbage, receiver, relay.PublicKey); err == nil || err.Error() != "embedded packet: invalid length" {
@@ -551,7 +552,7 @@ func TestPacketEmbeddedInvalid(t *testing.T) {
 	}
 
 	// A direct packet has no additional authenticated data: one that is authenticated with empty additional data is not valid as embedded packet of a relay, and vice versa.
-	if _, _, _, err := packetDecrypt(embedded, receiver, nil); err == nil {
+	if _, _, _, err := packetDecrypt(embedded, receiver, nil, nil); err == nil {
 		t.Fatal("embedded packet accepted without additional authenticated data")
 	}
 }
@@ -584,8 +585,8 @@ func TestPacketUnique(t *testing.T) {
 		}
 	}
 
-	direct1, err1 := PacketEncrypt(sender, receiver.PublicKey, packet)
-	direct2, err2 := PacketEncrypt(sender, receiver.PublicKey, packet)
+	direct1, err1 := PacketEncrypt(sender, receiver.PublicKey, packet, nil)
+	direct2, err2 := PacketEncrypt(sender, receiver.PublicKey, packet, nil)
 	if err1 != nil || err2 != nil {
 		t.Fatal(err1, err2)
 	}
@@ -674,5 +675,157 @@ func TestTraverseLayout(t *testing.T) {
 	}
 	if err := EncodeTraverseSetAddress(payload[:59], ipv4, 1001, 1002, ipv6, 1003, 1004); err == nil {
 		t.Fatal("set address on payload of 59 bytes accepted")
+	}
+}
+
+// TestPacketKeys checks the cache of the packet keys: the keys are derived and stored with the first packet and used for the following ones,
+// the packets are the same as without the cache, and a packet that is not valid is rejected with the cached key as well.
+func TestPacketKeys(t *testing.T) {
+	sender := newKeyPair(t, ed25519.NewKeyFromSeed(bytes.Repeat([]byte{1}, 32)))
+	receiver := newKeyPair(t, ed25519.NewKeyFromSeed(bytes.Repeat([]byte{2}, 32)))
+
+	nonce := fromHex(t, "000102030405060708090a0b")
+	packet := &PacketRaw{Protocol: 0, Command: 1, Sequence: 0x01020304, Payload: []byte("Peernet")}
+
+	// The packet and the packet key of the test vector, see TestPacketVector.
+	vectorDirect := fromHex(t, "000102030405060708090a0b973aaf461f9e9e39c748b95c1c9f40e79bf35d140d613746347134957ee92b34ee9cd13863e0a5fdb40c6b5e10a5c7017083798785b26c6d065bdb6d21d441")
+	vectorPacketKey := fromHex(t, "f70ceef250387a6627662a74f7aa920ae5555e83171fdc9c0d5c6ac14e9b1ba0")
+
+	keysSender, keysReceiver := &PacketKeys{}, &PacketKeys{} // cache at the sender for the receiver, and at the receiver for the sender
+
+	// Without and with the keys in the cache the packet is the one of the test vector.
+	for n := 0; n < 3; n++ {
+		raw, err := packetEncrypt(sender, receiver.PublicKey, nonce, nil, packet, nil, keysSender)
+		if err != nil {
+			t.Fatal(err)
+		} else if !bytes.Equal(raw, vectorDirect) {
+			t.Fatalf("packet %d with cache is\n%x, expected\n%x", n, raw, vectorDirect)
+		}
+
+		decoded, senderPublicKey, err := PacketDecrypt(raw, receiver, keysReceiver)
+		if err != nil {
+			t.Fatalf("packet %d with cache: %v", n, err)
+		} else if !senderPublicKey.Equal(sender.PublicKey) || decoded.Command != 1 || decoded.Sequence != 0x01020304 || string(decoded.Payload) != "Peernet" {
+			t.Fatalf("packet %d with cache decoded as %+v from %x", n, decoded, senderPublicKey)
+		}
+	}
+
+	// Each side stored both keys for the public key of the other. The two directions have different keys, and both sides hold the same two.
+	if !bytes.Equal(keysSender.publicKey, receiver.PublicKey) || !bytes.Equal(keysSender.send, vectorPacketKey) {
+		t.Fatal("the sender did not store the packet key for sending")
+	}
+	if !bytes.Equal(keysReceiver.publicKey, sender.PublicKey) || !bytes.Equal(keysReceiver.receive, vectorPacketKey) {
+		t.Fatal("the receiver did not store the packet key for receiving")
+	}
+	if len(keysSender.receive) != 32 || bytes.Equal(keysSender.send, keysSender.receive) {
+		t.Error("the two directions use the same packet key")
+	}
+	if !bytes.Equal(keysSender.receive, keysReceiver.send) {
+		t.Error("the two sides hold different packet keys")
+	}
+
+	// A packet of the other direction is exchanged with the cached keys.
+	reply, err := PacketEncrypt(receiver, sender.PublicKey, packet, keysReceiver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, senderPublicKey, err := PacketDecrypt(reply, sender, keysSender); err != nil || !senderPublicKey.Equal(receiver.PublicKey) {
+		t.Fatalf("packet of the other direction: %v", err)
+	}
+	if _, senderPublicKey, err := PacketDecrypt(reply, sender, nil); err != nil || !senderPublicKey.Equal(receiver.PublicKey) {
+		t.Fatalf("packet of the other direction without cache: %v", err)
+	}
+
+	// The cached key is the one that is used: with another key in the cache the packet is not readable by the receiver, and the receiver does not read a valid packet.
+	otherKey := bytes.Repeat([]byte{7}, 32)
+	if raw, err := PacketEncrypt(sender, receiver.PublicKey, packet, &PacketKeys{publicKey: receiver.PublicKey, send: otherKey, receive: otherKey}); err != nil {
+		t.Fatal(err)
+	} else if _, _, err := PacketDecrypt(raw, receiver, nil); err == nil {
+		t.Error("the cached packet key was not used for sending")
+	}
+	if _, _, err := PacketDecrypt(vectorDirect, receiver, &PacketKeys{publicKey: sender.PublicKey, send: otherKey, receive: otherKey}); err == nil {
+		t.Error("the cached packet key was not used for receiving")
+	}
+
+	// With the key cached, every single bit flip is rejected, as is a packet for another receiver.
+	for bit := 0; bit < len(vectorDirect)*8; bit++ {
+		if _, _, err := PacketDecrypt(flipBit(vectorDirect, bit), receiver, keysReceiver); err == nil {
+			t.Fatalf("packet with flipped bit %d accepted with the cached key", bit)
+		}
+	}
+	other := generateKeyPair(t)
+	if raw, err := PacketEncrypt(sender, other.PublicKey, packet, nil); err != nil {
+		t.Fatal(err)
+	} else if _, _, err := PacketDecrypt(raw, receiver, keysReceiver); err == nil {
+		t.Error("packet for another receiver accepted with the cached key")
+	}
+
+	// The cache of one peer is not used for another peer. A packet of the sender that carries the public key of another peer is rejected with the cache of the sender:
+	// the packet key is derived for the public key in the packet.
+	forged := append([]byte{}, vectorDirect...)
+	if err := packetSenderXOR(forged[packetNonceSize:packetOffsetEncrypted], other.PublicKey, forged[:packetNonceSize], receiver.PublicKey); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := PacketDecrypt(forged, receiver, keysReceiver); err == nil || err.Error() != "invalid authentication tag" {
+		t.Errorf("packet of the sender with the public key of another peer, with the cache of the sender: %v, expected invalid authentication tag", err)
+	}
+	if raw, err := PacketEncrypt(sender, other.PublicKey, packet, keysSender); err != nil {
+		t.Fatal(err)
+	} else if _, senderPublicKey, err := PacketDecrypt(raw, other, nil); err != nil || !senderPublicKey.Equal(sender.PublicKey) {
+		t.Errorf("packet to another peer with the cache of the receiver: %v", err)
+	}
+	if !bytes.Equal(keysReceiver.publicKey, sender.PublicKey) || !bytes.Equal(keysReceiver.receive, vectorPacketKey) {
+		t.Error("the cache was replaced by a packet with another public key")
+	}
+	if !bytes.Equal(keysSender.publicKey, receiver.PublicKey) || !bytes.Equal(keysSender.send, vectorPacketKey) {
+		t.Error("the cache was replaced by a packet to another public key")
+	}
+
+	// Keys that cannot be derived are not stored.
+	keysInvalid := &PacketKeys{}
+	lowOrder := ed25519.PublicKey(fromHex(t, "0100000000000000000000000000000000000000000000000000000000000000"))
+	if _, err := PacketEncrypt(sender, lowOrder, packet, keysInvalid); err == nil {
+		t.Error("packet to a public key of low order created")
+	}
+	if _, _, err := PacketDecrypt(packetFromSender(t, lowOrder, receiver.PublicKey), receiver, keysInvalid); err == nil {
+		t.Error("packet from a public key of low order accepted")
+	}
+	if keysInvalid.publicKey != nil || keysInvalid.send != nil || keysInvalid.receive != nil {
+		t.Error("packet keys were stored for a public key of low order")
+	}
+
+	// concurrent use of an empty cache
+	keysSender, keysReceiver = &PacketKeys{}, &PacketKeys{}
+	var wg sync.WaitGroup
+	for n := 0; n < 16; n++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for m := 0; m < 20; m++ {
+				raw, err := PacketEncrypt(sender, receiver.PublicKey, packet, keysSender)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if _, senderPublicKey, err := PacketDecrypt(raw, receiver, keysReceiver); err != nil || !senderPublicKey.Equal(sender.PublicKey) {
+					t.Errorf("concurrent use: %v", err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if !bytes.Equal(keysSender.send, vectorPacketKey) || !bytes.Equal(keysReceiver.receive, vectorPacketKey) {
+		t.Error("concurrent use: another packet key is stored")
+	}
+
+	// PacketSender returns the sender for the cache lookup and rejects every size below the minimum.
+	if senderPublicKey, err := PacketSender(vectorDirect, receiver.PublicKey); err != nil || !senderPublicKey.Equal(sender.PublicKey) {
+		t.Errorf("sender of the packet read as %x: %v", senderPublicKey, err)
+	}
+	for n := 0; n < PacketLengthMin; n++ {
+		if _, err := PacketSender(vectorDirect[:n], receiver.PublicKey); err == nil {
+			t.Fatalf("sender of a packet of %d bytes returned", n)
+		}
 	}
 }

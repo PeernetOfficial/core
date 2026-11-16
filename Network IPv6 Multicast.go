@@ -146,7 +146,7 @@ func (network *Network) MulticastIPv6Send() (err error) {
 		return errors.New("error encoding multicast announcement")
 	}
 
-	raw, err := protocol.PacketEncrypt(network.backend.peerKeyPair, ipv6MulticastPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: protocol.LocalDiscoverySign(packets[0], network.backend.peerPrivateKey, ipv6MulticastPublicKey)})
+	raw, err := protocol.PacketEncrypt(network.backend.peerKeyPair, ipv6MulticastPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: protocol.LocalDiscoverySign(packets[0], network.backend.peerPrivateKey, ipv6MulticastPublicKey)}, nil)
 	if err != nil {
 		return err
 	}

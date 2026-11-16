@@ -101,7 +101,7 @@ func (network *Network) BroadcastIPv4Send() (err error) {
 		return errors.New("error encoding broadcast announcement")
 	}
 
-	raw, err := protocol.PacketEncrypt(network.backend.peerKeyPair, ipv4BroadcastPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: protocol.LocalDiscoverySign(packets[0], network.backend.peerPrivateKey, ipv4BroadcastPublicKey)})
+	raw, err := protocol.PacketEncrypt(network.backend.peerKeyPair, ipv4BroadcastPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: protocol.CommandLocalDiscovery, Payload: protocol.LocalDiscoverySign(packets[0], network.backend.peerPrivateKey, ipv4BroadcastPublicKey)}, nil)
 	if err != nil {
 		return err
 	}

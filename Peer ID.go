@@ -100,6 +100,7 @@ type PeerInfo struct {
 	BlockchainHeight      uint64           // Blockchain height
 	BlockchainVersion     uint64           // Blockchain version
 	blockchainLastRefresh time.Time        // Last refresh of the blockchain info.
+	packetKeys            protocol.PacketKeys // Packet keys for packets sent to and received from the peer.
 
 	// statistics
 	StatsPacketSent     uint64 // Count of packets sent
@@ -183,6 +184,15 @@ func (backend *Backend) PeerlistLookup(publicKey ed25519.PublicKey) (peer *PeerI
 	defer backend.peerlistMutex.RUnlock()
 
 	return backend.peerList[publicKey2Array(publicKey)]
+}
+
+// packetKeys returns the cache of the packet keys of the peer with the public key.
+// It is nil if the peer is not in the peer list. The packet key is then derived for the packet.
+func (backend *Backend) packetKeys(publicKey ed25519.PublicKey) (keys *protocol.PacketKeys) {
+	if peer := backend.PeerlistLookup(publicKey); peer != nil {
+		return &peer.packetKeys
+	}
+	return nil
 }
 
 // PeerlistCount returns the current count of peers in the peer list

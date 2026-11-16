@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"net"
 	"testing"
+	"time"
 
 	"filippo.io/edwards25519"
 	"github.com/PeernetOfficial/core/protocol"
@@ -35,7 +36,7 @@ func testPacketWorker(backend *Backend, packets ...networkWire) {
 
 // testPacket returns the packet as the sender transmits it to the receiver.
 func testPacket(t *testing.T, senderPrivateKey ed25519.PrivateKey, receiverPublicKey ed25519.PublicKey, command uint8, payload []byte) (raw []byte) {
-	raw, err := protocol.PacketEncrypt(testKeyPair(t, senderPrivateKey), receiverPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: command, Payload: payload})
+	raw, err := protocol.PacketEncrypt(testKeyPair(t, senderPrivateKey), receiverPublicKey, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: command, Payload: payload}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +89,7 @@ func testPacketForged(t *testing.T, fixedPrivateKeyHex string, fixed *protocol.K
 	raw = aead.Seal(raw, raw[:12], fields, nil)
 
 	// The packet decrypts with the fixed key pair as a packet of the sender.
-	if decoded, sender, err := protocol.PacketDecrypt(raw, fixed); err != nil || !sender.Equal(senderPublicKey) || decoded.Command != command {
+	if decoded, sender, err := protocol.PacketDecrypt(raw, fixed, nil); err != nil || !sender.Equal(senderPublicKey) || decoded.Command != command {
 		t.Fatalf("packet built with the fixed private key does not decrypt as packet of the sender: %v", err)
 	}
 
@@ -204,5 +205,81 @@ func TestLocalDiscovery(t *testing.T) {
 				t.Errorf("%s: message accepted (sender in peer list: %t)", name, inPeerList)
 			}
 		}
+	}
+}
+
+// TestPacketKeysPeer checks that the packet keys of a peer in the peer list are stored with the peer and that packets are exchanged with them:
+// packets sent to the peer are readable by it, packets received from it are processed, and a Local Discovery message of the same peer, which uses the fixed key pair, is accepted.
+func TestPacketKeysPeer(t *testing.T) {
+	initBroadcastIPv4()
+
+	backend, network := testBackendLoopback(t)
+	testRootPeers(t)
+
+	pingCount := 0
+	backend.Filters.MessageIn = func(peer *PeerInfo, raw *protocol.MessageRaw, message interface{}) {
+		if raw.Command == protocol.CommandPing {
+			pingCount++
+		}
+	}
+
+	senderPublicKey, senderPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+	socketSender, addressSender := testSocket(t)
+
+	receive := func(raw []byte, keyPair *protocol.KeyPair, unicast bool) {
+		testPacketWorker(backend, networkWire{network: network, sender: &net.UDPAddr{IP: addressSender.IP, Port: addressSender.Port}, raw: raw, receiverKeyPair: keyPair, unicast: unicast})
+	}
+
+	// The first packet of a peer that is not in the peer list is decrypted with a derived key. The peer is added to the peer list.
+	receive(testPacket(t, senderPrivateKey, backend.peerPublicKey, protocol.CommandPing, nil), backend.peerKeyPair, true)
+
+	peer := backend.PeerlistLookup(senderPublicKey)
+	if peer == nil || pingCount != 1 {
+		t.Fatalf("first packet not processed (%d)", pingCount)
+	} else if backend.packetKeys(senderPublicKey) != &peer.packetKeys {
+		t.Fatal("the packet keys of the peer are not the ones stored with the peer")
+	}
+
+	// The peer reads the answer to the first packet and to every following packet.
+	if testReadPacket(t, "answer to the first packet", backend, socketSender, senderPrivateKey, 2*time.Second) == nil {
+		t.Fatal("no answer received by the peer")
+	}
+
+	for n := 0; n < 3; n++ {
+		receive(testPacket(t, senderPrivateKey, backend.peerPublicKey, protocol.CommandPing, nil), backend.peerKeyPair, true)
+
+		if testReadPacket(t, "answer to a following packet", backend, socketSender, senderPrivateKey, 2*time.Second) == nil {
+			t.Fatalf("no answer received by the peer for packet %d", n)
+		}
+	}
+	if pingCount != 4 {
+		t.Errorf("%d packets of the peer processed, expected 4", pingCount)
+	}
+
+	// A changed packet of the peer is dropped.
+	invalid := testPacket(t, senderPrivateKey, backend.peerPublicKey, protocol.CommandPing, nil)
+	invalid[len(invalid)-1] ^= 1
+	receive(invalid, backend.peerKeyPair, true)
+	if pingCount != 4 {
+		t.Error("a changed packet of the peer was processed")
+	}
+
+	// A Local Discovery message of the same peer is encrypted for the fixed key pair. The packet keys of the peer do not apply to it.
+	localDiscoveryCount := 0
+	backend.Filters.MessageIn = func(peer *PeerInfo, raw *protocol.MessageRaw, message interface{}) {
+		if raw.Command == protocol.CommandLocalDiscovery {
+			localDiscoveryCount++
+		}
+	}
+	announcement := protocol.EncodeAnnouncement(true, nil, 1<<protocol.FeatureIPv4Listen, 0, 0, "test")[0]
+	receive(testPacket(t, senderPrivateKey, ipv4BroadcastPublicKey, protocol.CommandLocalDiscovery, protocol.LocalDiscoverySign(announcement, senderPrivateKey, ipv4BroadcastPublicKey)), ipv4BroadcastKeyPair, false)
+	if localDiscoveryCount != 1 {
+		t.Error("Local Discovery message of a peer with cached packet keys not accepted")
+	}
+
+	// A peer that is not in the peer list has no cache.
+	otherPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	if backend.packetKeys(otherPublicKey) != nil {
+		t.Error("packet keys returned for a peer that is not in the peer list")
 	}
 }
