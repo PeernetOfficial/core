@@ -25,6 +25,10 @@ The packet key is the blake3 hash of the shared secret followed by the sender's 
 
 A packet embedded in a Traverse message has the same structure without the randomized garbage. Its additional authenticated data is the Peer ID of the relaying peer followed by the command number of the Traverse message (1 byte).
 It is therefore valid only inside a Traverse message sent by that relay, and not as a packet sent directly.
+
+A packet embedded in a Relay message has the same structure without the sender's public key and without the randomized garbage.
+Its sender is the sender of the Relay message when sent to the relay, and the Peer ID in the Relay message when sent by the relay.
+Its additional authenticated data is the Peer ID of the relaying peer followed by the command number of the Relay message (1 byte).
 */
 
 package protocol
@@ -65,6 +69,9 @@ const packetOffsetEncrypted = packetNonceSize + ed25519.PublicKeySize
 
 // PacketLengthMinEmbedded is the minimum size of a packet embedded in a Traverse message. Its size is the minimum size plus the size of the payload.
 const PacketLengthMinEmbedded = PacketLengthMin
+
+// PacketLengthMinRelay is the minimum size of a packet embedded in a Relay message, which has no sender's public key. Its size is the minimum size plus the size of the payload.
+const PacketLengthMinRelay = PacketLengthMin - ed25519.PublicKeySize
 const maxRandomGarbage = 20
 
 // KeyPair is the key pair of a peer for encrypting and decrypting packets. It holds the X25519 private key that is derived from the Ed25519 private key.
@@ -231,6 +238,37 @@ func PacketEmbeddedSender(raw []byte, receiverPublicKey ed25519.PublicKey) (send
 	return PacketSender(raw, receiverPublicKey)
 }
 
+// PacketDecryptRelay decrypts a packet embedded in a Relay message, verifies its authentication tag and returns a high-level version of the packet.
+// senderPublicKey is the sender of the embedded packet: the Peer ID in the Relay message that the relaying peer sent.
+// The additional authenticated data is the Peer ID of the relaying peer, which is the peer that sent the Relay message, followed by the command number of the Relay message.
+// keys is the cache of the packet keys between the receiver and the sender of the embedded packet. It may be nil.
+func PacketDecryptRelay(raw []byte, receiver *KeyPair, senderPublicKey, relayPublicKey ed25519.PublicKey, keys *PacketKeys) (packet *PacketRaw, err error) {
+	if receiver == nil {
+		return nil, errors.New("invalid receiver key pair")
+	} else if len(relayPublicKey) != ed25519.PublicKeySize {
+		return nil, errors.New("embedded packet: invalid relay peer ID")
+	} else if len(raw) < PacketLengthMinRelay {
+		return nil, errors.New("embedded packet: invalid minimum length")
+	}
+
+	key, err := receiver.packetKeyCached(keys, senderPublicKey, false)
+	if err != nil {
+		return nil, err
+	}
+
+	packet, sizeGarbage, err := packetDecryptFields(raw[packetNonceSize:], raw[:packetNonceSize], key, embeddedAdditionalData(relayPublicKey, CommandRelay))
+	if err != nil {
+		return nil, err
+	}
+
+	// The embedded packet has no randomized garbage.
+	if sizeGarbage != 0 {
+		return nil, errors.New("embedded packet: invalid length")
+	}
+
+	return packet, nil
+}
+
 // PacketSender returns the sender's public key of a packet. receiverPublicKey is the Peer ID of the receiver. The sender is not authenticated.
 // The receiver uses it to find the cached packet keys of the sender before it decrypts the packet.
 func PacketSender(raw []byte, receiverPublicKey ed25519.PublicKey) (senderPublicKey ed25519.PublicKey, err error) {
@@ -266,15 +304,25 @@ func packetDecrypt(raw []byte, receiver *KeyPair, additionalData []byte, keys *P
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	aead, err := chacha20poly1305.New(key)
-	if err != nil {
+
+	if packet, sizeGarbage, err = packetDecryptFields(raw[packetOffsetEncrypted:], nonce, key, additionalData); err != nil {
 		return nil, nil, 0, err
 	}
 
-	// Decrypt the fields from the protocol version to the randomized garbage and verify the authentication tag.
-	decrypted, err := aead.Open(nil, nonce, raw[packetOffsetEncrypted:], additionalData)
+	return packet, senderPublicKey, sizeGarbage, nil
+}
+
+// packetDecryptFields decrypts the fields from the protocol version to the randomized garbage with the packet key and verifies the authentication tag that follows them.
+// sizeGarbage is the size of the randomized garbage after the payload.
+func packetDecryptFields(encrypted, nonce, key, additionalData []byte) (packet *PacketRaw, sizeGarbage int, err error) {
+	aead, err := chacha20poly1305.New(key)
 	if err != nil {
-		return nil, nil, 0, errors.New("invalid authentication tag")
+		return nil, 0, err
+	}
+
+	decrypted, err := aead.Open(nil, nonce, encrypted, additionalData)
+	if err != nil {
+		return nil, 0, errors.New("invalid authentication tag")
 	}
 
 	// copy all fields
@@ -283,14 +331,14 @@ func packetDecrypt(raw []byte, receiver *KeyPair, additionalData []byte, keys *P
 
 	sizePayload := int(binary.LittleEndian.Uint16(decrypted[6:8]))
 	if sizePayload > len(decrypted)-8 { // invalid length?
-		return nil, nil, 0, errors.New("invalid length field")
+		return nil, 0, errors.New("invalid length field")
 	}
 	if sizePayload > 0 {
 		packet.Payload = make([]byte, sizePayload)
 		copy(packet.Payload, decrypted[8:8+sizePayload])
 	}
 
-	return packet, senderPublicKey, len(decrypted) - 8 - sizePayload, nil
+	return packet, len(decrypted) - 8 - sizePayload, nil
 }
 
 // PacketEncrypt encrypts a packet using the provided senders key pair and receivers public key.
@@ -319,6 +367,38 @@ func PacketEncryptEmbedded(sender *KeyPair, receiverPublicKey, relayPublicKey ed
 	return packetEncrypt(sender, receiverPublicKey, nonce, embeddedAdditionalData(relayPublicKey, CommandTraverse), packet, nil, nil)
 }
 
+// PacketEncryptRelay encrypts a packet to be embedded in a Relay message. It has its own nonce, no sender's public key and no randomized garbage.
+// The additional authenticated data is the Peer ID of the relaying peer, which is the peer the Relay message is sent to, followed by the command number of the Relay message.
+func PacketEncryptRelay(sender *KeyPair, receiverPublicKey, relayPublicKey ed25519.PublicKey, packet *PacketRaw) (raw []byte, err error) {
+	if len(relayPublicKey) != ed25519.PublicKeySize {
+		return nil, errors.New("embedded packet: invalid relay peer ID")
+	}
+
+	nonce := make([]byte, packetNonceSize)
+	if _, err = cryptorand.Read(nonce); err != nil {
+		return nil, err
+	}
+
+	return packetEncryptRelay(sender, receiverPublicKey, nonce, embeddedAdditionalData(relayPublicKey, CommandRelay), packet)
+}
+
+// packetEncryptRelay encrypts and authenticates a packet without the sender's public key and without randomized garbage.
+func packetEncryptRelay(sender *KeyPair, receiverPublicKey ed25519.PublicKey, nonce, additionalData []byte, packet *PacketRaw) (raw []byte, err error) {
+	if sender == nil {
+		return nil, errors.New("invalid sender key pair")
+	}
+
+	key, err := sender.packetKeyCached(nil, receiverPublicKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	raw = make([]byte, packetNonceSize, PacketLengthMinRelay+len(packet.Payload))
+	copy(raw, nonce)
+
+	return packetEncryptFields(raw, nonce, key, additionalData, packet, nil)
+}
+
 // packetEncrypt encrypts and authenticates a packet. additionalData is empty for a direct packet.
 // garbage is appended to the payload; it is empty for an embedded packet.
 func packetEncrypt(sender *KeyPair, receiverPublicKey ed25519.PublicKey, nonce, additionalData []byte, packet *PacketRaw, garbage []byte, keys *PacketKeys) (raw []byte, err error) {
@@ -330,13 +410,8 @@ func packetEncrypt(sender *KeyPair, receiverPublicKey ed25519.PublicKey, nonce, 
 	if err != nil {
 		return nil, err
 	}
-	aead, err := chacha20poly1305.New(key)
-	if err != nil {
-		return nil, err
-	}
 
-	sizeData := packetHeaderSize + len(packet.Payload) + len(garbage)
-	raw = make([]byte, sizeData, sizeData+packetTagSize)
+	raw = make([]byte, packetOffsetEncrypted, PacketLengthMin+len(packet.Payload)+len(garbage))
 
 	copy(raw[0:packetNonceSize], nonce)
 
@@ -344,16 +419,26 @@ func packetEncrypt(sender *KeyPair, receiverPublicKey ed25519.PublicKey, nonce, 
 		return nil, err
 	}
 
-	o := packetOffsetEncrypted
-	raw[o] = packet.Protocol
-	raw[o+1] = packet.Command
-	binary.LittleEndian.PutUint32(raw[o+2:o+6], uint32(packet.Sequence))
-	binary.LittleEndian.PutUint16(raw[o+6:o+8], uint16(len(packet.Payload)))
-	copy(raw[o+8:], packet.Payload)
-	copy(raw[o+8+len(packet.Payload):], garbage)
+	return packetEncryptFields(raw, nonce, key, additionalData, packet, garbage)
+}
 
-	// Encrypt the fields from the protocol version to the randomized garbage in place. The authentication tag is appended.
-	return aead.Seal(raw[:o], nonce, raw[o:], additionalData), nil
+// packetEncryptFields encrypts and authenticates the fields from the protocol version to the randomized garbage with the packet key.
+// They are appended to raw, which holds the fields that precede them, followed by the authentication tag.
+func packetEncryptFields(raw, nonce, key, additionalData []byte, packet *PacketRaw, garbage []byte) (result []byte, err error) {
+	aead, err := chacha20poly1305.New(key)
+	if err != nil {
+		return nil, err
+	}
+
+	fields := make([]byte, 8+len(packet.Payload)+len(garbage))
+	fields[0] = packet.Protocol
+	fields[1] = packet.Command
+	binary.LittleEndian.PutUint32(fields[2:6], uint32(packet.Sequence))
+	binary.LittleEndian.PutUint16(fields[6:8], uint16(len(packet.Payload)))
+	copy(fields[8:], packet.Payload)
+	copy(fields[8+len(packet.Payload):], garbage)
+
+	return aead.Seal(raw, nonce, fields, additionalData), nil
 }
 
 func packetGarbage(packetLength int) (random []byte) {
