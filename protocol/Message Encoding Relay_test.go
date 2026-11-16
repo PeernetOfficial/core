@@ -169,7 +169,8 @@ func TestRelayPacket(t *testing.T) {
 	}
 }
 
-// TestRelayLayout checks the payload layout: Peer ID of the other peer (32), embedded packet.
+// TestRelayLayout checks the payload layout: Peer ID of the other peer (32), flags (1), embedded packet. The relay sets the FORWARDED flag, bit 0 of the flags.
+// The other bits are ignored.
 func TestRelayLayout(t *testing.T) {
 	sender := generateKeyPair(t)
 	relay := generateKeyPair(t)
@@ -181,25 +182,27 @@ func TestRelayLayout(t *testing.T) {
 	}
 
 	// The original sender names the end receiver.
-	payload, err := EncodeRelay(embedded, target.PublicKey)
+	payload, err := EncodeRelay(embedded, target.PublicKey, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(payload) != 32+len(embedded) || !bytes.Equal(payload[0:32], target.PublicKey) || !bytes.Equal(payload[32:], embedded) {
-		t.Fatal("Peer ID or embedded packet at wrong offset")
+	if len(payload) != 33+len(embedded) || !bytes.Equal(payload[0:32], target.PublicKey) || payload[32] != 0 || !bytes.Equal(payload[33:], embedded) {
+		t.Fatal("Peer ID, flags or embedded packet at wrong offset")
 	}
 
 	msg, err := DecodeRelay(&MessageRaw{PacketRaw: PacketRaw{Command: CommandRelay, Payload: payload}, SenderPublicKey: sender.PublicKey})
 	if err != nil {
 		t.Fatal(err)
-	} else if !msg.Peer.Equal(target.PublicKey) || !bytes.Equal(msg.EmbeddedPacketRaw, embedded) {
-		t.Fatal("Peer ID or embedded packet mismatch")
+	} else if !msg.Peer.Equal(target.PublicKey) || msg.Forwarded || !bytes.Equal(msg.EmbeddedPacketRaw, embedded) {
+		t.Fatal("Peer ID, FORWARDED flag or embedded packet mismatch")
 	}
 
-	// The relay names the original sender and forwards the embedded packet unchanged. The end receiver decrypts it.
-	payload, err = EncodeRelay(msg.EmbeddedPacketRaw, msg.SenderPublicKey)
+	// The relay sets the FORWARDED flag, names the original sender and forwards the embedded packet unchanged. The end receiver decrypts it.
+	payload, err = EncodeRelay(msg.EmbeddedPacketRaw, msg.SenderPublicKey, true)
 	if err != nil {
 		t.Fatal(err)
+	} else if payload[32] != 1 {
+		t.Fatalf("flags of the forwarded message are %d, expected 1", payload[32])
 	}
 	if msg, err = DecodeRelay(&MessageRaw{PacketRaw: PacketRaw{Command: CommandRelay, Payload: payload}, SenderPublicKey: relay.PublicKey}); err != nil {
 		t.Fatal(err)
@@ -208,22 +211,33 @@ func TestRelayLayout(t *testing.T) {
 	decoded, err := PacketDecryptRelay(msg.EmbeddedPacketRaw, target, msg.Peer, msg.SenderPublicKey, nil)
 	if err != nil {
 		t.Fatal(err)
-	} else if !msg.Peer.Equal(sender.PublicKey) || decoded.Command != CommandAnnouncement || decoded.Sequence != 7 || !bytes.Equal(decoded.Payload, []byte("hello")) {
+	} else if !msg.Peer.Equal(sender.PublicKey) || !msg.Forwarded || decoded.Command != CommandAnnouncement || decoded.Sequence != 7 || !bytes.Equal(decoded.Payload, []byte("hello")) {
 		t.Fatal("embedded packet mismatch")
 	}
 
+	// Bits 1-7 of the flags are ignored.
+	for _, test := range []struct {
+		flags     byte
+		forwarded bool
+	}{{0xFE, false}, {0xFF, true}, {0x80, false}, {0x81, true}} {
+		payload[32] = test.flags
+		if msg, err = DecodeRelay(&MessageRaw{PacketRaw: PacketRaw{Command: CommandRelay, Payload: payload}}); err != nil || msg.Forwarded != test.forwarded || !bytes.Equal(msg.EmbeddedPacketRaw, embedded) {
+			t.Fatalf("flags %#x: decoded as forwarded %t, expected %t: %v", test.flags, msg != nil && msg.Forwarded, test.forwarded, err)
+		}
+	}
+
 	// A payload with an embedded packet below the minimum size is rejected.
-	short := 32 + PacketLengthMinRelay - 1
+	short := 33 + PacketLengthMinRelay - 1
 	if _, err := DecodeRelay(&MessageRaw{PacketRaw: PacketRaw{Command: CommandRelay, Payload: payload[:short]}}); err == nil {
 		t.Fatalf("payload of %d bytes accepted", short)
 	}
-	if _, err := EncodeRelay(embedded[:PacketLengthMinRelay-1], target.PublicKey); err == nil {
+	if _, err := EncodeRelay(embedded[:PacketLengthMinRelay-1], target.PublicKey, false); err == nil {
 		t.Fatal("embedded packet below the minimum size encoded")
 	}
-	if _, err := EncodeRelay(embedded, target.PublicKey[:31]); err == nil {
+	if _, err := EncodeRelay(embedded, target.PublicKey[:31], false); err == nil {
 		t.Fatal("invalid Peer ID encoded")
 	}
-	if _, err := EncodeRelay(make([]byte, udpMaxPacketSize), target.PublicKey); err == nil {
+	if _, err := EncodeRelay(make([]byte, udpMaxPacketSize), target.PublicKey, false); err == nil {
 		t.Fatal("embedded packet above the maximum size encoded")
 	}
 }

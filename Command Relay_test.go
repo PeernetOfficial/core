@@ -20,7 +20,7 @@ import (
 	"github.com/PeernetOfficial/core/store"
 )
 
-// testRelay returns the decoded Relay message as the peer with the public key relaySender sends it. It names the peer.
+// testRelay returns the decoded Relay message as the peer with the public key relaySender sends it. It names the peer. The FORWARDED flag is not set.
 // The embedded packet is the one of the original sender for the end receiver, embedded for the relay.
 func testRelay(t *testing.T, sender *protocol.KeyPair, receiverEnd, relay, peer, relaySender ed25519.PublicKey, command uint8, sequence uint32, payload []byte) (msg *protocol.MessageRelay) {
 	embedded, err := protocol.PacketEncryptRelay(sender, receiverEnd, relay, &protocol.PacketRaw{Protocol: protocol.ProtocolVersion, Command: command, Sequence: sequence, Payload: payload})
@@ -31,9 +31,9 @@ func testRelay(t *testing.T, sender *protocol.KeyPair, receiverEnd, relay, peer,
 	return testRelayEmbedded(t, embedded, peer, relaySender)
 }
 
-// testRelayEmbedded returns the decoded Relay message with the embedded packet as the peer with the public key relaySender sends it. It names the peer.
+// testRelayEmbedded returns the decoded Relay message with the embedded packet as the peer with the public key relaySender sends it. It names the peer. The FORWARDED flag is not set.
 func testRelayEmbedded(t *testing.T, embedded []byte, peer, relaySender ed25519.PublicKey) (msg *protocol.MessageRelay) {
-	payload, err := protocol.EncodeRelay(embedded, peer)
+	payload, err := protocol.EncodeRelay(embedded, peer, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +73,12 @@ func testWatchRelay(t *testing.T, backend *Backend) (out *testRelayOut) {
 	return out
 }
 
+// testForwarded returns the Relay message with the FORWARDED flag set, as a relay forwards it.
+func testForwarded(msg *protocol.MessageRelay) *protocol.MessageRelay {
+	msg.Forwarded = true
+	return msg
+}
+
 func (out *testRelayOut) reset() {
 	out.relays, out.receivers, out.responses = nil, nil, 0
 }
@@ -86,8 +92,8 @@ func testPeerSocket(t *testing.T, backend *Backend, network *Network) (peer *Pee
 	return peer, privateKey, socket
 }
 
-// TestRelayForward checks that the relay forwards a Relay message to the peer named in it if that peer is in the peer list.
-// The forwarded message names the original sender and carries the embedded packet unchanged. The relay cannot read the embedded packet: one that is not an Announcement or a Response is forwarded.
+// TestRelayForward checks that the relay forwards a Relay message without the FORWARDED flag to the peer named in it if that peer is in the peer list.
+// The forwarded message has the FORWARDED flag set, names the original sender and carries the embedded packet unchanged. The relay cannot read the embedded packet: one that is not an Announcement or a Response is forwarded.
 func TestRelayForward(t *testing.T) {
 	backend, network := testBackendLoopback(t)
 	out := testWatchRelay(t, backend)
@@ -113,6 +119,8 @@ func TestRelayForward(t *testing.T) {
 		{"named peer is not in the peer list", testRelay(t, senderKeyPair, otherPublicKey, backend.peerPublicKey, otherPublicKey, sender.PublicKey, protocol.CommandAnnouncement, 1, announcement), false},
 		{"named peer is the relay", testRelayEmbedded(t, random, backend.peerPublicKey, sender.PublicKey), false},
 		{"named peer is the sender", testRelayEmbedded(t, random, sender.PublicKey, sender.PublicKey), false},
+		{"FORWARDED flag set", testForwarded(testRelay(t, senderKeyPair, target.PublicKey, backend.peerPublicKey, target.PublicKey, sender.PublicKey, protocol.CommandAnnouncement, 1, announcement)), false},
+		{"FORWARDED flag set, random embedded packet", testForwarded(testRelayEmbedded(t, random, target.PublicKey, sender.PublicKey)), false},
 	}
 
 	for _, test := range tests {
@@ -132,7 +140,7 @@ func TestRelayForward(t *testing.T) {
 		if len(out.relays) != 1 {
 			t.Errorf("%s: %d Relay messages forwarded, expected 1", test.name, len(out.relays))
 			continue
-		} else if !out.receivers[0].Equal(target.PublicKey) || !out.relays[0].Peer.Equal(sender.PublicKey) || !bytes.Equal(out.relays[0].EmbeddedPacketRaw, test.msg.EmbeddedPacketRaw) {
+		} else if !out.receivers[0].Equal(target.PublicKey) || !out.relays[0].Forwarded || !out.relays[0].Peer.Equal(sender.PublicKey) || !bytes.Equal(out.relays[0].EmbeddedPacketRaw, test.msg.EmbeddedPacketRaw) {
 			t.Errorf("%s: forwarded Relay message mismatch", test.name)
 		}
 
@@ -165,12 +173,12 @@ func TestRelayReceiveAnnouncement(t *testing.T) {
 	announcement := protocol.EncodeAnnouncement(true, &protocol.Requests{FindSelf: true, FindFileEmbed: [][]byte{fileHash}}, 1<<protocol.FeatureIPv4Listen, 0, 0, "test")[0]
 	msg := testRelay(t, senderKeyPair, backend.peerPublicKey, relay.PublicKey, senderPublicKey, relay.PublicKey, protocol.CommandAnnouncement, 777, announcement)
 
-	relay.cmdRelay(msg)
+	relay.cmdRelay(testForwarded(msg))
 
 	if out.responses != 1 || len(out.relays) != 1 {
 		t.Fatalf("%d Responses and %d Relay messages sent, expected 1 and 1", out.responses, len(out.relays))
-	} else if !out.receivers[0].Equal(relay.PublicKey) || !out.relays[0].Peer.Equal(senderPublicKey) {
-		t.Fatal("the Relay message is not sent to the relay or does not name the original sender")
+	} else if !out.receivers[0].Equal(relay.PublicKey) || !out.relays[0].Peer.Equal(senderPublicKey) || out.relays[0].Forwarded {
+		t.Fatal("the Relay message is not sent to the relay, does not name the original sender or has the FORWARDED flag set")
 	}
 
 	// The Relay message arrives at the relay, which forwards the embedded packet to the original sender.
@@ -220,9 +228,9 @@ func TestRelayReceiveAnnouncement(t *testing.T) {
 	}
 }
 
-// TestRelayReceiveInvalid checks that the end receiver drops a Relay message whose embedded packet is not an Announcement or a Response.
-// A Relay message whose embedded packet is not a valid packet from the named peer to this peer is not answered: this peer is then the relay,
-// and forwards the message only if the named peer is in the peer list.
+// TestRelayReceiveInvalid checks that the end receiver drops a Relay message whose embedded packet is not an Announcement or a Response,
+// or is not a valid packet from the named peer to this peer. A Relay message with the FORWARDED flag is not forwarded.
+// The same messages without the FORWARDED flag are not answered: this peer is then the relay, and forwards the message only if the named peer is in the peer list.
 func TestRelayReceiveInvalid(t *testing.T) {
 	backend, network := testBackendLoopback(t)
 	out := testWatchRelay(t, backend)
@@ -244,9 +252,9 @@ func TestRelayReceiveInvalid(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		responses int
-		forwarded int
-		msg       func(sender *protocol.KeyPair) *protocol.MessageRelay // the Relay message as the relay delivers it
+		responses int // Responses to the message with the FORWARDED flag
+		forwarded int // Relay messages forwarded for the message without the FORWARDED flag
+		msg       func(sender *protocol.KeyPair) *protocol.MessageRelay // the Relay message as the relay delivers it, without the FORWARDED flag
 	}{
 		{"embedded Announcement", 1, 0, func(sender *protocol.KeyPair) *protocol.MessageRelay {
 			return testRelay(t, sender, self, relay.PublicKey, sender.PublicKey, relay.PublicKey, protocol.CommandAnnouncement, 1, announcement)
@@ -285,7 +293,7 @@ func TestRelayReceiveInvalid(t *testing.T) {
 		{"embedded Announcement of a peer in the peer list for another end receiver", 0, 1, func(sender *protocol.KeyPair) *protocol.MessageRelay {
 			return testRelay(t, testKeyPair(t, knownPrivateKey), otherPublicKey, relay.PublicKey, known.PublicKey, relay.PublicKey, protocol.CommandAnnouncement, 1, announcement)
 		}},
-		{"embedded Announcement of a peer in the peer list", 1, 0, func(sender *protocol.KeyPair) *protocol.MessageRelay {
+		{"embedded Announcement of a peer in the peer list", 1, 1, func(sender *protocol.KeyPair) *protocol.MessageRelay {
 			return testRelay(t, testKeyPair(t, knownPrivateKey), self, relay.PublicKey, known.PublicKey, relay.PublicKey, protocol.CommandAnnouncement, 1, announcement)
 		}},
 	}
@@ -294,14 +302,27 @@ func TestRelayReceiveInvalid(t *testing.T) {
 		// Each case has its own original sender.
 		_, senderPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 
-		out.reset()
-		relay.cmdRelay(test.msg(testKeyPair(t, senderPrivateKey)))
+		msg := test.msg(testKeyPair(t, senderPrivateKey))
 
-		// A Response is sent in a Relay message to the relay. A forwarded message is sent to the named peer.
-		if out.responses != test.responses || len(out.relays) != test.responses+test.forwarded {
-			t.Errorf("%s: %d Responses and %d Relay messages sent, expected %d and %d", test.name, out.responses, len(out.relays), test.responses, test.responses+test.forwarded)
-		} else if test.responses == 1 && !out.receivers[0].Equal(relay.PublicKey) || test.forwarded == 1 && (!out.receivers[0].Equal(known.PublicKey) || !out.relays[0].Peer.Equal(relay.PublicKey)) {
-			t.Errorf("%s: Relay message sent to an unexpected peer", test.name)
+		// With the FORWARDED flag this peer is the end receiver. A Response is sent in a Relay message to the relay.
+		out.reset()
+		relay.cmdRelay(testForwarded(msg))
+
+		if out.responses != test.responses || len(out.relays) != test.responses {
+			t.Errorf("%s: %d Responses and %d Relay messages sent, expected %d and %d", test.name, out.responses, len(out.relays), test.responses, test.responses)
+		} else if test.responses == 1 && (!out.receivers[0].Equal(relay.PublicKey) || out.relays[0].Forwarded) {
+			t.Errorf("%s: the Response is not sent in a Relay message to the relay", test.name)
+		}
+
+		// Without the FORWARDED flag this peer is the relay. The message is forwarded to the named peer if it is in the peer list.
+		msg.Forwarded = false
+		out.reset()
+		relay.cmdRelay(msg)
+
+		if out.responses != 0 || len(out.relays) != test.forwarded {
+			t.Errorf("%s, without FORWARDED flag: %d Responses and %d Relay messages sent, expected 0 and %d", test.name, out.responses, len(out.relays), test.forwarded)
+		} else if test.forwarded == 1 && (!out.receivers[0].Equal(known.PublicKey) || !out.relays[0].Peer.Equal(relay.PublicKey) || !out.relays[0].Forwarded) {
+			t.Errorf("%s, without FORWARDED flag: forwarded Relay message mismatch", test.name)
 		}
 	}
 }
@@ -339,12 +360,12 @@ func TestRelayReceiveResponse(t *testing.T) {
 	}
 
 	// A Response with another sequence is dropped.
-	relay.cmdRelay(testRelay(t, senderKeyPair, backend.peerPublicKey, relay.PublicKey, senderPublicKey, relay.PublicKey, protocol.CommandResponse, sequence+1, payloads[0]))
+	relay.cmdRelay(testForwarded(testRelay(t, senderKeyPair, backend.peerPublicKey, relay.PublicKey, senderPublicKey, relay.PublicKey, protocol.CommandResponse, sequence+1, payloads[0])))
 	if result() != nil {
 		t.Fatal("Response with an unknown sequence processed")
 	}
 
-	msg := testRelay(t, senderKeyPair, backend.peerPublicKey, relay.PublicKey, senderPublicKey, relay.PublicKey, protocol.CommandResponse, sequence, payloads[0])
+	msg := testForwarded(testRelay(t, senderKeyPair, backend.peerPublicKey, relay.PublicKey, senderPublicKey, relay.PublicKey, protocol.CommandResponse, sequence, payloads[0]))
 	relay.cmdRelay(msg)
 
 	message := result()
@@ -385,8 +406,8 @@ func TestSendRelay(t *testing.T) {
 	embedded := func(name string) *protocol.PacketRaw {
 		if len(out.relays) != 1 {
 			t.Fatalf("%s: %d Relay messages sent, expected 1", name, len(out.relays))
-		} else if !out.receivers[0].Equal(relay.PublicKey) || !out.relays[0].Peer.Equal(targetPublicKey) {
-			t.Fatalf("%s: the Relay message is not sent to the relay or does not name the end receiver", name)
+		} else if !out.receivers[0].Equal(relay.PublicKey) || !out.relays[0].Peer.Equal(targetPublicKey) || out.relays[0].Forwarded {
+			t.Fatalf("%s: the Relay message is not sent to the relay, does not name the end receiver or has the FORWARDED flag set", name)
 		}
 		decoded, err := protocol.PacketDecryptRelay(out.relays[0].EmbeddedPacketRaw, targetKeyPair, backend.peerPublicKey, relay.PublicKey, nil)
 		if err != nil {
@@ -452,10 +473,10 @@ func TestSendRelay(t *testing.T) {
 	}
 }
 
-// testDeliver reads the next packet that arrives at the socket of the backend and lets the packet worker of the backend process it. It returns false if none arrives.
-func testDeliver(backend *Backend, network *Network) (delivered bool) {
+// testDeliver reads the next packet that arrives at the socket of the backend and lets the packet worker of the backend process it. It returns false if none arrives within the timeout.
+func testDeliver(backend *Backend, network *Network, timeout time.Duration) (delivered bool) {
 	buffer := make([]byte, maxPacketSize)
-	network.socket.SetReadDeadline(time.Now().Add(2 * time.Second))
+	network.socket.SetReadDeadline(time.Now().Add(timeout))
 	length, sender, err := network.socket.ReadFromUDP(buffer)
 	if err != nil {
 		return false
@@ -507,7 +528,7 @@ func TestRelayRoundTrip(t *testing.T) {
 		{"Relay message of B at the relay", backendR, networkR},
 		{"forwarded Relay message at A", backendA, networkA},
 	} {
-		if !testDeliver(hop.backend, hop.network) {
+		if !testDeliver(hop.backend, hop.network, 2*time.Second) {
 			t.Fatalf("%s: no packet received", hop.name)
 		}
 	}
@@ -531,6 +552,62 @@ func TestRelayRoundTrip(t *testing.T) {
 	// A and B are not in the peer list of each other.
 	if backendA.PeerlistLookup(backendB.peerPublicKey) != nil || backendB.PeerlistLookup(backendA.peerPublicKey) != nil {
 		t.Error("A and B are in the peer list of each other")
+	}
+}
+
+// TestRelayForwardedOnce checks that a Relay message is forwarded once: three peers have each other in the peer list, and one sends a Relay message
+// whose embedded packet the named peer cannot decrypt. The relay forwards it, the named peer drops it.
+func TestRelayForwardedOnce(t *testing.T) {
+	testRootPeers(t)
+
+	names := []string{"A", "R", "B"}
+	backends := make(map[string]*Backend)
+	networks := make(map[string]*Network)
+	relaysIn := make(map[string]int) // Relay messages received, by peer
+
+	for _, name := range names {
+		name := name
+		backends[name], networks[name] = testBackendLoopback(t)
+		backends[name].Filters.MessageIn = func(peer *PeerInfo, raw *protocol.MessageRaw, message interface{}) {
+			if _, ok := message.(*protocol.MessageRelay); ok {
+				relaysIn[name]++
+			}
+		}
+	}
+
+	peers := make(map[string]*PeerInfo) // key: name of the backend followed by the name of the peer in its peer list
+	for _, from := range names {
+		for _, to := range names {
+			if from != to {
+				peers[from+to], _ = backends[from].PeerlistAdd(backends[to].peerPublicKey, &Connection{backend: backends[from], Network: networks[from], Address: networks[to].address, PortInternal: uint16(networks[to].address.Port)})
+			}
+		}
+	}
+
+	// A sends a Relay message to R that names B.
+	embedded := make([]byte, protocol.PacketLengthMinRelay+50)
+	rand.Read(embedded)
+	payload, err := protocol.EncodeRelay(embedded, backends["B"].peerPublicKey, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := peers["AR"].send(&protocol.PacketRaw{Command: protocol.CommandRelay, Payload: payload}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !testDeliver(backends["R"], networks["R"], 2*time.Second) || !testDeliver(backends["B"], networks["B"], 2*time.Second) {
+		t.Fatal("the Relay message did not arrive at the relay and the named peer")
+	}
+
+	// No further packet is sent.
+	for _, name := range names {
+		if testDeliver(backends[name], networks[name], 300*time.Millisecond) {
+			t.Errorf("a further packet arrived at %s", name)
+		}
+	}
+
+	if relaysIn["A"] != 0 || relaysIn["R"] != 1 || relaysIn["B"] != 1 {
+		t.Errorf("Relay messages received: A %d, R %d, B %d, expected 0, 1, 1", relaysIn["A"], relaysIn["R"], relaysIn["B"])
 	}
 }
 
