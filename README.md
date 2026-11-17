@@ -63,9 +63,9 @@ The Private Key is required to make any changes to the user's blockchain, includ
 * Network adapter changes:
   * Check every 10 seconds for new/removed network interfaces and for new/removed IPs.
   * Automatically listen on any newly detected network interfaces and IPs.
-  * Start a full Kademlia bucket refresh in case of a new network interface or IP.
+  * Start a routing table refresh in case of a new network interface or IP.
 * Kademlia bootstrap:
-  * As soon as there are at least 2 peers, keep refreshing buckets (target number is alpha) every 10 seconds 3 times.
+  * As soon as there are at least 2 peers, keep refreshing buckets every second 3 times.
 
 ### Ping
 
@@ -86,7 +86,7 @@ Above limits are constants and can be adjusted in the code via `pingTime`, `conn
 
 The routing table has a bucket size of 20 and the size of keys 256 bits (blake3 hash). Nodes within buckets are sorted by least recently seen. The number of nodes to contact concurrently in DHT lookups (also known as alpha number) is set to 5.
 
-If a bucket is full when a new peer connects `ShouldEvict` is called. It compares the RTTs (favoring smaller one) and in absence of the RTT time it will favor the node which is closer by XOR distance. Refresh of buckets is done every 5 minutes and queries a random ID in that bucket if there are not at least alpha nodes. A full refresh of all buckets is done every hour.
+If a bucket is full when a new peer connects `ShouldEvict` is called. It compares the RTTs (favoring smaller one) and in absence of the RTT time it will favor the node which is closer by XOR distance. The routing table is refreshed every 5 minutes: a lookup for the own Peer ID, and a lookup for a random ID in every bucket that holds fewer than 20 peers, from the bucket of the farthest peers to the bucket of the closest peer in the routing table.
 
 ### Timeouts
 

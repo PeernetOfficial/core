@@ -8,7 +8,6 @@ package dht
 
 import (
 	"bytes"
-	"math"
 	"math/rand"
 	"sort"
 	"sync"
@@ -200,43 +199,25 @@ func (ht *hashTable) getTotalNodesInBucket(bucket int) int {
 	return len(ht.RoutingTable[bucket])
 }
 
+// getRandomIDFromBucket returns a random ID that falls into the bucket. Up to the bit of the bucket the ID equals the own ID, in that bit it differs, and all later bits are random.
 func (ht *hashTable) getRandomIDFromBucket(bucket int) []byte {
-	ht.mutex.RLock()
-	defer ht.mutex.RUnlock()
-	// Set the new ID to to be equal in every byte up to
-	// the byte of the first differing bit in the bucket
+	// The first bit in which the ID differs from the own ID, counted from the left. See getBucketIndexFromDifferingBit.
+	differingBit := ht.bBits - 1 - bucket
+	byteIndex := differingBit / 8
 
-	byteIndex := bucket / 8
-	var id []byte
-	for i := 0; i < byteIndex; i++ {
-		id = append(id, ht.Self.ID[i])
-	}
-	differingBitStart := bucket % 8
-
-	var firstByte byte
-	// check each bit from left to right in order
-	for i := 0; i < 8; i++ {
-		// Set the value of the bit to be the same as the ID
-		// up to the differing bit. Then begin randomizing
-		var bit bool
-		if i < differingBitStart {
-			bit = hasBit(ht.Self.ID[byteIndex], uint(i))
-		} else {
-			bit = rand.Intn(2) == 1
-		}
-
-		if bit {
-			firstByte += byte(math.Pow(2, float64(7-i)))
-		}
+	id := make([]byte, ht.bBits/8)
+	for i := range id {
+		id[i] = byte(rand.Intn(256))
 	}
 
-	id = append(id, firstByte)
+	copy(id[:byteIndex], ht.Self.ID[:byteIndex])
 
-	// Randomize each remaining byte
-	for i := byteIndex + 1; i < 20; i++ {
-		randomByte := byte(rand.Intn(256))
-		id = append(id, randomByte)
-	}
+	// In the byte of the differing bit: the bits before it are taken from the own ID, the bit itself is inverted, the bits after it stay random.
+	maskDiffering := byte(0x80) >> (differingBit % 8)
+	maskRandom := maskDiffering - 1
+	maskSelf := ^(maskDiffering | maskRandom)
+
+	id[byteIndex] = ht.Self.ID[byteIndex]&maskSelf | ^ht.Self.ID[byteIndex]&maskDiffering | id[byteIndex]&maskRandom
 
 	return id
 }

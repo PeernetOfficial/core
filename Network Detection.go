@@ -176,7 +176,7 @@ func (nets *Networks) networkChangeInterfaceNew(iface net.Interface, addresses [
 		go network.upnpAuto()
 	}
 
-	go nets.backend.nodesDHT.RefreshBuckets(0)
+	go nets.backend.refreshBuckets()
 }
 
 // networkChangeInterfaceRemove is called when an existing interface is removed
@@ -223,7 +223,7 @@ func (nets *Networks) networkChangeIPNew(iface net.Interface, address net.Addr) 
 		go network.upnpAuto()
 	}
 
-	go nets.backend.nodesDHT.RefreshBuckets(0)
+	go nets.backend.refreshBuckets()
 }
 
 // networkChangeIPRemove is called when an existing interface removes an IP
