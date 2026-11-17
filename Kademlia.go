@@ -110,10 +110,10 @@ func (backend *Backend) bootstrapKademlia() {
 	monitor := make(chan *PeerInfo)
 	backend.registerPeerMonitor(monitor)
 
-	// Wait until there are at least 2 peers connected.
+	// Wait until the routing table holds a peer.
 	for {
 		<-monitor
-		if backend.nodesDHT.NumNodes() >= 2 {
+		if backend.nodesDHT.NumNodes() >= 1 {
 			break
 		}
 	}

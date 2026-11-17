@@ -74,6 +74,55 @@ func TestFindNode(t *testing.T) {
 	}
 }
 
+// TestBootstrapKademlia checks that the routing table refresh at startup runs once the routing table holds a peer.
+func TestBootstrapKademlia(t *testing.T) {
+	backend, network := testBackendLoopback(t)
+	backend.nodesDHT.TimeoutSearch = time.Second
+	backend.nodesDHT.TimeoutIR = 100 * time.Millisecond
+
+	// Every node asked answers without reporting a peer.
+	requests := make(chan []byte, 100)
+	backend.nodesDHT.SendRequest = func(request *dht.InformationRequest) {
+		for _, node := range request.Nodes {
+			select {
+			case requests <- node.ID:
+			default:
+			}
+
+			request.QueueResult(&dht.NodeMessage{SenderID: node.ID})
+			request.Done()
+		}
+	}
+
+	go backend.bootstrapKademlia()
+
+	// The peer is added once bootstrapKademlia waits for new peers.
+	for n := 0; ; n++ {
+		backend.peerlistMutex.Lock()
+		registered := len(backend.peerMonitor) > 0
+		backend.peerlistMutex.Unlock()
+
+		if registered {
+			break
+		} else if n == 100 {
+			t.Fatal("bootstrapKademlia does not wait for new peers")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	peer := testPeerLoopback(t, backend, network, 1)
+
+	select {
+	case nodeID := <-requests:
+		if !bytes.Equal(nodeID, peer.PublicKey) {
+			t.Error("the lookup asks a node that is not the peer in the routing table")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no refresh runs with one peer in the routing table")
+	}
+}
+
 // TestNewNodeAddresses checks which addresses of a peer that is reported again are not yet tried.
 func TestNewNodeAddresses(t *testing.T) {
 	address := func(ip string, port, portInternal, portExternal uint16) *peerAddress {
