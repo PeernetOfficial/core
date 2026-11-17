@@ -141,3 +141,30 @@ func TestGetClosestContactsBucketOrder(t *testing.T) {
 		testCompareNodes(t, "bucket order", dht.GetClosestContacts(count, target, nil), want)
 	}
 }
+
+// TestGetRandomIDFromBucket checks the IDs generated for the refresh of a bucket: the size of the ID, and that the ID falls into the bucket.
+func TestGetRandomIDFromBucket(t *testing.T) {
+	selfZero := make([]byte, 32)
+	selfOne := bytes.Repeat([]byte{0xFF}, 32)
+
+	for _, self := range [][]byte{testID(t), selfZero, selfOne} {
+		dht := NewDHT(&Node{ID: self}, 256, 20, 5)
+
+		for bucket := 0; bucket < 256; bucket++ {
+			for n := 0; n < 100; n++ {
+				id := dht.ht.getRandomIDFromBucket(bucket)
+
+				if len(id) != 32 {
+					t.Fatalf("own ID %x: ID generated for bucket %d has %d bytes", self, bucket, len(id))
+				} else if index := dht.ht.getBucketIndexFromDifferingBit(id); index != bucket {
+					t.Fatalf("own ID %x: ID %x generated for bucket %d falls into bucket %d", self, id, bucket, index)
+				}
+
+				// A lookup accepts the ID as key.
+				if _, err := dht.FindNode(id); err != nil {
+					t.Fatalf("own ID %x: lookup for ID %x generated for bucket %d: %v", self, id, bucket, err)
+				}
+			}
+		}
+	}
+}

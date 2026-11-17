@@ -180,26 +180,38 @@ func (dht *DHT) FindNode(key []byte) (node *Node, err error) {
 // DisableBucketRefresh is an option for debug purposes to reduce noise. It can be useful to disable bucket refresh when debugging outgoing DHT searches.
 var DisableBucketRefresh = false
 
-// RefreshBuckets refreshes all buckets not meeting the target node number. 0 to refresh all.
-func (dht *DHT) RefreshBuckets(target int) {
+// RefreshBuckets fills the routing table. It runs a lookup for the own ID, and a lookup for a random ID in every bucket that holds fewer nodes than the bucket size,
+// from the bucket of the farthest nodes to the bucket of the closest node in the routing table. Blocking!
+func (dht *DHT) RefreshBuckets() (err error) {
 	if DisableBucketRefresh {
-		return
+		return nil
 	}
 
-	for bucket, total := range dht.ht.getTotalNodesPerBucket() {
-		if target == 0 || total < target {
-			nodeR := dht.ht.getRandomIDFromBucket(bucket)
+	if _, err = dht.FindNode(dht.ht.Self.ID); err != nil {
+		return err
+	}
 
-			// Refreshing closest bucket? Use self ID instead of random one.
-			if bucket == 0 {
-				nodeR = dht.ht.Self.ID
-			}
+	total := dht.ht.getTotalNodesPerBucket()
 
-			dht.FindNode(nodeR)
+	// The bucket of the closest node is the first one that holds a node.
+	closest := 0
+	for closest < len(total) && total[closest] == 0 {
+		closest++
+	}
+
+	for bucket := len(total) - 1; bucket >= closest; bucket-- {
+		if DisableBucketRefresh { // may be disabled while in refresh which may take some time
+			return nil
 		}
 
-		if DisableBucketRefresh { // may be disabled while in full refresh which may take some time
-			return
+		if total[bucket] >= dht.ht.bSize {
+			continue
+		}
+
+		if _, err = dht.FindNode(dht.ht.getRandomIDFromBucket(bucket)); err != nil {
+			return err
 		}
 	}
+
+	return nil
 }

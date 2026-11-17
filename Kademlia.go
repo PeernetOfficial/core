@@ -1,6 +1,6 @@
 /*
 File Name:  Kademlia.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -17,6 +17,9 @@ import (
 
 const alpha = 5       // Count of nodes to be contacted in parallel for finding a key (α in the whitepaper)
 const bucketSize = 20 // Count of nodes per bucket (k in the whitepaper)
+
+// bucketRefreshTime is the interval of the routing table refresh.
+const bucketRefreshTime = 5 * time.Minute
 
 func (backend *Backend) initKademlia() {
 	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.peerPublicKey}, 256, bucketSize, alpha)
@@ -62,17 +65,20 @@ func (backend *Backend) initKademlia() {
 	backend.nodesDHT.FilterSearchStatus = backend.Filters.DHTSearchStatus
 }
 
-// autoBucketRefresh refreshes buckets every 5 minutes to meet the alpha nodes per bucket target. Force full refresh every hour.
+// refreshBuckets runs one refresh of the routing table: a lookup for the own Peer ID, and a lookup for a random ID in every bucket that holds fewer peers than the bucket size,
+// from the bucket of the farthest peers to the bucket of the closest peer in the routing table.
+func (backend *Backend) refreshBuckets() {
+	if err := backend.nodesDHT.RefreshBuckets(); err != nil {
+		backend.LogError("refreshBuckets", "error refreshing the routing table: %v\n", err)
+	}
+}
+
+// autoBucketRefresh refreshes the routing table every 5 minutes.
 func (backend *Backend) autoBucketRefresh() {
-	for minute := 5; ; minute += 5 {
-		time.Sleep(time.Minute * 5)
+	for {
+		time.Sleep(bucketRefreshTime)
 
-		target := alpha
-		if minute%60 == 0 {
-			target = 0
-		}
-
-		backend.nodesDHT.RefreshBuckets(target)
+		backend.refreshBuckets()
 	}
 }
 
@@ -91,9 +97,9 @@ func (backend *Backend) bootstrapKademlia() {
 
 	backend.unregisterPeerMonitor(monitor)
 
-	// Refresh every 10 seconds 3 times
+	// Refresh every second 3 times
 	for n := 0; n < 3; n++ {
-		backend.nodesDHT.RefreshBuckets(alpha)
+		backend.refreshBuckets()
 
 		time.Sleep(time.Second)
 	}
