@@ -8,6 +8,7 @@ package dht
 
 import (
 	"crypto/rand"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -79,4 +80,53 @@ func TestSearchStoringNodes(t *testing.T) {
 			t.Errorf("node %s received %d requests, expected 1", name, count)
 		}
 	}
+}
+
+// TestSearchTerminate checks a search that is terminated while it hands over what it found.
+func TestSearchTerminate(t *testing.T) {
+	target := &Node{ID: testID(t)}
+	nodeA := &Node{ID: testID(t)}
+
+	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5)
+	dht.AddNode(nodeA)
+
+	// A search for a node: the node is reported, the timeout of the search passes before the result is read.
+	dht.SendRequest = func(request *InformationRequest) {
+		request.QueueResult(&NodeMessage{SenderID: nodeA.ID, Closest: []*Node{target}})
+		request.Done()
+	}
+
+	search := dht.NewSearch(ActionFindNode, target.ID, 100*time.Millisecond, 50*time.Millisecond, 5)
+	search.SearchAway()
+
+	time.Sleep(300 * time.Millisecond)
+
+	if result, ok := <-search.Results; !ok {
+		t.Fatal("search for a node: no result")
+	} else if string(result.TargetNode.ID) != string(target.ID) {
+		t.Fatalf("search for a node: result is node %x", result.TargetNode.ID)
+	}
+	if _, ok := <-search.Results; ok {
+		t.Fatal("search for a node: second result")
+	}
+
+	// A search for a value: the search is terminated right before a storing node is handed over.
+	dht.SendRequest = func(request *InformationRequest) {
+		request.QueueResult(&NodeMessage{SenderID: nodeA.ID, Storing: []*Node{target}})
+		request.Done()
+	}
+
+	search = dht.NewSearch(ActionFindValue, testID(t), 2*time.Second, 300*time.Millisecond, 5)
+	search.LogStatus = func(function, format string, v ...interface{}) {
+		if strings.Contains(format, "uncontacted nodes store") {
+			search.Terminate()
+		}
+	}
+	search.SearchAway()
+
+	if result, ok := <-search.Results; ok {
+		t.Fatalf("search for a value: unexpected result from %x", result.SenderID)
+	}
+
+	time.Sleep(100 * time.Millisecond)
 }

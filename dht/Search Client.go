@@ -13,8 +13,8 @@ package dht
 import (
 	"bytes"
 	"encoding/hex"
+	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -22,7 +22,7 @@ import (
 const MaxAcceptKnownStore = 10
 
 // MaxClosest is maximum number of closest peers accepted
-const MaxClosest = 3
+const MaxClosest = 5
 
 // MaxLevel defines the max level.
 const MaxLevel = 10
@@ -41,12 +41,11 @@ type SearchClient struct {
 	timeoutTotal        time.Duration                                   // Timeout after the entire search will be terminated client-side.
 	timeoutIR           time.Duration                                   // Timeout for information requests (entire roundtrip).
 	alpha               int                                             // Count of concurrent information requests per level.
-	Results             chan *SearchResult                              // Result channel
+	Results             chan *SearchResult                              // Result channel. It is closed when the search is terminated.
 	list                *shortList                                      // List of nodes to contact
 	contactedNodesMap   map[string]struct{}                             // List of nodes already contacted
 	contactedNodesMutex sync.RWMutex                                    // Sync map access
 	storing             chan []*Node                                    // Internal channel to signal nodes that indicate storing the searched value.
-	activeLevels        uint64                                          // demo
 	LogStatus           func(function, format string, v ...interface{}) // Filter function for status output
 }
 
@@ -78,7 +77,7 @@ func (dht *DHT) NewSearch(Action int, Key []byte, Timeout, TimeoutIR time.Durati
 		contactedNodesMap: make(map[string]struct{}),
 		storing:           make(chan []*Node, Alpha*2),
 		TerminateSignal:   make(chan struct{}),
-		Results:           make(chan *SearchResult),
+		Results:           make(chan *SearchResult, 1),
 		LogStatus:         func(function, format string, v ...interface{}) {},
 	}
 
@@ -90,6 +89,11 @@ func (client *SearchClient) Terminate() {
 	client.Lock()
 	defer client.Unlock()
 
+	client.terminate()
+}
+
+// terminate sends the termination signal to all workers. The caller holds the lock.
+func (client *SearchClient) terminate() {
 	if client.IsTerminated {
 		return
 	}
@@ -101,7 +105,19 @@ func (client *SearchClient) Terminate() {
 	client.timeEnd = time.Now()
 
 	close(client.Results)
-	close(client.storing)
+}
+
+// sendResult queues the result and terminates the search. A search has one result: if the search is terminated already, the result is discarded.
+func (client *SearchClient) sendResult(result *SearchResult) {
+	client.Lock()
+	defer client.Unlock()
+
+	if client.IsTerminated {
+		return
+	}
+
+	client.Results <- result
+	client.terminate()
 }
 
 // isContactedNode checks if a node was contacted
@@ -151,7 +167,7 @@ func (client *SearchClient) SearchAway() {
 	go client.queryNodesKnownStore()
 
 	// start the first information request
-	go client.startSearch(0)
+	go client.startSearch()
 
 	// start an automated termination function for the timeout
 	go func(client *SearchClient) {
@@ -209,119 +225,153 @@ func (client *SearchClient) queryNodesKnownStore() {
 
 		case result := <-resultChan:
 			if len(result.Data) > 0 {
-				client.Results <- &SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, Data: result.Data}
-				client.Terminate()
+				client.sendResult(&SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, Data: result.Data})
 				return
 			}
 		}
 	}
 }
 
-func (client *SearchClient) startSearch(level int) {
-	atomic.AddUint64(&client.activeLevels, 1)
-	defer atomic.AddUint64(&client.activeLevels, ^uint64(0))
-	nestedStarted := false
+// startSearch runs the search. Each level sends an information request to the alpha closest nodes not yet contacted.
+// The next level starts as soon as a result brings a node that is closer to the key than the closest node contacted.
+func (client *SearchClient) startSearch() {
+	results := make(chan *NodeMessage, messageChannelSize)
+	levelEnd := make(chan struct{})
+	level, activeLevels := 0, 0
 
-	results := make(chan *NodeMessage, client.alpha*2)
-
-	closestNode := client.list.Nodes[0]
-
-	// start an info request
-	startInfoRequest := func() (info *InformationRequest) {
+	// startLevel sends an information request to the closest nodes not yet contacted.
+	startLevel := func() (started bool) {
 		nodes := client.list.GetUncontacted(client.alpha, true)
 		if len(nodes) == 0 {
-			client.LogStatus("search.startSearch", "search in level %d aborted, no new nodes to contact\n", level)
-			return nil
+			return false
 		}
+
 		client.LogStatus("search.startSearch", "start search in level %d contacting %d nodes\n", level, len(nodes))
-		return client.sendInfoRequest(nodes, results)
+
+		info := client.sendInfoRequest(nodes, results)
+		if info == nil {
+			return false
+		}
+
+		activeLevels++
+
+		go func() {
+			<-info.TerminateSignal
+
+			select {
+			case levelEnd <- struct{}{}:
+			case <-client.TerminateSignal:
+			}
+		}()
+
+		return true
 	}
 
-	info := startInfoRequest()
-	if info == nil {
+	// handleResult handles the result of a node. It returns true if the search is terminated.
+	handleResult := func(result *NodeMessage) (terminated bool) {
+		switch client.Action {
+		case ActionFindValue:
+			// search for value and it was found?
+			if len(result.Data) > 0 {
+				client.LogStatus("search.startSearch", "result: sender %s: data found (%d bytes)\n", hex.EncodeToString(result.SenderID), len(result.Data))
+				client.sendResult(&SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, Data: result.Data})
+				return true
+			}
+
+			result.Storing = client.filterUncontactedNodes(result.Storing, MaxAcceptKnownStore)
+			result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
+
+			client.LogStatus("search.startSearch", "result: sender %s: %d uncontacted nodes store and %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Storing), len(result.Closest))
+
+			// Find value: Nodes known to store the value are queried in a separate function.
+			if len(result.Storing) > 0 {
+				select {
+				case client.storing <- result.Storing:
+				case <-client.TerminateSignal:
+					return true
+				}
+			}
+
+		case ActionFindNode:
+			// search for node and it was found?
+			for _, closePeer := range result.Closest {
+				if bytes.Equal(closePeer.ID, client.Key) {
+					client.LogStatus("search.startSearch", "result: sender %s: node found!\n", hex.EncodeToString(result.SenderID))
+					client.sendResult(&SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, TargetNode: closePeer})
+					return true
+				}
+			}
+
+			result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
+
+			client.LogStatus("search.startSearch", "find node: sender %s: %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Closest))
+
+		case ActionFindValueClosest:
+			// Only the nodes close to the key are of interest.
+			result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
+
+			client.LogStatus("search.startSearch", "find closest: sender %s: %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Closest))
+		}
+
+		// Add closest to list. The list is ordered by distance to the key, closest first.
+		client.list.AppendUniqueNodes(result.Closest...)
+		sort.Sort(client.list)
+
+		// If the result brought a node closer to the key than the closest node contacted, start the next level.
+		if level < MaxLevel && !client.list.Contacted[string(client.list.Nodes[0].ID)] {
+			level++
+			startLevel()
+		}
+
+		return false
+	}
+
+	if !startLevel() {
+		client.Terminate()
 		return
 	}
 
 	for {
 		select {
 		case <-client.TerminateSignal:
-			client.LogStatus("search.startSearch", "search in level %d aborted, search client termination signal\n", level)
+			client.LogStatus("search.startSearch", "search aborted, search client termination signal\n")
 			return
 
 		case result := <-results:
+			if handleResult(result) {
+				return
+			}
 
-			switch client.Action {
-			case ActionFindValue:
-				// search for value and it was found?
-				if len(result.Data) > 0 {
-					client.LogStatus("search.startSearch", "result: sender %s: data found (%d bytes)\n", hex.EncodeToString(result.SenderID), len(result.Data))
-					client.Results <- &SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, Data: result.Data}
-					client.Terminate()
-					return
-				}
+		case <-levelEnd:
+			activeLevels--
 
-				result.Storing = client.filterUncontactedNodes(result.Storing, MaxAcceptKnownStore)
-				result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
-
-				client.LogStatus("search.startSearch", "result: sender %s: %d uncontacted nodes store and %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Storing), len(result.Closest))
-
-				// Find value: Nodes known to store the value are queried in a separate function.
-				if len(result.Storing) > 0 {
-					client.storing <- result.Storing
-				}
-
-			case ActionFindNode:
-				// search for node and it was found?
-				for _, closePeer := range result.Closest {
-					if bytes.Equal(closePeer.ID, client.Key) {
-						client.LogStatus("search.startSearch", "result: sender %s: node found!\n", hex.EncodeToString(result.SenderID))
-						client.Results <- &SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, TargetNode: closePeer}
-						client.Terminate()
+			// Results that were queued before the information request ended are handled first.
+		resultsLoop:
+			for {
+				select {
+				case result := <-results:
+					if handleResult(result) {
 						return
 					}
-				}
-
-				result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
-
-				client.LogStatus("search.startSearch", "find node: sender %s: %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Closest))
-
-			case ActionFindValueClosest:
-				// Only the nodes close to the key are of interest.
-				result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
-
-				client.LogStatus("search.startSearch", "find closest: sender %s: %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Closest))
-			}
-
-			// Add closest to list
-			client.list.AppendUniqueNodes(result.Closest...)
-
-			// If no subsequent level, and there's closer nodes, start one!
-			if !nestedStarted && !bytes.Equal(client.list.Nodes[0].ID, closestNode.ID) && level < MaxLevel {
-				nestedStarted = true
-				go client.startSearch(level + 1)
-			}
-
-		case <-info.TerminateSignal:
-			// If highest level (= not nested), and there was no conclusive result, try one more round.
-			// This helps against result poisoning.
-
-			if !nestedStarted {
-				client.LogStatus("search.startSearch", "search in level %d aborted, info request termination signal. Final try.\n", level)
-				if info = startInfoRequest(); info != nil {
-					continue
+				default:
+					break resultsLoop
 				}
 			}
 
-			if client.activeLevels == 1 { // if this was the last level, no more results will appear
-				client.LogStatus("search.startSearch", "level %d last active level, not found, terminate search\n", level)
-				client.Terminate()
-			} else {
-				client.LogStatus("search.startSearch", "level %d end, info request termination signal\n", level)
+			if activeLevels > 0 {
+				client.LogStatus("search.startSearch", "level end, info request termination signal\n")
+				continue
 			}
+
+			// No level is active and no result brought a node closer to the key than the closest node contacted. This is the end of a search for a node.
+			// A search for a value continues with the closest nodes not yet contacted.
+			if client.Action != ActionFindNode && startLevel() {
+				continue
+			}
+
+			client.LogStatus("search.startSearch", "last active level ended, not found, terminate search\n")
+			client.Terminate()
 			return
-
-			//case <-time.After(time.Second):
-			// Future todo: Launch another routine with the with uncontacted nodes if any, to speed up the query
 		}
 	}
 }

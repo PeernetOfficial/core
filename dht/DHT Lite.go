@@ -1,6 +1,6 @@
 /*
 File Name:  DHT Lite.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 
 A "lite" DHT implementation without any direct network and store code. There is really no reason for any of the heavy network implementation to be part of this.
@@ -147,12 +147,11 @@ func (dht *DHT) Get(key []byte) (value []byte, senderID []byte, found bool, err 
 	search.LogStatus("dht.Get", "Search for node %s. Full timeout %s, per node %s. Alpha = %d.\n", hex.EncodeToString(key), dht.TimeoutSearch.String(), dht.TimeoutIR.String(), dht.alpha)
 	search.SearchAway()
 
-	select {
-	case <-search.TerminateSignal:
+	result, ok := <-search.Results
+	if !ok { // The channel is closed when the search is terminated.
 		return nil, nil, false, nil
-	case result := <-search.Results:
-		return result.Data, result.SenderID, true, nil
 	}
+	return result.Data, result.SenderID, true, nil
 }
 
 // FindNode finds the target node in the network. Blocking!
