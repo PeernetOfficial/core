@@ -23,7 +23,7 @@ const connectionInvalidate = 22
 // connectionRemove is the threshold in seconds to remove inactive connections.
 const connectionRemove = 2 * 60
 
-// autoPingAll sends out regular ping messages to all connections of all peers. This allows to detect invalid connections and eventually drop them.
+// autoPingAll sends out regular ping messages to all connections of all active peers. This allows to detect invalid connections and eventually drop them.
 func (backend *Backend) autoPingAll() {
 	for {
 		time.Sleep(time.Second)
@@ -32,8 +32,8 @@ func (backend *Backend) autoPingAll() {
 	}
 }
 
-// pingAll goes once through all connections of all peers. It invalidates active connections without incoming packets, sends the ping messages that are due,
-// and removes expired inactive connections. A peer without a connection is removed from the peer list.
+// pingAll goes once through all connections of all peers. It invalidates active connections without incoming packets, sends the ping messages that are due
+// to active peers, and removes expired inactive connections. A peer without a connection is removed from the peer list.
 func (backend *Backend) pingAll() {
 	thresholdInvalidate1 := time.Now().Add(-connectionInvalidate * time.Second)
 	thresholdInvalidate2 := time.Now().Add(-connectionInvalidate * time.Second * 4)
@@ -42,6 +42,9 @@ func (backend *Backend) pingAll() {
 	thresholdBlockchainRefresh := time.Now().Add(-thresholdBlockchainRefresh)
 
 	for _, peer := range backend.PeerlistGet() {
+		// Only active peers are pinged, see IsActive.
+		isActive := peer.IsActive()
+
 		// first handle active connections
 		for _, connection := range peer.GetConnections(true) {
 			thresholdPing := thresholdPingOut1
@@ -57,7 +60,7 @@ func (backend *Backend) pingAll() {
 				continue
 			}
 
-			if connection.LastPacketIn.Before(thresholdPing) && connection.LastPingOut.Before(thresholdPing) {
+			if isActive && connection.LastPacketIn.Before(thresholdPing) && connection.LastPingOut.Before(thresholdPing) {
 				if connection.Status == ConnectionActive && peer.blockchainLastRefresh.Before(thresholdBlockchainRefresh) {
 					peer.pingConnectionAnnouncement(connection)
 				} else {
@@ -77,7 +80,7 @@ func (backend *Backend) pingAll() {
 			}
 
 			// if no ping was sent recently, send one now
-			if connection.LastPingOut.Before(thresholdPingOut1) {
+			if isActive && connection.LastPingOut.Before(thresholdPingOut1) {
 				peer.pingConnection(connection)
 			}
 		}

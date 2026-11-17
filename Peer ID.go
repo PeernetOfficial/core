@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/PeernetOfficial/core/dht"
@@ -102,6 +103,7 @@ type PeerInfo struct {
 	BlockchainVersion     uint64           // Blockchain version
 	blockchainLastRefresh time.Time        // Last refresh of the blockchain info.
 	packetKeys            protocol.PacketKeys // Packet keys for packets sent to and received from the peer.
+	transfers             int32            // Count of running transfers with the peer.
 
 	// statistics
 	StatsPacketSent     uint64 // Count of packets sent
@@ -137,10 +139,8 @@ func (backend *Backend) PeerlistAdd(PublicKey ed25519.PublicKey, connections ...
 
 	backend.peerList[publicKeyArray] = peer
 
-	// add to Kademlia
+	// add to Kademlia. A peer that is not taken into the routing table is a passive peer.
 	backend.nodesDHT.AddNode(&dht.Node{ID: peer.PublicKey, Info: peer})
-
-	// TODO: If the node isn't added to Kademlia, it should be either added temporarily to the peerList with an expiration, or to a temp list, or not at all.
 
 	// send to all channels non-blocking
 	for _, monitor := range backend.peerMonitor {
@@ -154,6 +154,27 @@ func (backend *Backend) PeerlistAdd(PublicKey ed25519.PublicKey, connections ...
 	backend.Filters.NewPeerConnection(peer, connections[0])
 
 	return peer, true
+}
+
+// IsActive checks if the peer is an active peer: it is in the routing table, or a transfer with it is running. Every other peer in the peer list is a passive peer.
+// Active peers are pinged. A passive peer stays in the peer list as long as its packets arrive.
+func (peer *PeerInfo) IsActive() bool {
+	return peer.Backend.nodesDHT.IsNodeContact(peer.PublicKey) != nil || atomic.LoadInt32(&peer.transfers) > 0
+}
+
+// routingTableAdd adds a peer of the peer list to the routing table, if it is not in it and its bucket has a free place.
+func (backend *Backend) routingTableAdd(peer *PeerInfo) {
+	if backend.nodesDHT.IsNodeContact(peer.PublicKey) != nil {
+		return
+	}
+
+	// The peer list is locked so that the peer is not removed from it at the same time.
+	backend.peerlistMutex.RLock()
+	defer backend.peerlistMutex.RUnlock()
+
+	if backend.peerList[publicKey2Array(peer.PublicKey)] == peer {
+		backend.nodesDHT.AddNode(&dht.Node{ID: peer.PublicKey, Info: peer})
+	}
 }
 
 // PeerlistRemove removes a peer from the peer list.

@@ -71,6 +71,8 @@ The Private Key is required to make any changes to the user's blockchain, includ
 
 The Ping/Pong commands are used to verify whether connections remain valid. They are only sent in absence of any other commands in the defined timeframe.
 
+A peer is active while it is in the routing table or while a transfer with it is running. Every other peer in the peer list is passive. Pings are sent to active peers only. A passive peer stays in the peer list as long as its packets arrive, and enters the routing table with its next packet once its bucket has a free place.
+
 * Active connections
   * Invalidate if 'Last packet in' was older than 22 seconds ago.
   * Send ping if last ping and 'Last packet in' was earlier than 10 seconds.
