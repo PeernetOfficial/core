@@ -88,7 +88,10 @@ func (network *testNetwork) start(self []byte, action int, key []byte, alpha int
 			}
 		}
 
-		if len(request.Nodes) < alpha && uncontacted > 0 && lookup.failed == "" {
+		// A request to the node searched for alone is sent as soon as the node is reported.
+		isTarget := len(request.Nodes) == 1 && bytes.Equal(request.Nodes[0].ID, key)
+
+		if len(request.Nodes) < alpha && uncontacted > 0 && !isTarget && lookup.failed == "" {
 			lookup.failed = "request sent to fewer nodes than alpha while nodes were not yet contacted"
 		}
 
@@ -375,6 +378,50 @@ func TestLookupClosestNode(t *testing.T) {
 		} else if !bytes.Equal(found.ID, key) {
 			t.Errorf("closest node %s: result is node %x, searched for %x", test, found.ID, key)
 		}
+	}
+}
+
+// TestLookupTargetAnswers checks that a node is found when it answers, and only then.
+func TestLookupTargetAnswers(t *testing.T) {
+	key := testID(t)
+	target := &Node{ID: key}
+	nodeA := &Node{ID: testIDDistance(key, 8)}
+	nodeB := &Node{ID: testIDDistance(key, 9)}
+
+	// A and B report the node, it does not answer: it is sent the request once and is not found.
+	_, found, requests, elapsed := testLookupNodes(t, key, []*Node{nodeA, nodeB}, 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
+		return []*Node{target, nodeA, nodeB}, !bytes.Equal(node.ID, key)
+	})
+
+	if found != nil {
+		t.Errorf("node is reported and does not answer: node found")
+	}
+	if count := requests[string(key)]; count != 1 {
+		t.Errorf("node is reported and does not answer: it was sent %d requests, expected 1", count)
+	}
+	if elapsed > time.Second {
+		t.Errorf("node is reported and does not answer: search ended after %s", elapsed)
+	}
+
+	// A and B report the node, it answers.
+	_, found, requests, _ = testLookupNodes(t, key, []*Node{nodeA, nodeB}, 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
+		return []*Node{target, nodeA, nodeB}, true
+	})
+
+	if found != target {
+		t.Errorf("node is reported and answers: node not found")
+	}
+	if count := requests[string(key)]; count != 1 {
+		t.Errorf("node is reported and answers: it was sent %d requests, expected 1", count)
+	}
+
+	// The node is in the routing table and answers. No node reports it.
+	_, found, _, _ = testLookupNodes(t, key, []*Node{nodeA, nodeB, target}, 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
+		return []*Node{nodeA, nodeB}, true
+	})
+
+	if found != target {
+		t.Errorf("node is in the routing table and answers: node not found")
 	}
 }
 

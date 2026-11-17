@@ -44,6 +44,7 @@ type SearchClient struct {
 	beta                int                                             // ActionFindNode: Count of closest nodes that must have answered for the search to end.
 	answered            map[string]bool                                 // ActionFindNode: Nodes that answered.
 	unanswered          map[string]bool                                 // ActionFindNode: Nodes that did not answer by the end of their information request.
+	target              []*Node                                         // ActionFindNode: The node searched for, as known from the routing table or reported in a result.
 	Results             chan *SearchResult                              // Result channel. It is closed when the search is terminated.
 	list                *shortList                                      // List of nodes to contact
 	contactedNodesMap   map[string]struct{}                             // List of nodes already contacted
@@ -59,7 +60,7 @@ type SearchResult struct {
 	SenderID []byte // Sender node ID of the result
 
 	// data for ActionFindNode
-	TargetNode *Node // The node that was requested.
+	TargetNode *Node // The node that was requested. It answered the request.
 
 	// data for ActionFindValue
 	Data []byte // Actual data
@@ -176,6 +177,10 @@ func (client *SearchClient) SearchAway() {
 		return
 	}
 
+	if client.Action == ActionFindNode && bytes.Equal(client.list.Nodes[0].ID, client.Key) {
+		client.target = append(client.target, client.list.Nodes[0])
+	}
+
 	go client.queryNodesKnownStore()
 
 	// start the first information request
@@ -246,20 +251,15 @@ func (client *SearchClient) queryNodesKnownStore() {
 
 // startSearch runs the search. Each level sends an information request to the alpha closest nodes not yet contacted.
 // A search for a node starts the next level as soon as one of the beta closest nodes is not yet contacted, and ends when they have all answered.
-// A node that does not answer is not counted among the beta.
+// A node that does not answer is not counted among the beta. The node searched for is sent the request as soon as a result reports it, and is found when it answers.
 // A search for a value starts the next level as soon as a result brings a node that is closer to the key than the closest node contacted.
 func (client *SearchClient) startSearch() {
 	results := make(chan *NodeMessage, messageChannelSize)
 	levelEnd := make(chan []*Node)
 	level, activeLevels := 0, 0
 
-	// startLevel sends an information request to the closest nodes not yet contacted.
-	startLevel := func() (started bool) {
-		nodes := client.list.GetUncontacted(client.alpha, true)
-		if len(nodes) == 0 {
-			return false
-		}
-
+	// startRequest sends an information request to the nodes.
+	startRequest := func(nodes []*Node) (started bool) {
 		client.LogStatus("search.startSearch", "start search in level %d contacting %d nodes\n", level, len(nodes))
 
 		info := client.sendInfoRequest(nodes, results)
@@ -279,6 +279,16 @@ func (client *SearchClient) startSearch() {
 		}()
 
 		return true
+	}
+
+	// startLevel sends an information request to the closest nodes not yet contacted.
+	startLevel := func() (started bool) {
+		nodes := client.list.GetUncontacted(client.alpha, true)
+		if len(nodes) == 0 {
+			return false
+		}
+
+		return startRequest(nodes)
 	}
 
 	// handleResult handles the result of a node. It returns true if the search is terminated.
@@ -307,16 +317,30 @@ func (client *SearchClient) startSearch() {
 			}
 
 		case ActionFindNode:
-			// search for node and it was found?
-			for _, closePeer := range result.Closest {
-				if bytes.Equal(closePeer.ID, client.Key) {
-					client.LogStatus("search.startSearch", "result: sender %s: node found!\n", hex.EncodeToString(result.SenderID))
-					client.sendResult(&SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, TargetNode: closePeer})
-					return true
-				}
+			// search for node and it answered?
+			if result.Node != nil && bytes.Equal(result.SenderID, client.Key) {
+				client.LogStatus("search.startSearch", "result: sender %s: node found!\n", hex.EncodeToString(result.SenderID))
+				client.sendResult(&SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, TargetNode: result.Node})
+				return true
 			}
 
 			client.answered[string(result.SenderID)] = true
+
+			// The node searched for is reported: it is sent the request at once.
+			for _, closePeer := range result.Closest {
+				if !bytes.Equal(closePeer.ID, client.Key) {
+					continue
+				}
+
+				if len(client.target) == 0 && level < MaxLevel {
+					client.target = append(client.target, closePeer)
+					client.list.AppendUniqueNodes(closePeer)
+					client.list.Contacted[string(closePeer.ID)] = true
+
+					level++
+					startRequest([]*Node{closePeer})
+				}
+			}
 
 			result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
 

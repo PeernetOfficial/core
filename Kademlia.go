@@ -170,7 +170,7 @@ func (backend *Backend) IsNodeContact(publicKey ed25519.PublicKey) (node *dht.No
 	return node, node.Info.(*PeerInfo)
 }
 
-// FindNode finds a peer via the DHT
+// FindNode finds a peer via the DHT. A peer that is found answered the lookup. If it answered via a relay only, it is not in the peer list and the returned peer is a virtual one.
 func (backend *Backend) FindNode(publicKey ed25519.PublicKey, Timeout time.Duration) (node *dht.Node, peer *PeerInfo, err error) {
 	// first check if in the peer list
 	if peer = backend.PeerlistLookup(publicKey); peer != nil {
@@ -181,6 +181,10 @@ func (backend *Backend) FindNode(publicKey ed25519.PublicKey, Timeout time.Durat
 	node, err = backend.nodesDHT.FindNode(publicKey)
 	if node == nil {
 		return nil, nil, err
+	}
+
+	if peer = backend.PeerlistLookup(publicKey); peer != nil {
+		return node, peer, err
 	}
 
 	return node, node.Info.(*PeerInfo), err
