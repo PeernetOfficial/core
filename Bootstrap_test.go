@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/PeernetOfficial/core/protocol"
 )
@@ -115,4 +116,29 @@ func TestIsReturnedPeerBadQuality(t *testing.T) {
 			t.Errorf("record %d: bad quality %t, expected %t", n, bad, test.bad)
 		}
 	}
+}
+
+// TestContactRootPeers checks which root peers are contacted: a root peer that is not in the peer list is sent an Announcement, a root peer in the peer list is not.
+func TestContactRootPeers(t *testing.T) {
+	backend, network := testBackendLoopback(t)
+	testRootPeers(t)
+
+	rootPublicKey, rootPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+	socket, address := testSocket(t)
+	rootPeers[publicKey2Array(rootPublicKey)] = &rootPeer{publicKey: rootPublicKey, addresses: []*net.UDPAddr{address}, backend: backend}
+
+	backend.contactRootPeers()
+	testExpectAnnouncement(t, "not in the peer list", backend, socket, rootPrivateKey)
+
+	peer, _ := backend.PeerlistAdd(rootPublicKey, &Connection{backend: backend, Network: network, Address: address})
+
+	backend.contactRootPeers()
+	if packet := testReadPacket(t, "in the peer list", backend, socket, rootPrivateKey, 300*time.Millisecond); packet != nil {
+		t.Errorf("in the peer list: packet with command %d received, expected none", packet.Command)
+	}
+
+	backend.PeerlistRemove(peer)
+
+	backend.contactRootPeers()
+	testExpectAnnouncement(t, "removed from the peer list", backend, socket, rootPrivateKey)
 }

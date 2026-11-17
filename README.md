@@ -55,7 +55,7 @@ The Private Key is required to make any changes to the user's blockchain, includ
 * Connection to root peers (initial seed list):
   * Immediate contact to all root peers.
   * Phase 1: First 10 minutes. Try every 7 seconds to connect to all root peers until at least 2 peers connected.
-  * Phase 2: After that (if not 2 peers), try every 5 minutes to connect to remaining root peers for a maximum of 1 hour.
+  * Phase 2: After that, every 5 minutes contact the root peers that are not in the peer list.
 * Local peer discovery via IPv4 Broadcast and IPv6 Multicast:
   * Send out immediately when starting.
   * Phase 1: Resend every 10 seconds until at least 1 peer in the peer list.
@@ -63,7 +63,7 @@ The Private Key is required to make any changes to the user's blockchain, includ
 * Network adapter changes:
   * Check every 10 seconds for new/removed network interfaces and for new/removed IPs.
   * Automatically listen on any newly detected network interfaces and IPs.
-  * Start a routing table refresh in case of a new network interface or IP.
+  * Contact the root peers that are not in the peer list and start a routing table refresh in case of a new network interface or IP.
 * Kademlia bootstrap:
   * As soon as there are at least 2 peers, keep refreshing buckets every second 3 times.
 

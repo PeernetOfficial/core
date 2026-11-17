@@ -26,7 +26,6 @@ import (
 
 // rootPeer is a single root peer info
 type rootPeer struct {
-	peer      *PeerInfo        // loaded PeerInfo
 	publicKey ed25519.PublicKey // Public key
 	addresses []*net.UDPAddr   // IP:Port addresses
 	backend   *Backend
@@ -111,7 +110,17 @@ func (peer *rootPeer) contact() {
 	}
 }
 
-// bootstrap connects to the initial set of peers.
+// rootPeerContactTime is the interval of contacting the root peers that are not in the peer list.
+const rootPeerContactTime = 5 * time.Minute
+
+// contactRootPeers contacts the root peers that are not in the peer list.
+func (backend *Backend) contactRootPeers() {
+	for _, peer := range rootPeers {
+		peer.contact()
+	}
+}
+
+// bootstrap connects to the root peers. A root peer that is not in the peer list is contacted again.
 func (backend *Backend) bootstrap() {
 	go resetRecentContacts()
 
@@ -120,19 +129,9 @@ func (backend *Backend) bootstrap() {
 		return
 	}
 
-	contactRootPeers := func() {
-		for _, peer := range rootPeers {
-			if peer.peer == nil {
-				peer.contact()
-			}
-		}
-	}
-
 	countConnectedRootPeers := func() (connectedCount, total int) {
 		for _, peer := range rootPeers {
-			if peer.peer != nil {
-				connectedCount++
-			} else if peer.peer = peer.backend.PeerlistLookup(peer.publicKey); peer.peer != nil {
+			if backend.PeerlistLookup(peer.publicKey) != nil {
 				connectedCount++
 			}
 		}
@@ -140,31 +139,25 @@ func (backend *Backend) bootstrap() {
 	}
 
 	// initial contact to all root peer
-	contactRootPeers()
+	backend.contactRootPeers()
 
 	// Phase 1: First 10 minutes. Try every 7 seconds to connect to all root peers until at least 2 peers connected.
 	for n := 0; n < 10*60/7; n++ {
 		time.Sleep(time.Second * 7)
 
 		if connected, total := countConnectedRootPeers(); connected == total || connected >= 2 {
-			return
+			break
 		}
 
-		contactRootPeers()
+		backend.contactRootPeers()
 	}
 
-	// Phase 2: After that (if not 2 peers), try every 5 minutes to connect to remaining root peers for a maximum of 1 hour.
-	for n := 0; n < 1*60/5; n++ {
-		time.Sleep(time.Minute * 5)
+	// Phase 2: After that, every 5 minutes contact the root peers that are not in the peer list.
+	for {
+		time.Sleep(rootPeerContactTime)
 
-		contactRootPeers()
-
-		if connected, total := countConnectedRootPeers(); connected == total || connected >= 2 {
-			return
-		}
+		backend.contactRootPeers()
 	}
-
-	backend.LogError("bootstrap", "unable to connect to at least 2 root peers, aborting\n")
 }
 
 func (nets *Networks) autoMulticastBroadcast() {
