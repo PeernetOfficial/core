@@ -149,32 +149,33 @@ func (ht *hashTable) getClosestContacts(num int, target []byte, filterFunc NodeF
 	return sl
 }
 
-func (ht *hashTable) insertNode(node *Node, shouldEvict func(nodeOld *Node, nodeNew *Node) bool) {
+// insertNode adds the node to its bucket. A node that is in the bucket already is marked as seen. A bucket that holds bSize nodes takes no new node.
+func (ht *hashTable) insertNode(node *Node) {
 	index := ht.getBucketIndexFromDifferingBit(node.ID)
-
-	// If the node already exist, mark it as seen
-	if ht.doesNodeExistInBucket(index, node.ID) != nil {
-		ht.markNodeAsSeen(index, node.ID)
-		return
-	}
-
-	node.LastSeen = time.Now().UTC()
 
 	ht.mutex.Lock()
 	defer ht.mutex.Unlock()
 
 	bucket := ht.RoutingTable[index]
 
-	if len(bucket) == ht.bSize {
-		if shouldEvict(bucket[0], node) {
-			bucket = append(bucket, node)
-			bucket = bucket[1:]
+	// If the node already exist, mark it as seen
+	for i, existing := range bucket {
+		if bytes.Equal(existing.ID, node.ID) {
+			existing.LastSeen = time.Now().UTC()
+
+			bucket = append(bucket[:i], bucket[i+1:]...)
+			ht.RoutingTable[index] = append(bucket, existing)
+			return
 		}
-	} else {
-		bucket = append(bucket, node)
 	}
 
-	ht.RoutingTable[index] = bucket
+	if len(bucket) >= ht.bSize {
+		return
+	}
+
+	node.LastSeen = time.Now().UTC()
+
+	ht.RoutingTable[index] = append(bucket, node)
 }
 
 func (ht *hashTable) removeNode(ID []byte) {

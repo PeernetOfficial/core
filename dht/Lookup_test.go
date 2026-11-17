@@ -27,7 +27,6 @@ func newTestNetwork(t *testing.T, count int) (network *testNetwork) {
 	for n := 0; n < count; n++ {
 		id := testID(t)
 		node := NewDHT(&Node{ID: id}, 256, 20, 5)
-		node.ShouldEvict = func(node1, node2 *Node) bool { return false }
 
 		network.ids = append(network.ids, id)
 		network.nodes[string(id)] = node

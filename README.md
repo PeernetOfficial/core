@@ -86,7 +86,7 @@ Above limits are constants and can be adjusted in the code via `pingTime`, `conn
 
 The routing table has a bucket size of 20 and the size of keys 256 bits (blake3 hash). Nodes within buckets are sorted by least recently seen. The number of nodes to contact concurrently in DHT lookups (also known as alpha number) is set to 5.
 
-If a bucket is full when a new peer connects `ShouldEvict` is called. It compares the RTTs (favoring smaller one) and in absence of the RTT time it will favor the node which is closer by XOR distance. The routing table is refreshed every 5 minutes: a lookup for the own Peer ID, and a lookup for a random ID in every bucket that holds fewer than 20 peers, from the bucket of the farthest peers to the bucket of the closest peer in the routing table.
+A bucket that holds 20 peers takes no new peer. The routing table is refreshed every 5 minutes: a lookup for the own Peer ID, and a lookup for a random ID in every bucket that holds fewer than 20 peers, from the bucket of the farthest peers to the bucket of the closest peer in the routing table.
 
 ### Timeouts
 
