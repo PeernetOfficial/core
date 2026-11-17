@@ -46,7 +46,46 @@ func (backend *Backend) initKademlia() {
 		}
 	}
 
+	backend.nodesDHT.NewNodeAddresses = newNodeAddresses
+
 	backend.nodesDHT.FilterSearchStatus = backend.Filters.DHTSearchStatus
+}
+
+// newNodeAddresses is called when a response reports the peer searched for and it is known already. It returns the reported peer with the addresses that are not among those of the known ones,
+// or nil if it has none. A peer of the peer list is connected, no further address is tried. Two addresses are equal if the IP and the ports are equal.
+func newNodeAddresses(known []*dht.Node, reported *dht.Node) (node *dht.Node) {
+	peer := reported.Info.(*PeerInfo)
+	if !peer.isVirtual {
+		return nil
+	}
+
+	var addresses []*peerAddress
+
+addressLoop:
+	for _, address := range peer.targetAddresses {
+		for _, knownNode := range known {
+			knownPeer := knownNode.Info.(*PeerInfo)
+			if !knownPeer.isVirtual {
+				return nil
+			}
+
+			for _, tried := range knownPeer.targetAddresses {
+				if tried.IP.Equal(address.IP) && tried.Port == address.Port && tried.PortInternal == address.PortInternal && tried.PortExternal == address.PortExternal {
+					continue addressLoop
+				}
+			}
+		}
+
+		addresses = append(addresses, address)
+	}
+
+	if len(addresses) == 0 {
+		return nil
+	}
+
+	peer.targetAddresses = addresses
+
+	return reported
 }
 
 // refreshBuckets runs one refresh of the routing table: a lookup for the own Peer ID, and a lookup for a random ID in every bucket that holds fewer peers than the bucket size,

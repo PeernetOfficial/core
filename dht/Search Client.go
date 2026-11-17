@@ -44,7 +44,8 @@ type SearchClient struct {
 	beta                int                                             // ActionFindNode: Count of closest nodes that must have answered for the search to end.
 	answered            map[string]bool                                 // ActionFindNode: Nodes that answered.
 	unanswered          map[string]bool                                 // ActionFindNode: Nodes that did not answer by the end of their information request.
-	target              []*Node                                         // ActionFindNode: The node searched for, as known from the routing table or reported in a result.
+	target              []*Node                                         // ActionFindNode: The node searched for, as known from the routing table or reported in a result. Each one after the first holds addresses the ones before do not.
+	targetActive        int                                             // ActionFindNode: Count of information requests to the node searched for that are under way.
 	Results             chan *SearchResult                              // Result channel. It is closed when the search is terminated.
 	list                *shortList                                      // List of nodes to contact
 	contactedNodesMap   map[string]struct{}                             // List of nodes already contacted
@@ -252,6 +253,7 @@ func (client *SearchClient) queryNodesKnownStore() {
 // startSearch runs the search. Each level sends an information request to the alpha closest nodes not yet contacted.
 // A search for a node starts the next level as soon as one of the beta closest nodes is not yet contacted, and ends when they have all answered.
 // A node that does not answer is not counted among the beta. The node searched for is sent the request as soon as a result reports it, and is found when it answers.
+// If a later result reports it with addresses that are not yet tried, it is sent the request at those.
 // A search for a value starts the next level as soon as a result brings a node that is closer to the key than the closest node contacted.
 func (client *SearchClient) startSearch() {
 	results := make(chan *NodeMessage, messageChannelSize)
@@ -268,6 +270,12 @@ func (client *SearchClient) startSearch() {
 		}
 
 		activeLevels++
+
+		for _, node := range nodes {
+			if bytes.Equal(node.ID, client.Key) {
+				client.targetActive++
+			}
+		}
 
 		go func() {
 			<-info.TerminateSignal
@@ -326,20 +334,24 @@ func (client *SearchClient) startSearch() {
 
 			client.answered[string(result.SenderID)] = true
 
-			// The node searched for is reported: it is sent the request at once.
+			// The node searched for is reported: it is sent the request at once. If it is known already, it is sent the request at the addresses that are not yet tried.
 			for _, closePeer := range result.Closest {
-				if !bytes.Equal(closePeer.ID, client.Key) {
+				if !bytes.Equal(closePeer.ID, client.Key) || level >= MaxLevel {
 					continue
 				}
 
-				if len(client.target) == 0 && level < MaxLevel {
-					client.target = append(client.target, closePeer)
+				if len(client.target) == 0 {
 					client.list.AppendUniqueNodes(closePeer)
 					client.list.Contacted[string(closePeer.ID)] = true
-
-					level++
-					startRequest([]*Node{closePeer})
+				} else if closePeer = client.dht.NewNodeAddresses(client.target, closePeer); closePeer == nil {
+					continue
 				}
+
+				client.target = append(client.target, closePeer)
+				delete(client.unanswered, string(client.Key))
+
+				level++
+				startRequest([]*Node{closePeer})
 			}
 
 			result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
@@ -447,7 +459,14 @@ func (client *SearchClient) startSearch() {
 
 			if client.Action == ActionFindNode {
 				// The nodes of the level that did not answer are not counted among the beta closest nodes.
+				// The node searched for did not answer once no information request to it is under way.
 				for _, node := range nodes {
+					if bytes.Equal(node.ID, client.Key) {
+						if client.targetActive--; client.targetActive > 0 {
+							continue
+						}
+					}
+
 					if !client.answered[string(node.ID)] {
 						client.unanswered[string(node.ID)] = true
 					}

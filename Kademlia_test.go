@@ -73,3 +73,62 @@ func TestFindNode(t *testing.T) {
 		}
 	}
 }
+
+// TestNewNodeAddresses checks which addresses of a peer that is reported again are not yet tried.
+func TestNewNodeAddresses(t *testing.T) {
+	address := func(ip string, port, portInternal, portExternal uint16) *peerAddress {
+		return &peerAddress{IP: net.ParseIP(ip), Port: port, PortInternal: portInternal, PortExternal: portExternal}
+	}
+	virtual := func(addresses ...*peerAddress) *dht.Node {
+		return &dht.Node{Info: &PeerInfo{isVirtual: true, targetAddresses: addresses}}
+	}
+	connected := &dht.Node{Info: &PeerInfo{}}
+
+	a1 := address("203.0.113.1", 112, 112, 0)
+	a2 := address("2001:db8::1", 112, 112, 0)
+	a3 := address("203.0.113.3", 112, 112, 0)
+
+	tests := []struct {
+		name     string
+		known    []*dht.Node
+		reported *dht.Node
+		expected []*peerAddress // nil = no address is new
+	}{
+		{"same address", []*dht.Node{virtual(a1, a2)}, virtual(address("203.0.113.1", 112, 112, 0)), nil},
+		{"same addresses in two known peers", []*dht.Node{virtual(a1), virtual(a2)}, virtual(a2, a1), nil},
+		{"one new address", []*dht.Node{virtual(a1, a2)}, virtual(a1, a3), []*peerAddress{a3}},
+		{"new address in the second known peer", []*dht.Node{virtual(a1), virtual(a3)}, virtual(a3, a2), []*peerAddress{a2}},
+		{"other port", []*dht.Node{virtual(a1)}, virtual(address("203.0.113.1", 5455, 112, 0)), []*peerAddress{address("203.0.113.1", 5455, 112, 0)}},
+		{"other internal port", []*dht.Node{virtual(a1)}, virtual(address("203.0.113.1", 112, 113, 0)), []*peerAddress{address("203.0.113.1", 112, 113, 0)}},
+		{"other external port", []*dht.Node{virtual(a1)}, virtual(address("203.0.113.1", 112, 112, 5455)), []*peerAddress{address("203.0.113.1", 112, 112, 5455)}},
+		{"reported peer is in the peer list", []*dht.Node{virtual(a1)}, connected, nil},
+		{"known peer is in the peer list", []*dht.Node{connected}, virtual(a3), nil},
+	}
+
+	for _, test := range tests {
+		node := newNodeAddresses(test.known, test.reported)
+
+		if test.expected == nil {
+			if node != nil {
+				t.Errorf("%s: a peer is returned", test.name)
+			}
+			continue
+		}
+
+		if node != test.reported {
+			t.Errorf("%s: the reported peer is not returned", test.name)
+			continue
+		}
+
+		addresses := node.Info.(*PeerInfo).targetAddresses
+		if len(addresses) != len(test.expected) {
+			t.Errorf("%s: %d addresses returned, expected %d", test.name, len(addresses), len(test.expected))
+			continue
+		}
+		for n := range addresses {
+			if !addresses[n].IP.Equal(test.expected[n].IP) || addresses[n].Port != test.expected[n].Port || addresses[n].PortInternal != test.expected[n].PortInternal || addresses[n].PortExternal != test.expected[n].PortExternal {
+				t.Errorf("%s: address %d is %v", test.name, n, *addresses[n])
+			}
+		}
+	}
+}
