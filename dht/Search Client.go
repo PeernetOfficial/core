@@ -21,7 +21,7 @@ import (
 // MaxAcceptKnownStore is maximum count accepted of known peers that store the value
 const MaxAcceptKnownStore = 10
 
-// MaxClosest is maximum number of closest peers accepted
+// MaxClosest is maximum number of closest peers accepted from a response record. A response record carries at most 5.
 const MaxClosest = 5
 
 // MaxLevel defines the max level.

@@ -15,8 +15,8 @@ import (
 	"github.com/PeernetOfficial/core/protocol"
 )
 
-const alpha = 5       // Count of nodes to be contacted in parallel for finding a key
-const bucketSize = 20 // Count of nodes per bucket
+const alpha = 5       // Count of nodes to be contacted in parallel for finding a key (α in the whitepaper)
+const bucketSize = 20 // Count of nodes per bucket (k in the whitepaper)
 
 func (backend *Backend) initKademlia() {
 	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.peerPublicKey}, 256, bucketSize, alpha)
