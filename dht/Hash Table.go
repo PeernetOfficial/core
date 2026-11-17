@@ -1,6 +1,6 @@
 /*
 File Name:  Hash Table.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -89,53 +89,63 @@ func (ht *hashTable) doesNodeExist(ID []byte) (node *Node) {
 	return ht.doesNodeExistInBucket(ht.getBucketIndexFromDifferingBit(ID), ID)
 }
 
-// getClosestContacts returns the closest nodes to the target. filterFunc is optional and allows the caller to filter the nodes.
+// getClosestContacts returns the num nodes of the routing table closest to the target by XOR distance, closest first.
+// filterFunc is optional and allows the caller to filter the nodes. Ignored nodes are left out.
 func (ht *hashTable) getClosestContacts(num int, target []byte, filterFunc NodeFilterFunc, ignoredNodes ...[]byte) *shortList {
 	ht.mutex.RLock()
 	defer ht.mutex.RUnlock()
 
-	// First we need to build the list of adjacent indices to our target in order
-	index := ht.getBucketIndexFromDifferingBit(target)
-	indexList := []int{index}
-	for i, j := index-1, index+1; len(indexList) < ht.bBits; i, j = i-1, j+1 {
-		if j < ht.bBits {
-			indexList = append(indexList, j)
-		}
-		if i >= 0 {
-			indexList = append(indexList, i)
-		}
-	}
-
 	sl := newShortList()
+	sl.Comparator = target
 
-	leftToAdd := num
-
-	// Next we select alpha contacts and add them to the short list
-	for leftToAdd > 0 && len(indexList) > 0 {
-		index, indexList = indexList[0], indexList[1:]
-		bucketContacts := len(ht.RoutingTable[index])
-	bucketLoop:
-		for i := 0; i < bucketContacts; i++ {
-			for j := 0; j < len(ignoredNodes); j++ {
-				if bytes.Compare(ht.RoutingTable[index][i].ID, ignoredNodes[j]) == 0 {
-					continue bucketLoop
-				}
-			}
-
-			// Use the filter function if set. It allows the caller to only accept certain nodes.
-			if filterFunc != nil && !filterFunc(ht.RoutingTable[index][i]) {
-				continue
-			}
-
-			sl.AppendUniqueNodes(ht.RoutingTable[index][i])
-			leftToAdd--
-			if leftToAdd == 0 {
-				break
-			}
-		}
+	if num <= 0 {
+		return sl
 	}
 
-	sort.Sort(sl)
+	// addClosest adds the nodes of the buckets closest to the target first, until the short list holds num nodes.
+	addClosest := func(buckets ...[]*Node) {
+		group := &shortList{Comparator: target}
+
+		for _, bucket := range buckets {
+		bucketLoop:
+			for _, node := range bucket {
+				for _, ignored := range ignoredNodes {
+					if bytes.Equal(node.ID, ignored) {
+						continue bucketLoop
+					}
+				}
+
+				// Use the filter function if set. It allows the caller to only accept certain nodes.
+				if filterFunc != nil && !filterFunc(node) {
+					continue
+				}
+
+				group.Nodes = append(group.Nodes, node)
+			}
+		}
+
+		sort.Sort(group)
+
+		if left := num - len(sl.Nodes); len(group.Nodes) > left {
+			group.Nodes = group.Nodes[:left]
+		}
+		sl.Nodes = append(sl.Nodes, group.Nodes...)
+	}
+
+	// By distance to the target the nodes come in this order: the bucket of the target, then the buckets of a lower index,
+	// then the buckets of a higher index in ascending order. The nodes in the buckets of a lower index all differ from the
+	// target in the same first bit, they are sorted as one group.
+	index := ht.getBucketIndexFromDifferingBit(target)
+
+	addClosest(ht.RoutingTable[index])
+
+	if len(sl.Nodes) < num {
+		addClosest(ht.RoutingTable[:index]...)
+	}
+
+	for i := index + 1; i < ht.bBits && len(sl.Nodes) < num; i++ {
+		addClosest(ht.RoutingTable[i])
+	}
 
 	return sl
 }
