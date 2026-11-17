@@ -46,7 +46,46 @@ func (backend *Backend) initKademlia() {
 		}
 	}
 
+	backend.nodesDHT.NewNodeAddresses = newNodeAddresses
+
 	backend.nodesDHT.FilterSearchStatus = backend.Filters.DHTSearchStatus
+}
+
+// newNodeAddresses is called when a response reports the peer searched for and it is known already. It returns the reported peer with the addresses that are not among those of the known ones,
+// or nil if it has none. A peer of the peer list is connected, no further address is tried. Two addresses are equal if the IP and the ports are equal.
+func newNodeAddresses(known []*dht.Node, reported *dht.Node) (node *dht.Node) {
+	peer := reported.Info.(*PeerInfo)
+	if !peer.isVirtual {
+		return nil
+	}
+
+	var addresses []*peerAddress
+
+addressLoop:
+	for _, address := range peer.targetAddresses {
+		for _, knownNode := range known {
+			knownPeer := knownNode.Info.(*PeerInfo)
+			if !knownPeer.isVirtual {
+				return nil
+			}
+
+			for _, tried := range knownPeer.targetAddresses {
+				if tried.IP.Equal(address.IP) && tried.Port == address.Port && tried.PortInternal == address.PortInternal && tried.PortExternal == address.PortExternal {
+					continue addressLoop
+				}
+			}
+		}
+
+		addresses = append(addresses, address)
+	}
+
+	if len(addresses) == 0 {
+		return nil
+	}
+
+	peer.targetAddresses = addresses
+
+	return reported
 }
 
 // refreshBuckets runs one refresh of the routing table: a lookup for the own Peer ID, and a lookup for a random ID in every bucket that holds fewer peers than the bucket size,
@@ -170,7 +209,7 @@ func (backend *Backend) IsNodeContact(publicKey ed25519.PublicKey) (node *dht.No
 	return node, node.Info.(*PeerInfo)
 }
 
-// FindNode finds a peer via the DHT
+// FindNode finds a peer via the DHT. A peer that is found answered the lookup. If it answered via a relay only, it is not in the peer list and the returned peer is a virtual one.
 func (backend *Backend) FindNode(publicKey ed25519.PublicKey, Timeout time.Duration) (node *dht.Node, peer *PeerInfo, err error) {
 	// first check if in the peer list
 	if peer = backend.PeerlistLookup(publicKey); peer != nil {
@@ -181,6 +220,10 @@ func (backend *Backend) FindNode(publicKey ed25519.PublicKey, Timeout time.Durat
 	node, err = backend.nodesDHT.FindNode(publicKey)
 	if node == nil {
 		return nil, nil, err
+	}
+
+	if peer = backend.PeerlistLookup(publicKey); peer != nil {
+		return node, peer, err
 	}
 
 	return node, node.Info.(*PeerInfo), err

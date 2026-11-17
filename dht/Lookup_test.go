@@ -88,7 +88,10 @@ func (network *testNetwork) start(self []byte, action int, key []byte, alpha int
 			}
 		}
 
-		if len(request.Nodes) < alpha && uncontacted > 0 && lookup.failed == "" {
+		// A request to the node searched for alone is sent as soon as the node is reported.
+		isTarget := len(request.Nodes) == 1 && bytes.Equal(request.Nodes[0].ID, key)
+
+		if len(request.Nodes) < alpha && uncontacted > 0 && !isTarget && lookup.failed == "" {
 			lookup.failed = "request sent to fewer nodes than alpha while nodes were not yet contacted"
 		}
 
@@ -308,7 +311,26 @@ func testIDDistance(key []byte, distance uint32) (id []byte) {
 // A node that is sent the request answers at once with the nodes that answer returns for it, or does not answer if ok is false.
 // It returns the node found, the count of requests each node was sent and the time the search took.
 func testLookupNodes(t *testing.T, key []byte, table []*Node, timeoutIR time.Duration, answer func(node *Node) (closest []*Node, ok bool)) (search *SearchClient, found *Node, requests map[string]int, elapsed time.Duration) {
+	return testLookupNodesDelay(t, key, table, timeoutIR, func(node *Node) (closest []*Node, ok bool, delay time.Duration) {
+		closest, ok = answer(node)
+		return closest, ok, 0
+	})
+}
+
+// testNewNodeAddresses takes the Info of a node as its address: a reported node has a new address if no known node has the same Info.
+func testNewNodeAddresses(known []*Node, reported *Node) (node *Node) {
+	for _, knownNode := range known {
+		if knownNode.Info == reported.Info {
+			return nil
+		}
+	}
+	return reported
+}
+
+// testLookupNodesDelay is testLookupNodes with nodes that answer after the delay that answer returns for them.
+func testLookupNodesDelay(t *testing.T, key []byte, table []*Node, timeoutIR time.Duration, answer func(node *Node) (closest []*Node, ok bool, delay time.Duration)) (search *SearchClient, found *Node, requests map[string]int, elapsed time.Duration) {
 	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5, 5)
+	dht.NewNodeAddresses = testNewNodeAddresses
 	for _, node := range table {
 		dht.AddNode(node)
 	}
@@ -319,8 +341,21 @@ func testLookupNodes(t *testing.T, key []byte, table []*Node, timeoutIR time.Dur
 		for _, node := range request.Nodes {
 			requests[string(node.ID)]++
 
-			if closest, ok := answer(node); ok {
-				request.QueueResult(&NodeMessage{SenderID: node.ID, Closest: closest})
+			closest, ok, delay := answer(node)
+			if !ok {
+				continue
+			}
+
+			message := &NodeMessage{SenderID: node.ID, Closest: closest}
+
+			if delay > 0 {
+				go func() {
+					time.Sleep(delay)
+					request.QueueResult(message)
+					request.Done()
+				}()
+			} else {
+				request.QueueResult(message)
 				request.Done()
 			}
 		}
@@ -375,6 +410,141 @@ func TestLookupClosestNode(t *testing.T) {
 		} else if !bytes.Equal(found.ID, key) {
 			t.Errorf("closest node %s: result is node %x, searched for %x", test, found.ID, key)
 		}
+	}
+}
+
+// TestLookupTargetAnswers checks that a node is found when it answers, and only then.
+func TestLookupTargetAnswers(t *testing.T) {
+	key := testID(t)
+	target := &Node{ID: key}
+	nodeA := &Node{ID: testIDDistance(key, 8)}
+	nodeB := &Node{ID: testIDDistance(key, 9)}
+
+	// A and B report the node, it does not answer: it is sent the request once and is not found.
+	_, found, requests, elapsed := testLookupNodes(t, key, []*Node{nodeA, nodeB}, 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
+		return []*Node{target, nodeA, nodeB}, !bytes.Equal(node.ID, key)
+	})
+
+	if found != nil {
+		t.Errorf("node is reported and does not answer: node found")
+	}
+	if count := requests[string(key)]; count != 1 {
+		t.Errorf("node is reported and does not answer: it was sent %d requests, expected 1", count)
+	}
+	if elapsed > time.Second {
+		t.Errorf("node is reported and does not answer: search ended after %s", elapsed)
+	}
+
+	// A and B report the node, it answers.
+	_, found, requests, _ = testLookupNodes(t, key, []*Node{nodeA, nodeB}, 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
+		return []*Node{target, nodeA, nodeB}, true
+	})
+
+	if found != target {
+		t.Errorf("node is reported and answers: node not found")
+	}
+	if count := requests[string(key)]; count != 1 {
+		t.Errorf("node is reported and answers: it was sent %d requests, expected 1", count)
+	}
+
+	// The node is in the routing table and answers. No node reports it.
+	_, found, _, _ = testLookupNodes(t, key, []*Node{nodeA, nodeB, target}, 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
+		return []*Node{nodeA, nodeB}, true
+	})
+
+	if found != target {
+		t.Errorf("node is in the routing table and answers: node not found")
+	}
+}
+
+// TestLookupTargetAddresses checks a search for a node that is reported with different addresses. The Info of a node stands for its address.
+func TestLookupTargetAddresses(t *testing.T) {
+	key := testID(t)
+	targetWrong := &Node{ID: key, Info: "X:1234"}
+	targetWrong2 := &Node{ID: key, Info: "X:1234"}
+	targetRight := &Node{ID: key, Info: "Y:5455"}
+	nodeA := &Node{ID: testIDDistance(key, 8)}
+	nodeB := &Node{ID: testIDDistance(key, 9)}
+	nodeN := &Node{ID: testIDDistance(key, 4)}
+	nodeM := &Node{ID: testIDDistance(key, 2)}
+
+	// A reports the node at an address where it does not answer, B at an address where it answers. Both addresses are sent the request once and the node is found at the second.
+	sent := make(map[*Node]int)
+	_, found, _, _ := testLookupNodes(t, key, []*Node{nodeA, nodeB}, 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
+		sent[node]++
+		switch node {
+		case nodeA:
+			return []*Node{targetWrong, nodeB}, true
+		case nodeB:
+			return []*Node{targetRight, nodeA}, true
+		}
+		return nil, node == targetRight
+	})
+
+	if found != targetRight {
+		t.Errorf("different addresses: the node that answered is not the result")
+	}
+	if sent[targetWrong] != 1 || sent[targetRight] != 1 {
+		t.Errorf("different addresses: %d requests sent to the first address and %d to the second, expected 1 each", sent[targetWrong], sent[targetRight])
+	}
+
+	// A and B report the node at the same address, it does not answer. The address is sent the request once.
+	_, found, requests, _ := testLookupNodes(t, key, []*Node{nodeA, nodeB}, 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
+		switch node {
+		case nodeA:
+			return []*Node{targetWrong, nodeB}, true
+		case nodeB:
+			return []*Node{targetWrong2, nodeA}, true
+		}
+		return nil, false
+	})
+
+	if found != nil {
+		t.Errorf("same address: node found")
+	}
+	if count := requests[string(key)]; count != 1 {
+		t.Errorf("same address: the node was sent %d requests, expected 1", count)
+	}
+
+	// A reports the node at an address where it does not answer, and node N. N reports the second address after 200 ms, while the request to the first address is under way.
+	// The node answers at the second address after the request to the first address ended.
+	_, found, _, _ = testLookupNodesDelay(t, key, []*Node{nodeA, nodeB}, 300*time.Millisecond, func(node *Node) (closest []*Node, ok bool, delay time.Duration) {
+		switch node {
+		case nodeA:
+			return []*Node{targetWrong, nodeN}, true, 0
+		case nodeB:
+			return []*Node{nodeA}, true, 0
+		case nodeN:
+			return []*Node{targetRight}, true, 200 * time.Millisecond
+		case targetRight:
+			return nil, true, 200 * time.Millisecond
+		}
+		return nil, false, 0
+	})
+
+	if found != targetRight {
+		t.Errorf("second address reported while the first request is under way: node not found")
+	}
+
+	// As before, but the second address is reported by node M after the request to the first address ended.
+	_, found, _, _ = testLookupNodesDelay(t, key, []*Node{nodeA, nodeB}, 300*time.Millisecond, func(node *Node) (closest []*Node, ok bool, delay time.Duration) {
+		switch node {
+		case nodeA:
+			return []*Node{targetWrong, nodeN}, true, 0
+		case nodeB:
+			return []*Node{nodeA}, true, 0
+		case nodeN:
+			return []*Node{nodeM}, true, 200 * time.Millisecond
+		case nodeM:
+			return []*Node{targetRight}, true, 200 * time.Millisecond
+		case targetRight:
+			return nil, true, 50 * time.Millisecond
+		}
+		return nil, false, 0
+	})
+
+	if found != targetRight {
+		t.Errorf("second address reported after the first request ended: node not found")
 	}
 }
 
@@ -471,5 +641,25 @@ func TestLookupMaxLevel(t *testing.T) {
 	}
 	if elapsed > time.Second {
 		t.Errorf("search ended after %s", elapsed)
+	}
+
+	// Every node also reports the node searched for at a new address, where it does not answer.
+	target := 0
+
+	_, found, requests, _ = testLookupNodes(t, key, next(), 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
+		if bytes.Equal(node.ID, key) {
+			return nil, false
+		}
+
+		target++
+		return append(next()[:4], &Node{ID: key, Info: target}), true
+	})
+
+	if found != nil {
+		t.Fatalf("node reported at new addresses: unexpected result %x", found.ID)
+	}
+	// Each request to the node searched for counts as a level, like each information request to 5 other nodes after the first one.
+	if count, levels := requests[string(key)], (len(requests)-1-5)/5; count == 0 || count+levels > MaxLevel {
+		t.Errorf("node reported at new addresses: it was sent %d requests and %d levels were started, expected at most %d together", count, levels, MaxLevel)
 	}
 }

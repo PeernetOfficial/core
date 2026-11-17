@@ -1,6 +1,6 @@
 /*
 File Name:  Node.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -124,6 +124,7 @@ func (n *shortList) GetUncontacted(count int, useCount bool) (Nodes []*Node) {
 // NodeMessage is a message sent by a node
 type NodeMessage struct {
 	SenderID []byte  // Sender of the message
+	Node     *Node   // Node of the information request that sent the message. Set when the message is queued.
 	Data     []byte  // ActionFindValue: the data (embedded file)
 	Closest  []*Node // Closest nodes to the requested key
 	Storing  []*Node // ActionFindValue: Nodes known to store the value

@@ -33,6 +33,10 @@ type DHT struct {
 	// SendRequest sends an information request to request.Nodes. The message to send follows from request.Action.
 	SendRequest func(request *InformationRequest)
 
+	// NewNodeAddresses is called when a result of a search for a node reports the node searched for and it is known already.
+	// It returns the reported node with the addresses that are not among those of the known nodes, or nil if it has none. The node returned is sent the request.
+	NewNodeAddresses func(known []*Node, reported *Node) (node *Node)
+
 	// FilterSearchStatus is called with updates of searches in the DHT
 	FilterSearchStatus func(client *SearchClient, function, format string, v ...interface{})
 
@@ -49,6 +53,7 @@ func NewDHT(self *Node, bits, bucketSize, alpha, beta int) *DHT {
 		ht:                 newHashTable(self, bits, bucketSize),
 		alpha:              alpha,
 		beta:               beta,
+		NewNodeAddresses:   func(known []*Node, reported *Node) (node *Node) { return nil },
 		FilterSearchStatus: func(client *SearchClient, function, format string, v ...interface{}) {},
 		TimeoutSearch:      10 * time.Second,
 		TimeoutIR:          6 * time.Second,

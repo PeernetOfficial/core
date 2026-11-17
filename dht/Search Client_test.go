@@ -90,9 +90,9 @@ func TestSearchTerminate(t *testing.T) {
 	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5, 5)
 	dht.AddNode(nodeA)
 
-	// A search for a node: the node is reported, the timeout of the search passes before the result is read.
+	// A search for a node: the node is reported and answers, the timeout of the search passes before the result is read.
 	dht.SendRequest = func(request *InformationRequest) {
-		request.QueueResult(&NodeMessage{SenderID: nodeA.ID, Closest: []*Node{target}})
+		request.QueueResult(&NodeMessage{SenderID: request.Nodes[0].ID, Closest: []*Node{target}})
 		request.Done()
 	}
 

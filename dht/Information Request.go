@@ -1,6 +1,6 @@
 /*
 File Name:  Information Request.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 
 Information requests are asynchronous queries sent to nodes.
@@ -9,6 +9,7 @@ Information requests are asynchronous queries sent to nodes.
 package dht
 
 import (
+	"bytes"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -97,7 +98,15 @@ func (ir *InformationRequest) Done() {
 }
 
 // QueueResult accepts incoming results and queues them to the result channel. Non-blocking.
+// It sets the node of the message to the node of the information request that sent it.
 func (ir *InformationRequest) QueueResult(message *NodeMessage) {
+	for _, node := range ir.Nodes {
+		if bytes.Equal(node.ID, message.SenderID) {
+			message.Node = node
+			break
+		}
+	}
+
 	ir.Lock()
 	if !ir.IsTerminated {
 		targetChan := ir.ResultChan
