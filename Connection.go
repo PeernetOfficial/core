@@ -96,6 +96,14 @@ func (peer *PeerInfo) IsConnectionActive() bool {
 	return len(peer.connectionActive) > 0
 }
 
+// hasConnection checks if the peer has a connection, active or inactive.
+func (peer *PeerInfo) hasConnection() bool {
+	peer.RLock()
+	defer peer.RUnlock()
+
+	return len(peer.connectionActive) > 0 || len(peer.connectionInactive) > 0
+}
+
 // localConnection returns an active connection to the peer via a local address. It returns nil if there is none.
 func (peer *PeerInfo) localConnection() *Connection {
 	peer.RLock()
