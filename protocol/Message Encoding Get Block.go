@@ -41,8 +41,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 const (

@@ -20,8 +20,7 @@ import (
 	"errors"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // PacketLiteRaw is a decrypted P2P lite packet

@@ -10,11 +10,11 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"time"
+	"uuid"
 
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/udt"
-	"github.com/google/uuid"
 )
 
 // blockSequenceTimeout is the timeout for a follow-up message to appear, otherwise the transfer will be terminated.

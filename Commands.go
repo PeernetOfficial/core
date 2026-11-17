@@ -10,11 +10,11 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"uuid"
 
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/warehouse"
-	"github.com/google/uuid"
 )
 
 // respondClosesContactsCount is the number of closest peers to return per request key.

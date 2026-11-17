@@ -33,9 +33,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"uuid"
 
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/google/uuid"
 )
 
 // BlockRecordFile is the metadata of a file published on the blockchain

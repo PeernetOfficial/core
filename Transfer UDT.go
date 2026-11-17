@@ -11,10 +11,10 @@ package core
 import (
 	"errors"
 	"time"
+	"uuid"
 
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/udt"
-	"github.com/google/uuid"
 )
 
 // transferSequenceTimeout is the timeout for a follow-up message to appear, otherwise the transfer will be terminated.

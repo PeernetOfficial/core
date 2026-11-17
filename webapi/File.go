@@ -9,13 +9,13 @@ package webapi
 import (
 	"net/http"
 	"time"
+	"uuid"
 
 	"github.com/PeernetOfficial/core"
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/merkle"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/warehouse"
-	"github.com/google/uuid"
 )
 
 // apiFileMetadata contains metadata information.
@@ -145,7 +145,7 @@ func (api *WebapiInstance) apiBlockchainFileAdd(w http.ResponseWriter, r *http.R
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}
-		if file.ID == uuid.Nil { // if the ID is not provided by the caller, set it
+		if file.ID == uuid.Nil() { // if the ID is not provided by the caller, set it
 			file.ID = uuid.New()
 		}
 
@@ -253,7 +253,7 @@ func (api *WebapiInstance) apiBlockchainFileUpdate(w http.ResponseWriter, r *htt
 		if len(file.Hash) != protocol.HashSize {
 			http.Error(w, "", http.StatusBadRequest)
 			return
-		} else if file.ID == uuid.Nil { // if the ID is not provided by the caller, abort
+		} else if file.ID == uuid.Nil() { // if the ID is not provided by the caller, abort
 			http.Error(w, "", http.StatusBadRequest)
 			return
 		}

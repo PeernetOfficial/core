@@ -12,11 +12,11 @@ import (
 	"crypto/ed25519"
 	"io"
 	"sync"
+	"uuid"
 
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/google/uuid"
 )
 
 // Filters contains all functions to install the hook. Use nil for unused.

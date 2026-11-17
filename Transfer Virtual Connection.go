@@ -12,8 +12,7 @@ package core
 import (
 	"sync"
 	"sync/atomic"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // VirtualPacketConn is a virtual connection.

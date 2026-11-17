@@ -25,8 +25,7 @@ import (
 	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // MessageTransfer is the decoded transfer message.

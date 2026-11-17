@@ -9,9 +9,9 @@ package core
 import (
 	"crypto/ed25519"
 	"os"
+	"uuid"
 
 	"github.com/PeernetOfficial/core/blockchain"
-	"github.com/google/uuid"
 )
 
 // initUserBlockchain initializes the users blockchain. It creates the blockchain file if it does not exist already.

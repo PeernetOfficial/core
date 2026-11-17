@@ -7,7 +7,7 @@ Author:     Peter Kleissner
 package search
 
 import (
-	"github.com/google/uuid"
+	"uuid"
 )
 
 func (index *SearchIndexStore) Search(term string) (results []SearchIndexRecord) {

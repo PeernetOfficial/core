@@ -19,8 +19,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // SearchRequest is the information from the end-user for the search. Filters and sort order may be applied when starting the search, or at runtime when getting the results.

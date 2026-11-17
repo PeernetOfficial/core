@@ -13,10 +13,10 @@ import (
 	"net/http"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/IncSW/geoip2"
 	"github.com/PeernetOfficial/core"
-	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
@@ -50,7 +50,7 @@ var WSUpgrader = websocket.Upgrader{
 
 // Start starts the API. ListenAddresses is a list of IP:Ports.
 // The certificate file and key are only used if SSL is enabled. The read and write timeout may be 0 for no timeout.
-// The API key may be uuid.Nil to disable it although this is not recommended for security reasons.
+// The API key may be uuid.Nil() to disable it although this is not recommended for security reasons.
 func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, CertificateFile, CertificateKey string, TimeoutRead, TimeoutWrite time.Duration, APIKey uuid.UUID) (api *WebapiInstance) {
 	if len(ListenAddresses) == 0 {
 		return nil
@@ -64,7 +64,7 @@ func Start(Backend *core.Backend, ListenAddresses []string, UseSSL bool, Certifi
 		downloads:       make(map[uuid.UUID]*downloadInfo),
 	}
 
-	if APIKey != uuid.Nil {
+	if APIKey != uuid.Nil() {
 		api.Router.Use(api.authenticateMiddleware(APIKey))
 	}
 

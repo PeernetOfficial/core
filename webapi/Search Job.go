@@ -10,9 +10,9 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/PeernetOfficial/core/blockchain"
-	"github.com/google/uuid"
 )
 
 // SearchFilter allows to filter search results based on the criteria.

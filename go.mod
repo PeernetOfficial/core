@@ -1,13 +1,12 @@
 module github.com/PeernetOfficial/core
 
-go 1.26.0
+go 1.27.0
 
 require (
 	filippo.io/edwards25519 v1.2.0
 	github.com/IncSW/geoip2 v0.1.4
 	github.com/akrylysov/pogreb v0.10.2
 	github.com/enfipy/locker v1.1.0
-	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.3
 	golang.org/x/crypto v0.58.0

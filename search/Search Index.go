@@ -11,10 +11,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"sync"
+	"uuid"
 
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/store"
-	"github.com/google/uuid"
 )
 
 // A search selector is a term that discovers a file.

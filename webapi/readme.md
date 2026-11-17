@@ -16,7 +16,7 @@ It can be used by local client software to connect to the Peernet network and us
 The API must be initialized and started before use. The last parameter is the API key (in this example no API key is used). For security reasons it is recommended to use a random local port and provide a randomly generated API key.
 
 ```go
-webapi.Start([]string{"127.0.0.1:112"}, false, "", "", 10*time.Second, 10*time.Second, uuid.Nil)
+webapi.Start([]string{"127.0.0.1:112"}, false, "", "", 10*time.Second, 10*time.Second, uuid.Nil())
 
 // To register an additional API endpoint:
 webapi.Router.HandleFunc("/newfunction", newFunction).Methods("GET")

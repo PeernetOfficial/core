@@ -12,9 +12,9 @@ import (
 	"net"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/google/uuid"
 )
 
 // testWatchPing counts the ping messages the backend sends per peer.

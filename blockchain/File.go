@@ -10,8 +10,7 @@ package blockchain
 
 import (
 	"bytes"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // AddFiles adds files to the blockchain. Status is StatusX.

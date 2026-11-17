@@ -7,10 +7,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"testing"
+	"uuid"
 
 	"github.com/PeernetOfficial/core/merkle"
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/google/uuid"
 )
 
 func TestBlockEncoding(t *testing.T) {

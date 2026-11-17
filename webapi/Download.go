@@ -15,9 +15,9 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/PeernetOfficial/core"
-	"github.com/google/uuid"
 )
 
 type apiResponseDownloadStatus struct {

@@ -11,9 +11,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"time"
+	"uuid"
 
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/google/uuid"
 )
 
 // pingConnection sends a ping to the target peer via the specified connection
