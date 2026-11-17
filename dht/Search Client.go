@@ -41,6 +41,9 @@ type SearchClient struct {
 	timeoutTotal        time.Duration                                   // Timeout after the entire search will be terminated client-side.
 	timeoutIR           time.Duration                                   // Timeout for information requests (entire roundtrip).
 	alpha               int                                             // Count of concurrent information requests per level.
+	beta                int                                             // ActionFindNode: Count of closest nodes that must have answered for the search to end.
+	answered            map[string]bool                                 // ActionFindNode: Nodes that answered.
+	unanswered          map[string]bool                                 // ActionFindNode: Nodes that did not answer by the end of their information request.
 	Results             chan *SearchResult                              // Result channel. It is closed when the search is terminated.
 	list                *shortList                                      // List of nodes to contact
 	contactedNodesMap   map[string]struct{}                             // List of nodes already contacted
@@ -74,6 +77,9 @@ func (dht *DHT) NewSearch(Action int, Key []byte, Timeout, TimeoutIR time.Durati
 		timeoutTotal:      Timeout,
 		timeoutIR:         TimeoutIR,
 		alpha:             Alpha,
+		beta:              dht.beta,
+		answered:          make(map[string]bool),
+		unanswered:        make(map[string]bool),
 		contactedNodesMap: make(map[string]struct{}),
 		storing:           make(chan []*Node, Alpha*2),
 		TerminateSignal:   make(chan struct{}),
@@ -157,8 +163,14 @@ func (client *SearchClient) filterUncontactedNodes(input []*Node, limit int) (ou
 func (client *SearchClient) SearchAway() {
 	client.timeStart = time.Now()
 
-	// create the first search level and start it
-	client.list = client.dht.ht.getClosestContacts(client.alpha, client.Key, nil)
+	// The search list starts with the closest nodes of the routing table. A search for a node starts with a full bucket size of them:
+	// a node that does not answer is replaced by the next closest one.
+	count := client.alpha
+	if client.Action == ActionFindNode {
+		count = client.dht.ht.bSize
+	}
+
+	client.list = client.dht.ht.getClosestContacts(count, client.Key, nil)
 	if len(client.list.Nodes) == 0 {
 		client.Terminate()
 		return
@@ -233,10 +245,12 @@ func (client *SearchClient) queryNodesKnownStore() {
 }
 
 // startSearch runs the search. Each level sends an information request to the alpha closest nodes not yet contacted.
-// The next level starts as soon as a result brings a node that is closer to the key than the closest node contacted.
+// A search for a node starts the next level as soon as one of the beta closest nodes is not yet contacted, and ends when they have all answered.
+// A node that does not answer is not counted among the beta.
+// A search for a value starts the next level as soon as a result brings a node that is closer to the key than the closest node contacted.
 func (client *SearchClient) startSearch() {
 	results := make(chan *NodeMessage, messageChannelSize)
-	levelEnd := make(chan struct{})
+	levelEnd := make(chan []*Node)
 	level, activeLevels := 0, 0
 
 	// startLevel sends an information request to the closest nodes not yet contacted.
@@ -259,7 +273,7 @@ func (client *SearchClient) startSearch() {
 			<-info.TerminateSignal
 
 			select {
-			case levelEnd <- struct{}{}:
+			case levelEnd <- nodes:
 			case <-client.TerminateSignal:
 			}
 		}()
@@ -302,6 +316,8 @@ func (client *SearchClient) startSearch() {
 				}
 			}
 
+			client.answered[string(result.SenderID)] = true
+
 			result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
 
 			client.LogStatus("search.startSearch", "find node: sender %s: %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Closest))
@@ -317,10 +333,52 @@ func (client *SearchClient) startSearch() {
 		client.list.AppendUniqueNodes(result.Closest...)
 		sort.Sort(client.list)
 
-		// If the result brought a node closer to the key than the closest node contacted, start the next level.
-		if level < MaxLevel && !client.list.Contacted[string(client.list.Nodes[0].ID)] {
+		// A search for a value: If the result brought a node closer to the key than the closest node contacted, start the next level.
+		if client.Action != ActionFindNode && level < MaxLevel && !client.list.Contacted[string(client.list.Nodes[0].ID)] {
 			level++
 			startLevel()
+		}
+
+		return false
+	}
+
+	// findNodeNext continues a search for a node after a result or the end of a level. It returns true if the search is terminated.
+	findNodeNext := func() (terminated bool) {
+		// Check the beta closest nodes of the list, without the nodes that did not answer.
+		count, allAnswered, allContacted := 0, true, true
+
+		for _, node := range client.list.Nodes {
+			if client.unanswered[string(node.ID)] {
+				continue
+			}
+
+			if !client.answered[string(node.ID)] {
+				allAnswered = false
+			}
+			if !client.list.Contacted[string(node.ID)] {
+				allContacted = false
+			}
+
+			if count++; count == client.beta {
+				break
+			}
+		}
+
+		if allAnswered {
+			client.LogStatus("search.startSearch", "the %d closest nodes have all answered, not found, terminate search\n", count)
+			client.Terminate()
+			return true
+		}
+
+		if !allContacted && level < MaxLevel {
+			level++
+			startLevel()
+		}
+
+		if activeLevels == 0 {
+			client.LogStatus("search.startSearch", "last active level ended, not found, terminate search\n")
+			client.Terminate()
+			return true
 		}
 
 		return false
@@ -342,7 +400,12 @@ func (client *SearchClient) startSearch() {
 				return
 			}
 
-		case <-levelEnd:
+			// A search for a node continues once the results that arrived are all handled.
+			if client.Action == ActionFindNode && len(results) == 0 && findNodeNext() {
+				return
+			}
+
+		case nodes := <-levelEnd:
 			activeLevels--
 
 			// Results that were queued before the information request ended are handled first.
@@ -358,14 +421,28 @@ func (client *SearchClient) startSearch() {
 				}
 			}
 
+			if client.Action == ActionFindNode {
+				// The nodes of the level that did not answer are not counted among the beta closest nodes.
+				for _, node := range nodes {
+					if !client.answered[string(node.ID)] {
+						client.unanswered[string(node.ID)] = true
+					}
+				}
+
+				if findNodeNext() {
+					return
+				}
+				continue
+			}
+
 			if activeLevels > 0 {
 				client.LogStatus("search.startSearch", "level end, info request termination signal\n")
 				continue
 			}
 
-			// No level is active and no result brought a node closer to the key than the closest node contacted. This is the end of a search for a node.
+			// No level is active and no result brought a node closer to the key than the closest node contacted.
 			// A search for a value continues with the closest nodes not yet contacted.
-			if client.Action != ActionFindNode && startLevel() {
+			if startLevel() {
 				continue
 			}
 

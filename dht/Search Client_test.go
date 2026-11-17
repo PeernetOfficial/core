@@ -30,7 +30,7 @@ func TestSearchStoringNodes(t *testing.T) {
 	nodeC := &Node{ID: testID(t)} // only known as storing node via nodeB
 	nodeD := &Node{ID: testID(t)} // does not answer, which keeps the first information request open
 
-	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5)
+	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5, 5)
 	dht.AddNode(nodeA)
 	dht.AddNode(nodeB)
 	dht.AddNode(nodeD)
@@ -87,7 +87,7 @@ func TestSearchTerminate(t *testing.T) {
 	target := &Node{ID: testID(t)}
 	nodeA := &Node{ID: testID(t)}
 
-	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5)
+	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5, 5)
 	dht.AddNode(nodeA)
 
 	// A search for a node: the node is reported, the timeout of the search passes before the result is read.

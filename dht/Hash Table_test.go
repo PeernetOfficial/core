@@ -68,7 +68,7 @@ func testIDInBucket(bucket int, tail byte) []byte {
 
 // TestGetClosestContacts checks that the nodes returned are the closest of the entire routing table by XOR distance to the target, closest first.
 func TestGetClosestContacts(t *testing.T) {
-	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5)
+	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5, 5)
 
 	for n := 0; n < 2000; n++ {
 		dht.AddNode(&Node{ID: testID(t)})
@@ -112,7 +112,7 @@ func TestGetClosestContacts(t *testing.T) {
 // TestGetClosestContactsBucketOrder checks where the nodes come from when the bucket of the target holds fewer nodes than requested:
 // first the bucket of the target, then the buckets of a lower index, then the buckets of a higher index.
 func TestGetClosestContactsBucketOrder(t *testing.T) {
-	dht := NewDHT(&Node{ID: make([]byte, 32)}, 256, 20, 5)
+	dht := NewDHT(&Node{ID: make([]byte, 32)}, 256, 20, 5, 5)
 
 	target := testIDInBucket(100, 0)
 
@@ -147,7 +147,7 @@ func TestGetRandomIDFromBucket(t *testing.T) {
 	selfOne := bytes.Repeat([]byte{0xFF}, 32)
 
 	for _, self := range [][]byte{testID(t), selfZero, selfOne} {
-		dht := NewDHT(&Node{ID: self}, 256, 20, 5)
+		dht := NewDHT(&Node{ID: self}, 256, 20, 5, 5)
 
 		for bucket := 0; bucket < 256; bucket++ {
 			for n := 0; n < 100; n++ {
@@ -171,7 +171,7 @@ func TestGetRandomIDFromBucket(t *testing.T) {
 // TestInsertNodeFullBucket checks a bucket that holds the bucket size of nodes: it takes no new node and keeps its order.
 // After one of its nodes is removed, the next node for the bucket is taken.
 func TestInsertNodeFullBucket(t *testing.T) {
-	dht := NewDHT(&Node{ID: make([]byte, 32)}, 256, 20, 5)
+	dht := NewDHT(&Node{ID: make([]byte, 32)}, 256, 20, 5, 5)
 
 	const bucket = 200
 	var nodes []*Node

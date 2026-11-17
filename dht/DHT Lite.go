@@ -22,6 +22,9 @@ type DHT struct {
 	// The alpha amount of nodes will be contacted in parallel for finding the target.
 	alpha int
 
+	// A lookup for a node ends when the beta closest nodes known have all answered.
+	beta int
+
 	// Functions below must be set and provided by the caller.
 
 	// SendRequestStore sends an announcement-store message to the remote node. It informs the remote node that the local one stores the given key-value.
@@ -41,10 +44,11 @@ type DHT struct {
 }
 
 // NewDHT initializes a new DHT node with default values.
-func NewDHT(self *Node, bits, bucketSize, alpha int) *DHT {
+func NewDHT(self *Node, bits, bucketSize, alpha, beta int) *DHT {
 	return &DHT{
 		ht:                 newHashTable(self, bits, bucketSize),
 		alpha:              alpha,
+		beta:               beta,
 		FilterSearchStatus: func(client *SearchClient, function, format string, v ...interface{}) {},
 		TimeoutSearch:      10 * time.Second,
 		TimeoutIR:          6 * time.Second,
