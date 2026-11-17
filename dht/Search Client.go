@@ -41,7 +41,7 @@ type SearchClient struct {
 	timeoutTotal        time.Duration                                   // Timeout after the entire search will be terminated client-side.
 	timeoutIR           time.Duration                                   // Timeout for information requests (entire roundtrip).
 	alpha               int                                             // Count of concurrent information requests per level.
-	Results             chan *SearchResult                              // Result channel
+	Results             chan *SearchResult                              // Result channel. It is closed when the search is terminated.
 	list                *shortList                                      // List of nodes to contact
 	contactedNodesMap   map[string]struct{}                             // List of nodes already contacted
 	contactedNodesMutex sync.RWMutex                                    // Sync map access
@@ -77,7 +77,7 @@ func (dht *DHT) NewSearch(Action int, Key []byte, Timeout, TimeoutIR time.Durati
 		contactedNodesMap: make(map[string]struct{}),
 		storing:           make(chan []*Node, Alpha*2),
 		TerminateSignal:   make(chan struct{}),
-		Results:           make(chan *SearchResult),
+		Results:           make(chan *SearchResult, 1),
 		LogStatus:         func(function, format string, v ...interface{}) {},
 	}
 
@@ -89,6 +89,11 @@ func (client *SearchClient) Terminate() {
 	client.Lock()
 	defer client.Unlock()
 
+	client.terminate()
+}
+
+// terminate sends the termination signal to all workers. The caller holds the lock.
+func (client *SearchClient) terminate() {
 	if client.IsTerminated {
 		return
 	}
@@ -100,7 +105,19 @@ func (client *SearchClient) Terminate() {
 	client.timeEnd = time.Now()
 
 	close(client.Results)
-	close(client.storing)
+}
+
+// sendResult queues the result and terminates the search. A search has one result: if the search is terminated already, the result is discarded.
+func (client *SearchClient) sendResult(result *SearchResult) {
+	client.Lock()
+	defer client.Unlock()
+
+	if client.IsTerminated {
+		return
+	}
+
+	client.Results <- result
+	client.terminate()
 }
 
 // isContactedNode checks if a node was contacted
@@ -208,8 +225,7 @@ func (client *SearchClient) queryNodesKnownStore() {
 
 		case result := <-resultChan:
 			if len(result.Data) > 0 {
-				client.Results <- &SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, Data: result.Data}
-				client.Terminate()
+				client.sendResult(&SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, Data: result.Data})
 				return
 			}
 		}
@@ -258,8 +274,7 @@ func (client *SearchClient) startSearch() {
 			// search for value and it was found?
 			if len(result.Data) > 0 {
 				client.LogStatus("search.startSearch", "result: sender %s: data found (%d bytes)\n", hex.EncodeToString(result.SenderID), len(result.Data))
-				client.Results <- &SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, Data: result.Data}
-				client.Terminate()
+				client.sendResult(&SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, Data: result.Data})
 				return true
 			}
 
@@ -270,7 +285,11 @@ func (client *SearchClient) startSearch() {
 
 			// Find value: Nodes known to store the value are queried in a separate function.
 			if len(result.Storing) > 0 {
-				client.storing <- result.Storing
+				select {
+				case client.storing <- result.Storing:
+				case <-client.TerminateSignal:
+					return true
+				}
 			}
 
 		case ActionFindNode:
@@ -278,8 +297,7 @@ func (client *SearchClient) startSearch() {
 			for _, closePeer := range result.Closest {
 				if bytes.Equal(closePeer.ID, client.Key) {
 					client.LogStatus("search.startSearch", "result: sender %s: node found!\n", hex.EncodeToString(result.SenderID))
-					client.Results <- &SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, TargetNode: closePeer}
-					client.Terminate()
+					client.sendResult(&SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, TargetNode: closePeer})
 					return true
 				}
 			}
