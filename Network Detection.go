@@ -176,6 +176,7 @@ func (nets *Networks) networkChangeInterfaceNew(iface net.Interface, addresses [
 		go network.upnpAuto()
 	}
 
+	go nets.backend.contactRootPeers()
 	go nets.backend.refreshBuckets()
 }
 
@@ -223,6 +224,7 @@ func (nets *Networks) networkChangeIPNew(iface net.Interface, address net.Addr) 
 		go network.upnpAuto()
 	}
 
+	go nets.backend.contactRootPeers()
 	go nets.backend.refreshBuckets()
 }
 

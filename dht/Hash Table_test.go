@@ -69,7 +69,6 @@ func testIDInBucket(bucket int, tail byte) []byte {
 // TestGetClosestContacts checks that the nodes returned are the closest of the entire routing table by XOR distance to the target, closest first.
 func TestGetClosestContacts(t *testing.T) {
 	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5)
-	dht.ShouldEvict = func(node1, node2 *Node) bool { return false }
 
 	for n := 0; n < 2000; n++ {
 		dht.AddNode(&Node{ID: testID(t)})
@@ -166,5 +165,52 @@ func TestGetRandomIDFromBucket(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestInsertNodeFullBucket checks a bucket that holds the bucket size of nodes: it takes no new node and keeps its order.
+// After one of its nodes is removed, the next node for the bucket is taken.
+func TestInsertNodeFullBucket(t *testing.T) {
+	dht := NewDHT(&Node{ID: make([]byte, 32)}, 256, 20, 5)
+
+	const bucket = 200
+	var nodes []*Node
+
+	for n := 0; n < 20; n++ {
+		nodes = append(nodes, &Node{ID: testIDInBucket(bucket, byte(n))})
+		dht.AddNode(nodes[n])
+	}
+
+	// Another bucket is filled with a single node.
+	other := &Node{ID: testIDInBucket(bucket+1, 0)}
+	dht.AddNode(other)
+
+	node21 := &Node{ID: testIDInBucket(bucket, 20)}
+	dht.AddNode(node21)
+
+	if dht.IsNodeContact(node21.ID) != nil {
+		t.Fatal("node 21 was added to a full bucket")
+	}
+	testCompareNodes(t, "full bucket", dht.ht.RoutingTable[bucket], nodes)
+
+	if dht.NumNodes() != 21 {
+		t.Fatalf("%d nodes in the routing table, expected 21", dht.NumNodes())
+	}
+
+	// Remove one node. The bucket takes the next node at its end.
+	dht.RemoveNode(nodes[7].ID)
+	dht.AddNode(node21)
+
+	expected := append(append(append([]*Node{}, nodes[:7]...), nodes[8:]...), node21)
+	testCompareNodes(t, "after removal", dht.ht.RoutingTable[bucket], expected)
+
+	// A node that is in the bucket already moves to its end.
+	dht.AddNode(nodes[0])
+
+	expected = append(expected[1:], nodes[0])
+	testCompareNodes(t, "added again", dht.ht.RoutingTable[bucket], expected)
+
+	if dht.NumNodes() != 21 {
+		t.Fatalf("%d nodes in the routing table, expected 21", dht.NumNodes())
 	}
 }

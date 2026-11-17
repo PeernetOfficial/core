@@ -186,6 +186,9 @@ func (nets *Networks) packetWorker() {
 		peer, added := nets.backend.PeerlistAdd(senderPublicKey, connection)
 		if !added {
 			connection = peer.registerConnection(connection)
+
+			// A passive peer enters the routing table with its next packet once its bucket has a free place.
+			nets.backend.routingTableAdd(peer)
 		}
 
 		atomic.AddUint64(&peer.StatsPacketReceived, 1)

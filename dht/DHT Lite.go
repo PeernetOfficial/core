@@ -24,9 +24,6 @@ type DHT struct {
 
 	// Functions below must be set and provided by the caller.
 
-	// ShouldEvict determines whether node 1 shall be evicted in favor of node 2
-	ShouldEvict func(node1, node2 *Node) bool
-
 	// SendRequestStore sends an announcement-store message to the remote node. It informs the remote node that the local one stores the given key-value.
 	SendRequestStore func(node *Node, key []byte, dataSize uint64)
 
@@ -70,10 +67,11 @@ func (dht *DHT) GetSelfID() []byte {
 }
 
 // AddNode adds a node into the appropriate k bucket. These buckets are stored in big-endian order so we look at the bits from right to left in order to find the appropriate bucket.
+// A bucket that holds the bucket size of nodes takes no new node.
 func (dht *DHT) AddNode(node *Node) {
 	// The previous code made an immediate ping to the oldest node to "ping the oldest node to find out if it responds back in a reasonable amount of time. If not - remove it."
 	// In DHT Lite, however, it will be up to the caller to determine nodes to remove.
-	dht.ht.insertNode(node, dht.ShouldEvict)
+	dht.ht.insertNode(node)
 }
 
 // RemoveNode removes a node
@@ -90,14 +88,6 @@ func (dht *DHT) GetClosestContacts(count int, target []byte, filterFunc NodeFilt
 // MarkNodeAsSeen marks a node as seen, which pushes it to the top in the bucket list.
 func (dht *DHT) MarkNodeAsSeen(ID []byte) {
 	dht.ht.markNodeAsSeen(dht.ht.getBucketIndexFromDifferingBit(ID), ID)
-}
-
-// IsNodeCloser compares 2 nodes to self. If true, the first node is closer (= smaller distance) to self than the second.
-func (dht *DHT) IsNodeCloser(node1, node2 []byte) bool {
-	iDist := getDistance(node1, dht.ht.Self.ID)
-	jDist := getDistance(node2, dht.ht.Self.ID)
-
-	return iDist.Cmp(jDist) == -1
 }
 
 // IsNodeContact checks if the given node is in the local routing table

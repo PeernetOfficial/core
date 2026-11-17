@@ -11,6 +11,7 @@ package core
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 )
@@ -42,7 +43,7 @@ type VirtualPacketConn struct {
 	sync.Mutex
 }
 
-// newVirtualPacketConn creates a new virtual connection (both incoming and outgoing).
+// newVirtualPacketConn creates a new virtual connection (both incoming and outgoing). The transfer counts as running with the peer until the connection is terminated.
 func newVirtualPacketConn(peer *PeerInfo, sendData func(data []byte, sequenceNumber uint32, transferID uuid.UUID)) (v *VirtualPacketConn) {
 	v = &VirtualPacketConn{
 		Peer:              peer,
@@ -51,6 +52,8 @@ func newVirtualPacketConn(peer *PeerInfo, sendData func(data []byte, sequenceNum
 		outgoingData:      make(chan []byte),
 		terminationSignal: make(chan struct{}),
 	}
+
+	atomic.AddInt32(&peer.transfers, 1)
 
 	go v.writeForward()
 
@@ -98,6 +101,8 @@ func (v *VirtualPacketConn) Terminate(reason int) (err error) {
 	v.closed = true
 	v.reason = reason
 	close(v.terminationSignal)
+
+	atomic.AddInt32(&v.Peer.transfers, -1)
 
 	return
 }

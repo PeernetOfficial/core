@@ -24,23 +24,6 @@ const bucketRefreshTime = 5 * time.Minute
 func (backend *Backend) initKademlia() {
 	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.peerPublicKey}, 256, bucketSize, alpha)
 
-	// ShouldEvict determines whether node 1 shall be evicted in favor of node 2
-	backend.nodesDHT.ShouldEvict = func(node1, node2 *dht.Node) bool {
-		rttOld := node1.Info.(*PeerInfo).GetRTT()
-		rttNew := node2.Info.(*PeerInfo).GetRTT()
-
-		// evict the old node if the new one has a faster ping time
-		if rttOld == 0 { // old one has no recent RTT (happens if all connections are inactive)?
-			return true
-		} else if rttNew > 0 {
-			// If new RTT is smaller, evict old one.
-			return rttNew < rttOld
-		}
-
-		// If here, none has a RTT. Keep the closer (by distance) one.
-		return backend.nodesDHT.IsNodeCloser(node1.ID, node2.ID)
-	}
-
 	// SendRequestStore sends a store message to the remote node. I.e. asking it to store the given key-value
 	backend.nodesDHT.SendRequestStore = func(node *dht.Node, key []byte, dataSize uint64) {
 		node.Info.(*PeerInfo).sendAnnouncementStore(key, dataSize)
