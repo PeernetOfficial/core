@@ -16,13 +16,14 @@ import (
 )
 
 const alpha = 5       // Count of nodes to be contacted in parallel for finding a key (α in the whitepaper)
+const beta = 5        // Count of closest nodes that must have answered for a lookup to end (β in the whitepaper)
 const bucketSize = 20 // Count of nodes per bucket (k in the whitepaper)
 
 // bucketRefreshTime is the interval of the routing table refresh.
 const bucketRefreshTime = 5 * time.Minute
 
 func (backend *Backend) initKademlia() {
-	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.peerPublicKey}, 256, bucketSize, alpha)
+	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.peerPublicKey}, 256, bucketSize, alpha, beta)
 
 	// SendRequestStore sends a store message to the remote node. I.e. asking it to store the given key-value
 	backend.nodesDHT.SendRequestStore = func(node *dht.Node, key []byte, dataSize uint64) {

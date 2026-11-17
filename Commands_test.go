@@ -44,7 +44,7 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 
 	backend := &Backend{peerPublicKey: self, UserBlockchain: &blockchain.Blockchain{}, dhtStore: store.NewMemoryStore(), networks: &Networks{}}
 	backend.initFilters()
-	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha)
+	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha, beta)
 
 	peerMany := testPeerConnections(t, backend, "203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.4", "2001:db8::1", "2001:db8::2", "2001:db8::3", "2001:db8::4", "192.168.1.1", "127.0.0.1", "fe80::1")
 	peerOne := testPeerConnections(t, backend, "203.0.113.5", "2001:db8::5")
