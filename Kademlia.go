@@ -107,15 +107,13 @@ func (backend *Backend) autoBucketRefresh() {
 
 // bootstrapKademlia bootstraps the Kademlia bucket list
 func (backend *Backend) bootstrapKademlia() {
-	monitor := make(chan *PeerInfo)
+	// The channel keeps one peer that is added while this function is not waiting.
+	monitor := make(chan *PeerInfo, 1)
 	backend.registerPeerMonitor(monitor)
 
-	// Wait until the routing table holds a peer.
-	for {
+	// Wait until the routing table holds a peer. It may hold one already.
+	for backend.nodesDHT.NumNodes() < 1 {
 		<-monitor
-		if backend.nodesDHT.NumNodes() >= 1 {
-			break
-		}
 	}
 
 	backend.unregisterPeerMonitor(monitor)
