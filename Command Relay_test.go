@@ -728,16 +728,16 @@ func TestSendRelayNoResponse(t *testing.T) {
 		t.Errorf("no reporting peer: %d Relay messages sent, expected none", count)
 	}
 
-	// 4. One Relay message for the peer, with the sequence of a bootstrap announcement.
+	// 4. One Relay message for the peer, with the sequence of the announcement to a reported peer. It carries no request.
 	decoded, announce = embedded("bootstrap", bootstrapPublicKey, bootstrapPrivateKey)
-	if !announce.FindSelf {
-		t.Error("bootstrap: the Announcement in the Relay message carries no A_FIND_SELF")
+	if !announce.Requests.IsEmpty() {
+		t.Errorf("bootstrap: the Announcement in the Relay message carries requests: %+v", announce.Requests)
 	}
 	sequenceInfo, valid, _ := backend.networks.Sequences.ValidateSequence(bootstrapPublicKey, decoded.Sequence, true, false)
 	if !valid {
 		t.Errorf("bootstrap: sequence %d of the Announcement in the Relay message is not registered", decoded.Sequence)
-	} else if _, ok := sequenceInfo.Data.(*bootstrapFindSelf); !ok {
-		t.Error("bootstrap: the sequence is not the one of a bootstrap announcement")
+	} else if _, ok := sequenceInfo.Data.(*bootstrapContact); !ok {
+		t.Error("bootstrap: the sequence is not the one of an announcement to a reported peer")
 	}
 
 	// A Traverse message accompanied the first Announcement of 1, 2 and 4, where the direct packet could be sent.

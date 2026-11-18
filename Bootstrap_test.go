@@ -10,6 +10,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -141,4 +142,79 @@ func TestContactRootPeers(t *testing.T) {
 
 	backend.contactRootPeers()
 	testExpectAnnouncement(t, "removed from the peer list", backend, socket, rootPrivateKey)
+}
+
+// TestBootstrapFindSelf checks which Announcements carry A_FIND_SELF. The first Announcement to a root peer carries it.
+// The Announcement to a peer that is reported in the answer carries no request, and the peers reported in the Response to it are not contacted.
+func TestBootstrapFindSelf(t *testing.T) {
+	backend, network := testBackendLoopback(t)
+	testRootPeers(t)
+
+	previous := recentContacts
+	recentContacts = make(map[[ed25519.PublicKeySize]byte]*recentContactInfo)
+	t.Cleanup(func() { recentContacts = previous })
+
+	// The Announcements sent, by receiver: whether each carries A_FIND_SELF, and the sequence of the last one.
+	var mutex sync.Mutex
+	findSelf := make(map[[ed25519.PublicKeySize]byte][]bool)
+	sequences := make(map[[ed25519.PublicKeySize]byte]uint32)
+	backend.Filters.MessageOutAnnouncement = func(receiverPublicKey ed25519.PublicKey, peer *PeerInfo, packet *protocol.PacketRaw, requests *protocol.Requests) {
+		mutex.Lock()
+		defer mutex.Unlock()
+		findSelf[publicKey2Array(receiverPublicKey)] = append(findSelf[publicKey2Array(receiverPublicKey)], requests != nil && requests.FindSelf)
+	}
+	backend.Filters.PacketOut = func(packet *protocol.PacketRaw, receiverPublicKey ed25519.PublicKey, connection *Connection) {
+		mutex.Lock()
+		defer mutex.Unlock()
+		if packet.Command == protocol.CommandAnnouncement {
+			sequences[publicKey2Array(receiverPublicKey)] = packet.Sequence
+		}
+	}
+	sent := func(publicKey ed25519.PublicKey) (announcements []bool, sequence uint32) {
+		mutex.Lock()
+		defer mutex.Unlock()
+		return findSelf[publicKey2Array(publicKey)], sequences[publicKey2Array(publicKey)]
+	}
+
+	// 1. The first Announcement to a root peer.
+	rootPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	_, rootAddress := testSocket(t)
+	root := &rootPeer{publicKey: rootPublicKey, addresses: []*net.UDPAddr{rootAddress}, backend: backend}
+	rootPeers[publicKey2Array(rootPublicKey)] = root
+	root.contact()
+
+	if announcements, _ := sent(rootPublicKey); len(announcements) != 1 || !announcements[0] {
+		t.Fatalf("root peer: Announcements sent with A_FIND_SELF %v, expected one with it", announcements)
+	}
+
+	// 2. The root peer reports a peer. The address is a private one, received via a local connection.
+	rootInfo, _ := backend.PeerlistAdd(rootPublicKey, &Connection{backend: backend, Network: network, Address: rootAddress, PortInternal: uint16(rootAddress.Port)})
+
+	reportedPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	record := protocol.PeerRecord{PublicKey: reportedPublicKey, Features: 1 << protocol.FeatureIPv4Listen, IPv4: testRecordAddresses(1001, "10.0.0.7")}
+	rootInfo.cmdResponseBootstrapFindSelf(nil, []protocol.PeerRecord{record}, true)
+
+	announcements, sequence := sent(reportedPublicKey)
+	if len(announcements) != 1 || announcements[0] {
+		t.Errorf("reported peer: Announcements sent with A_FIND_SELF %v, expected one without it", announcements)
+	}
+
+	// 3. The reported peer answers. Its Response is accepted and reports a further peer, which is not contacted.
+	sequenceInfo, valid, _ := backend.networks.Sequences.ValidateSequence(reportedPublicKey, sequence, true, false)
+	if !valid {
+		t.Fatalf("reported peer: sequence %d of the Announcement is not registered", sequence)
+	}
+
+	connection := &Connection{backend: backend, Network: network, Address: &net.UDPAddr{IP: net.ParseIP("10.0.0.7"), Port: 1001}, PortInternal: 1001}
+	reported, _ := backend.PeerlistAdd(reportedPublicKey, connection)
+
+	furtherPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	further := protocol.PeerRecord{PublicKey: furtherPublicKey, Features: 1 << protocol.FeatureIPv4Listen, IPv4: testRecordAddresses(1001, "10.0.0.8")}
+	response := &protocol.MessageResponse{MessageRaw: &protocol.MessageRaw{SenderPublicKey: reportedPublicKey, SequenceInfo: sequenceInfo}, SequenceLast: true,
+		Records: []protocol.ResponseRecord{{Type: protocol.ResponseASelf, Closest: []protocol.PeerRecord{further}, IsLast: true}}}
+	reported.cmdResponse(response, connection)
+
+	if announcements, _ := sent(furtherPublicKey); len(announcements) != 0 {
+		t.Errorf("peer reported by the reported peer: %d Announcements sent, expected none", len(announcements))
+	}
 }

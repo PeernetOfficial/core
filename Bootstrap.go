@@ -106,7 +106,7 @@ func (peer *rootPeer) contact() {
 
 	for _, address := range peer.addresses {
 		// Port internal is always set to 0 for root peers.
-		peer.backend.contactArbitraryPeer(peer.publicKey, &peerAddress{IP: address.IP, Port: uint16(address.Port)}, nil)
+		peer.backend.contactArbitraryPeer(peer.publicKey, &peerAddress{IP: address.IP, Port: uint16(address.Port)}, nil, true)
 	}
 }
 
@@ -201,9 +201,9 @@ func (nets *Networks) autoMulticastBroadcast() {
 
 // contactArbitraryPeer contacts a new arbitrary peer for the first time.
 // traversePeer is the peer that reported the new peer. The announcement is additionally sent as Traverse message via that peer, except if the new peer is a root peer. It may be nil.
+// findSelf indicates whether the announcement carries A_FIND_SELF. Otherwise it carries no request: the peers reported in the response to it are not contacted.
 // It returns the announcement as it was sent, nil if none was sent.
-func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, address *peerAddress, traversePeer *PeerInfo) (announcement *protocol.PacketRaw) {
-	findSelf := ShouldSendFindSelf()
+func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, address *peerAddress, traversePeer *PeerInfo, findSelf bool) (announcement *protocol.PacketRaw) {
 	_, blockchainHeight, blockchainVersion := backend.UserBlockchain.Header()
 	requests := &protocol.Requests{FindSelf: findSelf}
 	packets := protocol.EncodeAnnouncement(true, requests, backend.FeatureSupport(), blockchainHeight, blockchainVersion, backend.userAgent)
@@ -214,14 +214,24 @@ func (backend *Backend) contactArbitraryPeer(publicKey ed25519.PublicKey, addres
 
 	backend.Filters.MessageOutAnnouncement(publicKey, nil, raw, requests)
 
-	backend.networks.sendAllNetworks(publicKey, raw, address, traversePeer, &bootstrapFindSelf{})
+	var sequenceData interface{} = &bootstrapContact{}
+	if findSelf {
+		sequenceData = &bootstrapFindSelf{}
+	}
+
+	backend.networks.sendAllNetworks(publicKey, raw, address, traversePeer, sequenceData)
 
 	return raw
 }
 
-// bootstrapFindSelf is a dummy structure assigned to sequences when sending the Announcement message.
+// bootstrapFindSelf is a dummy structure assigned to sequences when sending the Announcement message with A_FIND_SELF.
 // When receiving the Response message, it will know that it was a legitimate bootstrap request.
 type bootstrapFindSelf struct {
+}
+
+// bootstrapContact is a dummy structure assigned to the sequence of the Announcement message to a peer that was reported in the response to A_FIND_SELF.
+// The Response message to it is accepted.
+type bootstrapContact struct {
 }
 
 // bootstrapAcceptContacts is the maximum count of contacts considered. It limits the impact of fake peers.
@@ -260,7 +270,7 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 
 			// Initiate contact. Once a response comes back, the peer will be actually added to the peer list.
 			// The Announcement is additionally sent as Traverse message via the peer that reported the contact, see reportingPeer.
-			if sent := peer.Backend.contactArbitraryPeer(closePeer.PublicKey, address, peer.reportingPeer()); sent != nil {
+			if sent := peer.Backend.contactArbitraryPeer(closePeer.PublicKey, address, peer.reportingPeer(), false); sent != nil {
 				announcement = sent
 			}
 		}
@@ -270,12 +280,6 @@ func (peer *PeerInfo) cmdResponseBootstrapFindSelf(msg *protocol.MessageResponse
 			reporting.sendRelayNoResponse(announcement, closePeer.PublicKey)
 		}
 	}
-}
-
-// ShouldSendFindSelf checks if A_FIND_SELF should be sent
-func ShouldSendFindSelf() bool {
-	// TODO
-	return true
 }
 
 // isReturnedPeerBadQuality checks if the returned peer record is bad quality and should be discarded

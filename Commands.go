@@ -289,7 +289,7 @@ func (peer *PeerInfo) cmdLocalDiscovery(msg *protocol.MessageAnnouncement, conne
 	//	return
 	//}
 
-	peer.sendAnnouncement(true, &protocol.Requests{FindSelf: ShouldSendFindSelf()}, &bootstrapFindSelf{})
+	peer.sendAnnouncement(true, &protocol.Requests{FindSelf: true}, &bootstrapFindSelf{})
 }
 
 // SendChatAll sends a text message to all peers

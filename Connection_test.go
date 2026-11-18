@@ -310,7 +310,7 @@ func TestSendTraverseFirstContact(t *testing.T) {
 			portInternal = defaultPort // the socket listens on a port assigned by the system, which is never this one
 		}
 
-		backend.contactArbitraryPeer(targetPublicKey, &peerAddress{IP: addressTarget.IP, Port: uint16(addressTarget.Port), PortInternal: portInternal}, test.reporting)
+		backend.contactArbitraryPeer(targetPublicKey, &peerAddress{IP: addressTarget.IP, Port: uint16(addressTarget.Port), PortInternal: portInternal}, test.reporting, test.isRootPeer)
 
 		traverse.check(t, test.name, test.expectedCount, reporting, targetPublicKey)
 		testExpectAnnouncement(t, test.name, backend, socketTarget, targetPrivateKey)
@@ -423,7 +423,7 @@ func TestSendExternalPort(t *testing.T) {
 		send func(publicKey ed25519.PublicKey, address *peerAddress) (command uint8, sequence uint32, traverseCount int)
 	}{
 		{"bootstrap", func(publicKey ed25519.PublicKey, address *peerAddress) (uint8, uint32, int) {
-			backend.contactArbitraryPeer(publicKey, address, reporting)
+			backend.contactArbitraryPeer(publicKey, address, reporting, false)
 			return protocol.CommandAnnouncement, 0, 1
 		}},
 		{"virtual peer of a peer record", func(publicKey ed25519.PublicKey, address *peerAddress) (uint8, uint32, int) {
