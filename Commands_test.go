@@ -16,6 +16,7 @@ import (
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
+	"github.com/PeernetOfficial/core/store"
 )
 
 // testPeerConnections returns a peer with active connections to the IPs. The first one is the latest connection.
@@ -39,6 +40,7 @@ func testPeerConnections(t *testing.T, backend *Backend, ips ...string) (peer *P
 // TestAnnouncementResponseAddresses checks the addresses in the peer records of the response to an announcement:
 // up to 3 per family in A_RESPONSE_SELF and A_RESPONSE_PEER, at most one per family in B_RESPONSE_BLOCKCHAIN.
 // A peer known only by link-local and loopback addresses is not reported.
+// The peer lists itself as storing peer for the own blockchain only; the blockchain cache holds a copy of the blockchain of another peer.
 func TestAnnouncementResponseAddresses(t *testing.T) {
 	self, selfPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 
@@ -53,6 +55,15 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 
 	for _, peer := range []*PeerInfo{peerMany, peerOne, peerNotShared, peerLocal} {
 		backend.nodesDHT.AddNode(&dht.Node{ID: peer.PublicKey, Info: peer})
+	}
+
+	// The blockchain cache holds a copy of the blockchain of peerOne.
+	backend.GlobalBlockchainCache = &BlockchainCache{backend: backend, Store: &blockchain.MultiStore{Database: store.NewMemoryStore()}}
+	if _, err := backend.GlobalBlockchainCache.Store.NewBlockchainHeader(peerOne.PublicKey, 1, 5); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := backend.GlobalBlockchainCache.Store.ReadBlockchainHeader(peerOne.PublicKey); err != nil || !found {
+		t.Fatalf("blockchain header in the cache: found %t (%v)", found, err)
 	}
 
 	// The response is captured before it is sent. The requester has no connection, sending it fails.

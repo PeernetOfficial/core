@@ -82,7 +82,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		records = append(records, protocol.ResponseRecord{Type: protocol.ResponseAPeer, Key: key, Closest: closestPeers(key, respondAddressesMaxDHTA), IsLast: true})
 	}
 
-	// B_FIND_BLOCKCHAIN: self if the blockchain is stored here (own or cached), and peers close to the key
+	// B_FIND_BLOCKCHAIN: self if the key is the own blockchain, and peers close to the key
 	for _, key := range msg.FindBlockchain {
 		if keyBudget == 0 {
 			break
@@ -91,7 +91,8 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBFindBlockchain, key, nil)
 
 		record := protocol.ResponseRecord{Type: protocol.ResponseBBlockchain, Key: key, Closest: closestPeers(key, respondAddressesMaxDHTB), IsLast: true}
-		if stored, height, version := peer.Backend.blockchainStored(key); stored {
+		if bytes.Equal(key, peer.Backend.peerPublicKey) {
+			_, height, version := peer.Backend.UserBlockchain.Header()
 			record.Storing = []protocol.StoringPeer{peer.Backend.selfStoringPeer(key, version, height)}
 		}
 		records = append(records, record)
