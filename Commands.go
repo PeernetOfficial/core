@@ -192,12 +192,7 @@ func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Con
 
 			switch record.Type {
 			case protocol.ResponseASelf, protocol.ResponseAPeer, protocol.ResponseBBlockchain:
-				var storing []protocol.PeerRecord
-				for n := range record.Storing {
-					storing = append(storing, record.Storing[n].PeerRecord)
-				}
-
-				info.QueueResult(&dht.NodeMessage{SenderID: peer.PublicKey, Closest: peer.records2Nodes(record.Closest, connection.IsLocal()), Storing: peer.records2Nodes(storing, connection.IsLocal())})
+				info.QueueResult(&dht.NodeMessage{SenderID: peer.PublicKey, Closest: peer.records2Nodes(record.Closest, connection.IsLocal())})
 			}
 		}
 

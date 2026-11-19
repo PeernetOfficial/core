@@ -27,9 +27,6 @@ type DHT struct {
 
 	// Functions below must be set and provided by the caller.
 
-	// SendRequestStore sends an announcement-store message to the remote node. It informs the remote node that the local one stores the given key-value.
-	SendRequestStore func(node *Node, key []byte, dataSize uint64)
-
 	// SendRequest sends an information request to request.Nodes. The message to send follows from request.Action.
 	SendRequest func(request *InformationRequest)
 
@@ -105,53 +102,6 @@ func (dht *DHT) IsNodeContact(ID []byte) (node *Node) {
 }
 
 // ---- Synchronous network query functions below ----
-
-// Store informs the network about data stored locally.
-// Data size informs how big the data is without sending the actual data. closestCount is the number of closest nodes to contact.
-func (dht *DHT) Store(key []byte, dataSize uint64, closestCount int) (err error) {
-	if len(key)*8 != dht.ht.bBits {
-		return errors.New("invalid key size")
-	}
-
-	search := dht.NewSearch(ActionFindValueClosest, key, dht.TimeoutSearch, dht.TimeoutIR, dht.alpha)
-	search.LogStatus = func(function, format string, v ...interface{}) {
-		dht.FilterSearchStatus(search, function, format, v...)
-	}
-	search.LogStatus("dht.Store", "Search for closest nodes to key %s. Full timeout %s, per node %s. Alpha = %d.\n", hex.EncodeToString(key), dht.TimeoutSearch.String(), dht.TimeoutIR.String(), dht.alpha)
-	search.SearchAway()
-
-	// search.Results channel is ignored here. Only the closest nodes to the key are of interest. It is not expected to find a match of key and node ID.
-	<-search.TerminateSignal
-
-	// Contact the closes nodes found.
-	for n := 0; n < closestCount && n < len(search.list.Nodes); n++ {
-		node := search.list.Nodes[n]
-		search.LogStatus("dht.Store", "Send info-store message to node %s\n", hex.EncodeToString(node.ID))
-		dht.SendRequestStore(node, key, dataSize)
-	}
-
-	return nil
-}
-
-// Get retrieves data from the network using key
-func (dht *DHT) Get(key []byte) (value []byte, senderID []byte, found bool, err error) {
-	if len(key)*8 != dht.ht.bBits {
-		return nil, nil, false, errors.New("invalid key size")
-	}
-
-	search := dht.NewSearch(ActionFindValue, key, dht.TimeoutSearch, dht.TimeoutIR, dht.alpha)
-	search.LogStatus = func(function, format string, v ...interface{}) {
-		dht.FilterSearchStatus(search, function, format, v...)
-	}
-	search.LogStatus("dht.Get", "Search for node %s. Full timeout %s, per node %s. Alpha = %d.\n", hex.EncodeToString(key), dht.TimeoutSearch.String(), dht.TimeoutIR.String(), dht.alpha)
-	search.SearchAway()
-
-	result, ok := <-search.Results
-	if !ok { // The channel is closed when the search is terminated.
-		return nil, nil, false, nil
-	}
-	return result.Data, result.SenderID, true, nil
-}
 
 // FindNode finds the target node in the network. Blocking!
 // The caller may use dht.NewSearch directly and take advantage of the asynchronous response and custom timeouts.
