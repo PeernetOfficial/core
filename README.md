@@ -31,7 +31,7 @@ func main() {
 
 * X25519 and ChaCha20-Poly1305 are used for encrypting and authenticating the packets.
 * Ed25519 is used for peer IDs (public keys) and signatures.
-* blake3 is used as hashing algorithm for the DHT and for the block hashes.
+* blake3 is used as hashing algorithm for the block hashes.
 
 ## Configuration
 
@@ -86,7 +86,7 @@ Above limits are constants and can be adjusted in the code via `pingTime`, `conn
 
 ### Kademlia
 
-The routing table has a bucket size of 20 and the size of keys 256 bits (blake3 hash). Nodes within buckets are sorted by least recently seen. The number of nodes to contact concurrently in DHT lookups (also known as alpha number) is set to 5. A lookup for a peer ends when the peer answers, when the 5 closest peers known have all answered (beta number), or when no peer is left to ask. A peer that does not answer is not counted among the 5. If responses report different addresses for the peer, each is tried.
+The routing table has a bucket size of 20 and the size of keys 256 bits (the Peer ID). Nodes within buckets are sorted by least recently seen. The number of nodes to contact concurrently in DHT lookups (also known as alpha number) is set to 5. A lookup for a peer ends when the peer answers, when the 5 closest peers known have all answered (beta number), or when no peer is left to ask. A peer that does not answer is not counted among the 5. If responses report different addresses for the peer, each is tried.
 
 A bucket that holds 20 peers takes no new peer. The routing table is refreshed every 5 minutes: a lookup for the own Peer ID, and a lookup for a random ID in every bucket that holds fewer than 20 peers, from the bucket of the farthest peers to the bucket of the closest peer in the routing table.
 

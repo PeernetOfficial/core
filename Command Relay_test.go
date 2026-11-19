@@ -17,7 +17,6 @@ import (
 
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/PeernetOfficial/core/store"
 )
 
 // testRelay returns the decoded Relay message as the peer with the public key relaySender sends it. It names the peer. The FORWARDED flag is not set.
@@ -153,24 +152,17 @@ func TestRelayForward(t *testing.T) {
 }
 
 // TestRelayReceiveAnnouncement checks that the end receiver answers an Announcement embedded in a Relay message with a Response to the original sender, sent in a Relay message to the relay.
-// The original sender decrypts the embedded Response with the Peer ID of the relay. A B_FIND_FILE_EMBED request is answered as B_FIND_FILE.
+// The original sender decrypts the embedded Response with the Peer ID of the relay.
 func TestRelayReceiveAnnouncement(t *testing.T) {
 	backend, network := testBackendLoopback(t)
-	backend.dhtStore = store.NewMemoryStore()
 	out := testWatchRelay(t, backend)
 
 	relay, relayPrivateKey, socketRelay := testPeerSocket(t, backend, network)
 	senderPublicKey, senderPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 	senderKeyPair := testKeyPair(t, senderPrivateKey)
 
-	fileData := []byte("stored file")
-	fileHash := protocol.HashData(fileData)
-	if err := backend.dhtStore.Set(fileHash, fileData); err != nil {
-		t.Fatal(err)
-	}
-
 	// The Relay message as the relay forwards it.
-	announcement := protocol.EncodeAnnouncement(true, &protocol.Requests{FindSelf: true, FindFileEmbed: [][]byte{fileHash}}, 1<<protocol.FeatureIPv4Listen, 0, 0, "test")[0]
+	announcement := protocol.EncodeAnnouncement(true, &protocol.Requests{FindSelf: true}, 1<<protocol.FeatureIPv4Listen, 0, 0, "test")[0]
 	msg := testRelay(t, senderKeyPair, backend.peerPublicKey, relay.PublicKey, senderPublicKey, relay.PublicKey, protocol.CommandAnnouncement, 777, announcement)
 
 	relay.cmdRelay(testForwarded(msg))
@@ -201,30 +193,13 @@ func TestRelayReceiveAnnouncement(t *testing.T) {
 	response, err := protocol.DecodeResponse(&protocol.MessageRaw{PacketRaw: *decoded})
 	if err != nil {
 		t.Fatal(err)
-	} else if len(response.Records) != 2 || response.Records[0].Type != protocol.ResponseASelf || response.Records[1].Type != protocol.ResponseBFile {
-		t.Fatalf("response records %+v, expected A_RESPONSE_SELF and B_RESPONSE_FILE", response.Records)
-	} else if len(response.Records[1].Storing) != 1 || !response.Records[1].Storing[0].PublicKey.Equal(backend.peerPublicKey) || len(response.Records[1].Data) != 0 {
-		t.Fatal("B_RESPONSE_FILE does not list the end receiver as storing peer, or carries the file")
+	} else if len(response.Records) != 1 || response.Records[0].Type != protocol.ResponseASelf {
+		t.Fatalf("response records %+v, expected A_RESPONSE_SELF", response.Records)
 	}
 
 	// The original sender is not added to the peer list.
 	if backend.PeerlistLookup(senderPublicKey) != nil {
 		t.Error("the original sender is in the peer list")
-	}
-
-	// The same Announcement sent directly is answered with the embedded file.
-	out.reset()
-	var records []protocol.ResponseRecord
-	backend.Filters.MessageOutResponse = func(peer *PeerInfo, packet *protocol.PacketRaw, recordsOut []protocol.ResponseRecord) {
-		records = recordsOut
-	}
-	direct, err := protocol.DecodeAnnouncement(&protocol.MessageRaw{PacketRaw: protocol.PacketRaw{Payload: announcement}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	(&PeerInfo{Backend: backend, PublicKey: senderPublicKey}).cmdAnouncement(direct, nil)
-	if len(records) != 2 || records[1].Type != protocol.ResponseBFileEmbed || !bytes.Equal(records[1].Data, fileData) {
-		t.Fatalf("response records to the direct Announcement %+v, expected the embedded file", records)
 	}
 }
 
@@ -390,7 +365,7 @@ func TestRelayReceiveResponse(t *testing.T) {
 }
 
 // TestSendRelay checks the packets to a virtual peer that is reached via a relay: an Announcement and a Response are sent in a Relay message to the relay, which names the end receiver.
-// B_FIND_FILE_EMBED requests of the Announcement are sent as B_FIND_FILE; the other fields are those of the Announcement. Other messages are not sent.
+// Other messages are not sent.
 func TestSendRelay(t *testing.T) {
 	backend, network := testBackendLoopback(t)
 	out := testWatchRelay(t, backend)
@@ -418,16 +393,13 @@ func TestSendRelay(t *testing.T) {
 	}
 
 	keyPeer, _, _ := ed25519.GenerateKey(rand.Reader)
-	keyFile := protocol.HashData([]byte("file 1"))
-	keyFileEmbed := protocol.HashData([]byte("file 2"))
 
 	for _, test := range []struct {
-		name             string
-		requests         *protocol.Requests
-		expectedFindFile [][]byte
+		name     string
+		requests *protocol.Requests
 	}{
-		{"Announcement with B_FIND_FILE_EMBED", &protocol.Requests{FindPeer: [][]byte{keyPeer}, FindFile: [][]byte{keyFile}, FindFileEmbed: [][]byte{keyFileEmbed}}, [][]byte{keyFile, keyFileEmbed}},
-		{"Announcement without B_FIND_FILE_EMBED", &protocol.Requests{FindSelf: true, FindPeer: [][]byte{keyPeer}, FindFile: [][]byte{keyFile}}, [][]byte{keyFile}},
+		{"Announcement with A_FIND_PEER", &protocol.Requests{FindPeer: [][]byte{keyPeer}}},
+		{"Announcement with A_FIND_SELF and A_FIND_PEER", &protocol.Requests{FindSelf: true, FindPeer: [][]byte{keyPeer}}},
 	} {
 		info := &dht.InformationRequest{}
 		virtual.sendAnnouncement(true, test.requests, info)
@@ -437,13 +409,8 @@ func TestSendRelay(t *testing.T) {
 		if err != nil || decoded.Command != protocol.CommandAnnouncement {
 			t.Fatalf("%s: embedded packet has command %d: %v", test.name, decoded.Command, err)
 		}
-		if len(announce.FindFileEmbed) != 0 || len(announce.FindFile) != len(test.expectedFindFile) || announce.FindSelf != test.requests.FindSelf || len(announce.FindPeer) != 1 || !bytes.Equal(announce.FindPeer[0], keyPeer) {
+		if announce.FindSelf != test.requests.FindSelf || len(announce.FindPeer) != 1 || !bytes.Equal(announce.FindPeer[0], keyPeer) {
 			t.Errorf("%s: requests %+v", test.name, announce.Requests)
-		}
-		for n := range test.expectedFindFile {
-			if n < len(announce.FindFile) && !bytes.Equal(announce.FindFile[n], test.expectedFindFile[n]) {
-				t.Errorf("%s: B_FIND_FILE key %d mismatch", test.name, n)
-			}
 		}
 		if announce.UserAgent != "test/1.0" || announce.Features != backend.FeatureSupport() {
 			t.Errorf("%s: User Agent %q features %d", test.name, announce.UserAgent, announce.Features)
@@ -649,12 +616,12 @@ func TestSendRelayNoResponse(t *testing.T) {
 		return publicKey, privateKey, socket, []*peerAddress{{IP: address.IP, Port: uint16(address.Port), PortInternal: uint16(address.Port)}}
 	}
 
-	keyFile := protocol.HashData([]byte("file"))
+	keyPeer, _, _ := ed25519.GenerateKey(rand.Reader)
 
 	// 1. A virtual peer of a peer record that does not respond.
 	silentPublicKey, silentPrivateKey, socketSilent, addresses := newTarget()
 	silent := &PeerInfo{Backend: backend, PublicKey: silentPublicKey, isVirtual: true, targetAddresses: addresses, traversePeer: reporting}
-	silent.sendAnnouncement(true, &protocol.Requests{FindFileEmbed: [][]byte{keyFile}}, &dht.InformationRequest{})
+	silent.sendAnnouncement(true, &protocol.Requests{FindPeer: [][]byte{keyPeer}}, &dht.InformationRequest{})
 
 	direct := testReadPacket(t, "no response", backend, socketSilent, silentPrivateKey, 2*time.Second)
 	if direct == nil || direct.Command != protocol.CommandAnnouncement {
@@ -704,7 +671,7 @@ func TestSendRelayNoResponse(t *testing.T) {
 		return decoded, announce
 	}
 
-	// 1. The Announcement that was sent directly, with B_FIND_FILE_EMBED sent as B_FIND_FILE.
+	// 1. The Announcement that was sent directly.
 	decoded, announce := embedded("no response", silentPublicKey, silentPrivateKey)
 	directAnnounce, err := protocol.DecodeAnnouncement(&protocol.MessageRaw{PacketRaw: *direct})
 	if err != nil {
@@ -713,7 +680,7 @@ func TestSendRelayNoResponse(t *testing.T) {
 	if decoded.Sequence != direct.Sequence {
 		t.Errorf("no response: sequence %d in the Relay message, %d sent directly", decoded.Sequence, direct.Sequence)
 	}
-	if len(directAnnounce.FindFileEmbed) != 1 || len(directAnnounce.FindFile) != 0 || len(announce.FindFileEmbed) != 0 || len(announce.FindFile) != 1 || !bytes.Equal(announce.FindFile[0], keyFile) {
+	if len(directAnnounce.FindPeer) != 1 || len(announce.FindPeer) != 1 || !bytes.Equal(announce.FindPeer[0], keyPeer) {
 		t.Errorf("no response: requests sent directly %+v, in the Relay message %+v", directAnnounce.Requests, announce.Requests)
 	}
 	if announce.UserAgent != directAnnounce.UserAgent || announce.Features != directAnnounce.Features || announce.PortInternal != directAnnounce.PortInternal || announce.PortExternal != directAnnounce.PortExternal || announce.PortInternal == 0 {

@@ -37,7 +37,7 @@ type Filters struct {
 	DHTSearchStatus func(client *dht.SearchClient, function, format string, v ...interface{})
 
 	// IncomingRequest receives all incoming request records of announcements. RequestType is the protocol.RequestX record type.
-	// Info is *protocol.BlockchainStore for B_STORE_BLOCKCHAIN and *protocol.FileStore for B_STORE_FILE, nil otherwise.
+	// Info is *protocol.BlockchainStore for B_STORE_BLOCKCHAIN, nil otherwise.
 	IncomingRequest func(peer *PeerInfo, RequestType int, Key []byte, Info interface{})
 
 	// PacketIn is a low-level filter for incoming packets after they are decrypted.

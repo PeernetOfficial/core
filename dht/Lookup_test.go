@@ -124,7 +124,6 @@ func (network *testNetwork) start(self []byte, action int, key []byte, alpha int
 
 // checkEnd checks a search that ended without result.
 // A search for a node: the beta closest nodes of the search list have all answered, the nodes that did not answer left out.
-// A search for a value: it holds no node closer to the key than the closest node contacted.
 // All reported nodes are in the search list. A search for a node ends while requests are under way, the check is left out if the nodes answer delayed.
 func (lookup *testLookup) checkEnd(t *testing.T, key []byte) {
 	t.Helper()
@@ -135,7 +134,7 @@ func (lookup *testLookup) checkEnd(t *testing.T, key []byte) {
 		t.Fatal(lookup.failed)
 	}
 
-	if search.Action != ActionFindNode || !lookup.delayed {
+	if !lookup.delayed {
 		candidates := make(map[string]struct{})
 		for _, node := range list.Nodes {
 			candidates[string(node.ID)] = struct{}{}
@@ -147,19 +146,11 @@ func (lookup *testLookup) checkEnd(t *testing.T, key []byte) {
 		}
 	}
 
-	if search.Action == ActionFindNode {
-		closest := testClosest(list.Nodes, key, search.beta, func(node *Node) bool { return !search.unanswered[string(node.ID)] })
-		for _, node := range closest {
-			if !search.answered[string(node.ID)] {
-				t.Fatalf("search ended while node %x, one of the %d closest nodes in the search list, did not answer", node.ID, search.beta)
-			}
+	closest := testClosest(list.Nodes, key, search.beta, func(node *Node) bool { return !search.unanswered[string(node.ID)] })
+	for _, node := range closest {
+		if !search.answered[string(node.ID)] {
+			t.Fatalf("search ended while node %x, one of the %d closest nodes in the search list, did not answer", node.ID, search.beta)
 		}
-		return
-	}
-
-	closest := testClosest(list.Nodes, key, 1, func(node *Node) bool { return true })
-	if !list.Contacted[string(closest[0].ID)] {
-		t.Fatalf("search ended while the closest node %x in the search list was not contacted", closest[0].ID)
 	}
 }
 
@@ -228,32 +219,6 @@ func TestLookupNotFound(t *testing.T) {
 	}
 
 	t.Logf("%d lookups for IDs that no node has, %.1f requests per lookup", lookups, float64(requests)/lookups)
-}
-
-// TestSearchValueOrder runs the searches for a value in a simulated network of 100 nodes. No node stores the value.
-// Every request must go to the closest nodes not yet contacted. The search ends when every node of the search list was contacted.
-func TestSearchValueOrder(t *testing.T) {
-	network := newTestNetwork(t, 100)
-
-	for n := 0; n < 50; n++ {
-		for _, action := range []int{ActionFindValue, ActionFindValueClosest} {
-			self, key := network.ids[n], testID(t)
-
-			lookup := network.start(self, action, key, 5, false)
-
-			if result, ok := <-lookup.search.Results; ok {
-				t.Fatalf("search %d: unexpected result from %x", n, result.SenderID)
-			}
-
-			lookup.checkEnd(t, key)
-
-			for _, node := range lookup.search.list.Nodes {
-				if !lookup.search.list.Contacted[string(node.ID)] {
-					t.Fatalf("search %d: search ended while node %x in the search list was not contacted", n, node.ID)
-				}
-			}
-		}
-	}
 }
 
 // TestLookupDelayed searches in a simulated network of 2000 nodes in which every node answers after 1 to 20 ms: for nodes that exist, and for IDs that no node has.

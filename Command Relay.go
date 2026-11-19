@@ -76,10 +76,6 @@ func (peer *PeerInfo) cmdRelayReceive(msg *protocol.MessageRelay) {
 
 			peer.Backend.Filters.MessageIn(peerV, raw, announce)
 
-			// A file is not embedded in a Response that is sent in a relay message: a B_FIND_FILE_EMBED request is answered as B_FIND_FILE.
-			announce.FindFile = append(announce.FindFile, announce.FindFileEmbed...)
-			announce.FindFileEmbed = nil
-
 			peerV.cmdAnouncement(announce, nil)
 		}
 

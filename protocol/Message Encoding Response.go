@@ -9,7 +9,6 @@ The Response message (whitepaper § Response). Same header as the Announcement; 
 package protocol
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
@@ -30,22 +29,21 @@ type MessageResponse struct {
 	Records           []ResponseRecord // Response records in the order received
 }
 
-// ResponseRecord is one response record: A_RESPONSE_SELF, A_RESPONSE_PEER, B_RESPONSE_BLOCKCHAIN, B_RESPONSE_FILE or B_RESPONSE_FILE_EMBED.
+// ResponseRecord is one response record: A_RESPONSE_SELF, A_RESPONSE_PEER or B_RESPONSE_BLOCKCHAIN.
 // Which fields are set depends on the type.
 type ResponseRecord struct {
 	Type    uint8         // ResponseX
 	Key     []byte        // Requested key. nil for A_RESPONSE_SELF.
-	Storing []StoringPeer // B_RESPONSE_BLOCKCHAIN, B_RESPONSE_FILE: peers that store the data
-	Closest []PeerRecord  // A_RESPONSE_SELF, A_RESPONSE_PEER, B_RESPONSE_BLOCKCHAIN, B_RESPONSE_FILE: peers close to the key (to the sender for A_RESPONSE_SELF)
+	Storing []StoringPeer // B_RESPONSE_BLOCKCHAIN: peers that store the blockchain
+	Closest []PeerRecord  // Peers close to the key (to the sender for A_RESPONSE_SELF)
 	IsLast  bool          // Bit 7 of the first peer record count: no more results follow for the key. A key with no peer records and IsLast was not found.
-	Data    []byte        // B_RESPONSE_FILE_EMBED: the file
 }
 
-// StoringPeer is a peer that stores the requested data.
+// StoringPeer is a peer that stores the requested blockchain.
 type StoringPeer struct {
 	PeerRecord
-	BlockchainHeight  uint64 // B_RESPONSE_BLOCKCHAIN: blockchain height stored
-	BlockchainVersion uint64 // B_RESPONSE_BLOCKCHAIN: blockchain version stored
+	BlockchainHeight  uint64 // Blockchain height stored
+	BlockchainVersion uint64 // Blockchain version stored
 }
 
 // PeerRecord informs about a peer. It carries up to 3 addresses per family, in no particular order.
@@ -69,8 +67,6 @@ const (
 	ResponseASelf       = 0 // A_RESPONSE_SELF: peers close to the sender. Answers A_FIND_SELF.
 	ResponseAPeer       = 1 // A_RESPONSE_PEER: peers close to the requested Peer ID. Answers A_FIND_PEER.
 	ResponseBBlockchain = 2 // B_RESPONSE_BLOCKCHAIN: peers that store the requested blockchain, and peers close to the key. Answers B_FIND_BLOCKCHAIN.
-	ResponseBFile       = 3 // B_RESPONSE_FILE: peers that store the requested file, and peers close to the key. Answers B_FIND_FILE and B_FIND_FILE_EMBED.
-	ResponseBFileEmbed  = 4 // B_RESPONSE_FILE_EMBED: the requested file embedded. Answers B_FIND_FILE_EMBED.
 )
 
 // peerRecordHeaderSize is the size of a peer record without its addresses: Peer ID (32), features (1), address counts (1).
@@ -99,10 +95,6 @@ func (peer *PeerRecord) Size() int {
 	return peerRecordHeaderSize + len(peer.IPv4)*peerRecordAddressSizeIPv4 + len(peer.IPv6)*peerRecordAddressSizeIPv6
 }
 
-// EmbeddedFileSizeMax is the maximum size of a file embedded in a response message (B_RESPONSE_FILE_EMBED). Any file exceeding that must be shared via regular file transfer.
-// It leaves room for the header with the maximum User Agent, the record count, the record header and the key.
-const EmbeddedFileSizeMax = messagePayloadMax - announcementPayloadHeaderSize - 255 - 1 - recordHeaderSize - HashSize
-
 // DecodeResponse decodes the incoming response message. Returns nil if invalid.
 // Records of an unknown type are skipped.
 func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
@@ -128,7 +120,7 @@ func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 		data := raw.Data
 
 		switch raw.Type {
-		case ResponseASelf, ResponseAPeer, ResponseBBlockchain, ResponseBFile:
+		case ResponseASelf, ResponseAPeer, ResponseBBlockchain:
 			if raw.Type != ResponseASelf {
 				if len(data) < HashSize {
 					return nil, errors.New("response: record too short for key")
@@ -145,7 +137,7 @@ func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 			count := int(data[0] & peerCountMax)
 			data = data[1:]
 
-			if raw.Type == ResponseBBlockchain || raw.Type == ResponseBFile {
+			if raw.Type == ResponseBBlockchain {
 				// count is the storing peers, followed by the count of closest peers
 				if len(data) < 1 {
 					return nil, errors.New("response: record too short for count")
@@ -161,14 +153,12 @@ func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 					}
 					data = data[size:]
 
-					if raw.Type == ResponseBBlockchain {
-						if len(data) < storingBlockchainInfoSize {
-							return nil, errors.New("response: peer record overflow")
-						}
-						storing.BlockchainHeight = binary.LittleEndian.Uint64(data[0:8])
-						storing.BlockchainVersion = binary.LittleEndian.Uint64(data[8:16])
-						data = data[storingBlockchainInfoSize:]
+					if len(data) < storingBlockchainInfoSize {
+						return nil, errors.New("response: peer record overflow")
 					}
+					storing.BlockchainHeight = binary.LittleEndian.Uint64(data[0:8])
+					storing.BlockchainVersion = binary.LittleEndian.Uint64(data[8:16])
+					data = data[storingBlockchainInfoSize:]
 
 					record.Storing = append(record.Storing, storing)
 				}
@@ -188,19 +178,6 @@ func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 			}
 
 			// Data after the counted peer records is ignored.
-
-		case ResponseBFileEmbed:
-			if len(data) < HashSize {
-				return nil, errors.New("response: record too short for key")
-			}
-			record.Key = make([]byte, HashSize)
-			copy(record.Key, data[:HashSize])
-			record.Data = make([]byte, len(data)-HashSize)
-			copy(record.Data, data[HashSize:])
-
-			if !bytes.Equal(record.Key, HashData(record.Data)) {
-				return nil, errors.New("response: embedded file hash mismatch")
-			}
 
 		default:
 			continue
@@ -306,7 +283,7 @@ func encodePeerRecordAddress(data []byte, ip net.IP, address *PeerRecordAddress)
 // encodeResponseRecord encodes the data of a response record.
 func encodeResponseRecord(record *ResponseRecord) (data []byte, err error) {
 	switch record.Type {
-	case ResponseASelf, ResponseAPeer, ResponseBBlockchain, ResponseBFile:
+	case ResponseASelf, ResponseAPeer, ResponseBBlockchain:
 		if record.Type != ResponseASelf {
 			if len(record.Key) != HashSize {
 				return nil, errors.New("invalid key size")
@@ -318,9 +295,9 @@ func encodeResponseRecord(record *ResponseRecord) (data []byte, err error) {
 			return nil, errors.New("too many peer records")
 		}
 
-		// The first count carries the last result flag. In B_RESPONSE_BLOCKCHAIN and B_RESPONSE_FILE it is the count of storing peers, followed by the count of closest peers.
+		// The first count carries the last result flag. In B_RESPONSE_BLOCKCHAIN it is the count of storing peers, followed by the count of closest peers.
 		countField := byte(len(record.Closest))
-		if record.Type == ResponseBBlockchain || record.Type == ResponseBFile {
+		if record.Type == ResponseBBlockchain {
 			countField = byte(len(record.Storing))
 		}
 		if record.IsLast {
@@ -328,7 +305,7 @@ func encodeResponseRecord(record *ResponseRecord) (data []byte, err error) {
 		}
 		data = append(data, countField)
 
-		if record.Type == ResponseBBlockchain || record.Type == ResponseBFile {
+		if record.Type == ResponseBBlockchain {
 			data = append(data, byte(len(record.Closest)))
 
 			for n := range record.Storing {
@@ -336,10 +313,8 @@ func encodeResponseRecord(record *ResponseRecord) (data []byte, err error) {
 					return nil, err
 				}
 
-				if record.Type == ResponseBBlockchain {
-					data = binary.LittleEndian.AppendUint64(data, record.Storing[n].BlockchainHeight)
-					data = binary.LittleEndian.AppendUint64(data, record.Storing[n].BlockchainVersion)
-				}
+				data = binary.LittleEndian.AppendUint64(data, record.Storing[n].BlockchainHeight)
+				data = binary.LittleEndian.AppendUint64(data, record.Storing[n].BlockchainVersion)
 			}
 		}
 
@@ -348,16 +323,6 @@ func encodeResponseRecord(record *ResponseRecord) (data []byte, err error) {
 				return nil, err
 			}
 		}
-
-	case ResponseBFileEmbed:
-		if len(record.Key) != HashSize {
-			return nil, errors.New("invalid key size")
-		}
-		if len(record.Data) > EmbeddedFileSizeMax {
-			return nil, errors.New("embedded file too big")
-		}
-		data = append(data, record.Key...)
-		data = append(data, record.Data...)
 
 	default:
 		return nil, errors.New("unknown response record type")
