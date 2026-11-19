@@ -41,11 +41,13 @@ func (r *Requests) IsEmpty() bool {
 	return r == nil || !r.FindSelf && len(r.FindPeer) == 0 && len(r.FindBlockchain) == 0 && len(r.StoreBlockchain) == 0
 }
 
-// BlockchainStore is one item of B_STORE_BLOCKCHAIN: a blockchain the sender stores.
+// BlockchainStore is one item of B_STORE_BLOCKCHAIN: the blockchain record of a blockchain the sender stores.
 type BlockchainStore struct {
-	PublicKey ed25519.PublicKey // Peer ID of the blockchain
-	Height    uint64            // Blockchain height stored
-	Version   uint64            // Blockchain version stored
+	PublicKey ed25519.PublicKey           // Peer ID of the blockchain
+	Version   uint64                      // Blockchain version stored
+	Height    uint64                      // Blockchain height stored: the count of blocks stored from block 0 on, without a gap
+	Time      uint32                      // Time of the record, Unix time in seconds, UTC
+	Signature [ed25519.SignatureSize]byte // Signature by the sender, see BlockchainRecordSign
 }
 
 // Features are sent as bit array in the Announcement message.
@@ -62,8 +64,8 @@ const (
 	RequestBStoreBlockchain = 3 // B_STORE_BLOCKCHAIN: sender indicates storing the listed blockchains (DHT B)
 )
 
-// blockchainStoreSize is the size of one item of B_STORE_BLOCKCHAIN: Peer ID (32) + height (8) + version (8).
-const blockchainStoreSize = 48
+// blockchainStoreSize is the size of one item of B_STORE_BLOCKCHAIN: Peer ID (32) + version (8) + height (8) + time (4) + signature (64).
+const blockchainStoreSize = 116
 
 // announcementPayloadHeaderSize is the size of the Announcement and Response payload header up to the User Agent.
 const announcementPayloadHeaderSize = 23
@@ -108,8 +110,8 @@ func decodeMessageHeader(payload []byte, name string) (header messageHeader, rec
 
 	header.Protocol = payload[0] & 0x0F // Protocol version support is stored in the first 4 bits
 	header.Features = payload[1]
-	header.BlockchainHeight = binary.LittleEndian.Uint64(payload[2 : 2+8])
-	header.BlockchainVersion = binary.LittleEndian.Uint64(payload[10 : 10+8])
+	header.BlockchainVersion = binary.LittleEndian.Uint64(payload[2 : 2+8])
+	header.BlockchainHeight = binary.LittleEndian.Uint64(payload[10 : 10+8])
 	header.PortInternal = binary.LittleEndian.Uint16(payload[18 : 18+2])
 	header.PortExternal = binary.LittleEndian.Uint16(payload[20 : 20+2])
 
@@ -201,8 +203,10 @@ func DecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error
 			for data := record.Data; len(data) > 0; data = data[blockchainStoreSize:] {
 				item := BlockchainStore{PublicKey: make(ed25519.PublicKey, ed25519.PublicKeySize)}
 				copy(item.PublicKey, data[0:32])
-				item.Height = binary.LittleEndian.Uint64(data[32 : 32+8])
-				item.Version = binary.LittleEndian.Uint64(data[40 : 40+8])
+				item.Version = binary.LittleEndian.Uint64(data[32 : 32+8])
+				item.Height = binary.LittleEndian.Uint64(data[40 : 40+8])
+				item.Time = binary.LittleEndian.Uint32(data[48 : 48+4])
+				copy(item.Signature[:], data[52:52+64])
 
 				result.StoreBlockchain = append(result.StoreBlockchain, item)
 			}
@@ -253,8 +257,8 @@ func (b *messageBuilder) start() {
 	b.raw = make([]byte, messagePayloadMax)
 	b.raw[0] = byte(ProtocolVersion)
 	b.raw[1] = b.features
-	binary.LittleEndian.PutUint64(b.raw[2:2+8], b.blockchainHeight)
-	binary.LittleEndian.PutUint64(b.raw[10:10+8], b.blockchainVersion)
+	binary.LittleEndian.PutUint64(b.raw[2:2+8], b.blockchainVersion)
+	binary.LittleEndian.PutUint64(b.raw[10:10+8], b.blockchainHeight)
 	b.size = announcementPayloadHeaderSize
 
 	// only on the initial announcement/response the User Agent must be provided according to the protocol spec
@@ -347,8 +351,10 @@ func EncodeAnnouncement(sendUA bool, requests *Requests, features byte, blockcha
 		for _, item := range requests.StoreBlockchain {
 			data := make([]byte, blockchainStoreSize)
 			copy(data[0:32], item.PublicKey)
-			binary.LittleEndian.PutUint64(data[32:32+8], item.Height)
-			binary.LittleEndian.PutUint64(data[40:40+8], item.Version)
+			binary.LittleEndian.PutUint64(data[32:32+8], item.Version)
+			binary.LittleEndian.PutUint64(data[40:40+8], item.Height)
+			binary.LittleEndian.PutUint32(data[48:48+4], item.Time)
+			copy(data[52:52+64], item.Signature[:])
 			items = append(items, data)
 		}
 		b.addList(RequestBStoreBlockchain, items, blockchainStoreSize)

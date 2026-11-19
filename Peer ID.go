@@ -277,6 +277,19 @@ func (backend *Backend) selfPeerRecord() (result protocol.PeerRecord) {
 	}
 }
 
+// selfStoringPeer returns self as storing peer of the blockchain: the peer record of self and the blockchain record, signed at the current time.
+func (backend *Backend) selfStoringPeer(blockchainPublicKey ed25519.PublicKey, version, height uint64) (result protocol.StoringPeer) {
+	recordTime := uint32(time.Now().Unix())
+
+	return protocol.StoringPeer{
+		PeerRecord:        backend.selfPeerRecord(),
+		BlockchainVersion: version,
+		BlockchainHeight:  height,
+		Time:              recordTime,
+		Signature:         protocol.BlockchainRecordSign(backend.peerPrivateKey, blockchainPublicKey, version, height, recordTime),
+	}
+}
+
 // registerPeerMonitor registers a channel to receive all new peers
 func (backend *Backend) registerPeerMonitor(channel chan<- *PeerInfo) {
 	backend.peerlistMutex.Lock()

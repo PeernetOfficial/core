@@ -39,11 +39,13 @@ type ResponseRecord struct {
 	IsLast  bool          // Bit 7 of the first peer record count: no more results follow for the key. A key with no peer records and IsLast was not found.
 }
 
-// StoringPeer is a peer that stores the requested blockchain.
+// StoringPeer is a peer that stores the requested blockchain: its peer record and the fields of its blockchain record.
 type StoringPeer struct {
 	PeerRecord
-	BlockchainHeight  uint64 // Blockchain height stored
-	BlockchainVersion uint64 // Blockchain version stored
+	BlockchainVersion uint64                      // Blockchain version stored
+	BlockchainHeight  uint64                      // Blockchain height stored: the count of blocks stored from block 0 on, without a gap
+	Time              uint32                      // Time of the blockchain record, Unix time in seconds, UTC
+	Signature         [ed25519.SignatureSize]byte // Signature by the storing peer, see BlockchainRecordSign
 }
 
 // PeerRecord informs about a peer. It carries up to 3 addresses per family, in no particular order.
@@ -81,8 +83,8 @@ const (
 // PeerRecordAddressesMax is the maximum count of addresses per family in a peer record. Each count takes 2 bits of the address counts.
 const PeerRecordAddressesMax = 3
 
-// storingBlockchainInfoSize is the size of the data that follows the peer record of a storing peer in B_RESPONSE_BLOCKCHAIN: height (8) + version (8).
-const storingBlockchainInfoSize = 16
+// storingBlockchainInfoSize is the size of the data that follows the peer record of a storing peer in B_RESPONSE_BLOCKCHAIN: version (8) + height (8) + time (4) + signature (64).
+const storingBlockchainInfoSize = 84
 
 // peerCountLastFlag is bit 7 of the first peer record count: the last result for the key.
 const peerCountLastFlag = 0x80
@@ -156,8 +158,10 @@ func DecodeResponse(msg *MessageRaw) (result *MessageResponse, err error) {
 					if len(data) < storingBlockchainInfoSize {
 						return nil, errors.New("response: peer record overflow")
 					}
-					storing.BlockchainHeight = binary.LittleEndian.Uint64(data[0:8])
-					storing.BlockchainVersion = binary.LittleEndian.Uint64(data[8:16])
+					storing.BlockchainVersion = binary.LittleEndian.Uint64(data[0:8])
+					storing.BlockchainHeight = binary.LittleEndian.Uint64(data[8:16])
+					storing.Time = binary.LittleEndian.Uint32(data[16:20])
+					copy(storing.Signature[:], data[20:84])
 					data = data[storingBlockchainInfoSize:]
 
 					record.Storing = append(record.Storing, storing)
@@ -313,8 +317,10 @@ func encodeResponseRecord(record *ResponseRecord) (data []byte, err error) {
 					return nil, err
 				}
 
-				data = binary.LittleEndian.AppendUint64(data, record.Storing[n].BlockchainHeight)
 				data = binary.LittleEndian.AppendUint64(data, record.Storing[n].BlockchainVersion)
+				data = binary.LittleEndian.AppendUint64(data, record.Storing[n].BlockchainHeight)
+				data = binary.LittleEndian.AppendUint32(data, record.Storing[n].Time)
+				data = append(data, record.Storing[n].Signature[:]...)
 			}
 		}
 
