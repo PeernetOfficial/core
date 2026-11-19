@@ -33,15 +33,12 @@ type Requests struct {
 	FindSelf        bool              // A_FIND_SELF: request closest peers to the sender
 	FindPeer        [][]byte          // A_FIND_PEER: Peer IDs to request closest peers for
 	FindBlockchain  [][]byte          // B_FIND_BLOCKCHAIN: Peer IDs to request storing peers for
-	FindFile        [][]byte          // B_FIND_FILE: file hashes to request storing peers for
-	FindFileEmbed   [][]byte          // B_FIND_FILE_EMBED: file hashes to request storing peers for, or the file itself if it fits into the packet
 	StoreBlockchain []BlockchainStore // B_STORE_BLOCKCHAIN: blockchains the sender stores
-	StoreFile       []FileStore       // B_STORE_FILE: files the sender stores
 }
 
 // IsEmpty is true if there are no requests.
 func (r *Requests) IsEmpty() bool {
-	return r == nil || !r.FindSelf && len(r.FindPeer) == 0 && len(r.FindBlockchain) == 0 && len(r.FindFile) == 0 && len(r.FindFileEmbed) == 0 && len(r.StoreBlockchain) == 0 && len(r.StoreFile) == 0
+	return r == nil || !r.FindSelf && len(r.FindPeer) == 0 && len(r.FindBlockchain) == 0 && len(r.StoreBlockchain) == 0
 }
 
 // BlockchainStore is one item of B_STORE_BLOCKCHAIN: a blockchain the sender stores.
@@ -49,13 +46,6 @@ type BlockchainStore struct {
 	PublicKey ed25519.PublicKey // Peer ID of the blockchain
 	Height    uint64            // Blockchain height stored
 	Version   uint64            // Blockchain version stored
-}
-
-// FileStore is one item of B_STORE_FILE: a file the sender stores.
-type FileStore struct {
-	Hash []byte // Blake3 hash of the file
-	Size uint64 // Size of the file
-	Type uint8  // Type of the file: 0 = File, 1 = Header file containing list of parts
 }
 
 // Features are sent as bit array in the Announcement message.
@@ -69,17 +59,11 @@ const (
 	RequestAFindSelf        = 0 // A_FIND_SELF: request closest peers to the sender (DHT A)
 	RequestAFindPeer        = 1 // A_FIND_PEER: request closest peers to each Peer ID (DHT A)
 	RequestBFindBlockchain  = 2 // B_FIND_BLOCKCHAIN: request peers that store the blockchain of each Peer ID (DHT B)
-	RequestBFindFile        = 3 // B_FIND_FILE: request peers that store each file (DHT B)
-	RequestBFindFileEmbed   = 4 // B_FIND_FILE_EMBED: as B_FIND_FILE, but the file itself if the receiver stores it and it fits into the packet (DHT B)
-	RequestBStoreBlockchain = 5 // B_STORE_BLOCKCHAIN: sender indicates storing the listed blockchains (DHT B)
-	RequestBStoreFile       = 6 // B_STORE_FILE: sender indicates storing the listed files (DHT B)
+	RequestBStoreBlockchain = 3 // B_STORE_BLOCKCHAIN: sender indicates storing the listed blockchains (DHT B)
 )
 
-// Sizes of the fixed-size list items in request records.
-const (
-	blockchainStoreSize = 48 // B_STORE_BLOCKCHAIN item: Peer ID (32) + height (8) + version (8)
-	fileStoreSize       = 41 // B_STORE_FILE item: hash (32) + size (8) + type (1)
-)
+// blockchainStoreSize is the size of one item of B_STORE_BLOCKCHAIN: Peer ID (32) + height (8) + version (8).
+const blockchainStoreSize = 48
 
 // announcementPayloadHeaderSize is the size of the Announcement and Response payload header up to the User Agent.
 const announcementPayloadHeaderSize = 23
@@ -196,7 +180,7 @@ func DecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error
 		case RequestAFindSelf:
 			result.FindSelf = true
 
-		case RequestAFindPeer, RequestBFindBlockchain, RequestBFindFile, RequestBFindFileEmbed:
+		case RequestAFindPeer, RequestBFindBlockchain:
 			keys, valid := decodeKeyList(record.Data)
 			if !valid {
 				return nil, errors.New("announcement: invalid key list")
@@ -207,10 +191,6 @@ func DecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error
 				result.FindPeer = append(result.FindPeer, keys...)
 			case RequestBFindBlockchain:
 				result.FindBlockchain = append(result.FindBlockchain, keys...)
-			case RequestBFindFile:
-				result.FindFile = append(result.FindFile, keys...)
-			case RequestBFindFileEmbed:
-				result.FindFileEmbed = append(result.FindFileEmbed, keys...)
 			}
 
 		case RequestBStoreBlockchain:
@@ -225,20 +205,6 @@ func DecodeAnnouncement(msg *MessageRaw) (result *MessageAnnouncement, err error
 				item.Version = binary.LittleEndian.Uint64(data[40 : 40+8])
 
 				result.StoreBlockchain = append(result.StoreBlockchain, item)
-			}
-
-		case RequestBStoreFile:
-			if len(record.Data)%fileStoreSize != 0 {
-				return nil, errors.New("announcement: invalid B_STORE_FILE list")
-			}
-
-			for data := record.Data; len(data) > 0; data = data[fileStoreSize:] {
-				item := FileStore{Hash: make([]byte, HashSize)}
-				copy(item.Hash, data[0:32])
-				item.Size = binary.LittleEndian.Uint64(data[32 : 32+8])
-				item.Type = data[40]
-
-				result.StoreFile = append(result.StoreFile, item)
 			}
 		}
 	}
@@ -376,8 +342,6 @@ func EncodeAnnouncement(sendUA bool, requests *Requests, features byte, blockcha
 
 		b.addList(RequestAFindPeer, requests.FindPeer, HashSize)
 		b.addList(RequestBFindBlockchain, requests.FindBlockchain, HashSize)
-		b.addList(RequestBFindFile, requests.FindFile, HashSize)
-		b.addList(RequestBFindFileEmbed, requests.FindFileEmbed, HashSize)
 
 		var items [][]byte
 		for _, item := range requests.StoreBlockchain {
@@ -388,16 +352,6 @@ func EncodeAnnouncement(sendUA bool, requests *Requests, features byte, blockcha
 			items = append(items, data)
 		}
 		b.addList(RequestBStoreBlockchain, items, blockchainStoreSize)
-
-		items = nil
-		for _, item := range requests.StoreFile {
-			data := make([]byte, fileStoreSize)
-			copy(data[0:32], item.Hash)
-			binary.LittleEndian.PutUint64(data[32:32+8], item.Size)
-			data[40] = item.Type
-			items = append(items, data)
-		}
-		b.addList(RequestBStoreFile, items, fileStoreSize)
 	}
 
 	b.finish(false) // SEQUENCE_LAST is 0 in an announcement

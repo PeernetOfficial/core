@@ -120,13 +120,7 @@ func (peer *PeerInfo) sendTraverse(packet *protocol.PacketRaw, receiverEnd ed255
 // sendRelay sends a packet to the end receiver in a relay message via the peer, which is the relay. The packet must be an Announcement or a Response.
 // The embedded packet is encrypted for the end receiver, with the Peer ID of the relay followed by the command number of the Relay message as additional authenticated data.
 func (peer *PeerInfo) sendRelay(packet *protocol.PacketRaw, receiverEnd ed25519.PublicKey) (err error) {
-	switch packet.Command {
-	case protocol.CommandAnnouncement:
-		if packet, err = relayAnnouncement(packet); err != nil {
-			return err
-		}
-	case protocol.CommandResponse:
-	default:
+	if packet.Command != protocol.CommandAnnouncement && packet.Command != protocol.CommandResponse {
 		return errors.New("relay: packet is not an Announcement or a Response")
 	}
 
@@ -158,31 +152,6 @@ func (peer *PeerInfo) sendRelayNoResponse(packet *protocol.PacketRaw, receiverEn
 			peer.sendRelay(packet, receiverEnd)
 		}
 	})
-}
-
-// relayAnnouncement returns the Announcement as it is sent in a relay message. An Announcement in a relay message carries no B_FIND_FILE_EMBED request:
-// such requests are sent as B_FIND_FILE. An Announcement without them is returned as is.
-func relayAnnouncement(packet *protocol.PacketRaw) (relayed *protocol.PacketRaw, err error) {
-	announce, err := protocol.DecodeAnnouncement(&protocol.MessageRaw{PacketRaw: *packet})
-	if err != nil {
-		return nil, err
-	} else if len(announce.FindFileEmbed) == 0 {
-		return packet, nil
-	}
-
-	requests := announce.Requests
-	requests.FindFile = append(requests.FindFile, requests.FindFileEmbed...)
-	requests.FindFileEmbed = nil
-
-	payloads := protocol.EncodeAnnouncement(announce.UserAgent != "", &requests, announce.Features, announce.BlockchainHeight, announce.BlockchainVersion, announce.UserAgent)
-	if len(payloads) != 1 {
-		return nil, errors.New("relay: announcement does not fit into one message")
-	}
-
-	relayed = &protocol.PacketRaw{Protocol: packet.Protocol, Command: packet.Command, Sequence: packet.Sequence, Payload: payloads[0]}
-	relayed.SetSelfReportedPorts(announce.PortInternal, announce.PortExternal)
-
-	return relayed, nil
 }
 
 // sendTransfer sends a transfer message

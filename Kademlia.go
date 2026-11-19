@@ -25,11 +25,6 @@ const bucketRefreshTime = 5 * time.Minute
 func (backend *Backend) initKademlia() {
 	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.peerPublicKey}, 256, bucketSize, alpha, beta)
 
-	// SendRequestStore sends a store message to the remote node. I.e. asking it to store the given key-value
-	backend.nodesDHT.SendRequestStore = func(node *dht.Node, key []byte, dataSize uint64) {
-		node.Info.(*PeerInfo).sendAnnouncementStore(key, dataSize)
-	}
-
 	// SendRequest sends the announcement matching the action of the information request to the nodes.
 	backend.nodesDHT.SendRequest = func(request *dht.InformationRequest) {
 		for _, node := range request.Nodes {
@@ -38,10 +33,6 @@ func (backend *Backend) initKademlia() {
 			switch request.Action {
 			case dht.ActionFindNode:
 				peer.sendAnnouncementFindPeer(request)
-			case dht.ActionFindValue:
-				peer.sendAnnouncementFindFileEmbed(request)
-			case dht.ActionFindValueClosest:
-				peer.sendAnnouncementFindFile(request)
 			}
 		}
 	}
@@ -137,62 +128,11 @@ func (peer *PeerInfo) sendAnnouncementFindPeer(request *dht.InformationRequest) 
 	}
 }
 
-// sendAnnouncementFindFile sends B_FIND_FILE for the requested key: the peers that store the file, and peers close to the key.
-func (peer *PeerInfo) sendAnnouncementFindFile(request *dht.InformationRequest) {
-	peer.sendAnnouncement(false, &protocol.Requests{FindFile: [][]byte{request.Key}}, request)
-}
-
-// sendAnnouncementFindFileEmbed sends B_FIND_FILE_EMBED for the requested key: the file itself if it fits into the packet, otherwise as B_FIND_FILE.
-func (peer *PeerInfo) sendAnnouncementFindFileEmbed(request *dht.InformationRequest) {
-	peer.sendAnnouncement(false, &protocol.Requests{FindFileEmbed: [][]byte{request.Key}}, request)
-}
-
-// sendAnnouncementStore sends B_STORE_FILE for the file.
-func (peer *PeerInfo) sendAnnouncementStore(fileHash []byte, fileSize uint64) {
-	peer.sendAnnouncement(false, &protocol.Requests{StoreFile: []protocol.FileStore{{Hash: fileHash, Size: fileSize, Type: 0}}}, nil)
-}
-
 // ---- CORE DATA FUNCTIONS ----
 
 // Data2Hash returns the hash for the data
 func Data2Hash(data []byte) (hash []byte) {
 	return protocol.HashData(data)
-}
-
-// GetData returns the requested data. It checks first the local store and then tries via DHT. The sender is the peer ID of the peer that provided the data.
-func (backend *Backend) GetData(hash []byte) (data []byte, senderPublicKey []byte, found bool) {
-	if data, found = backend.GetDataLocal(hash); found {
-		return data, backend.peerPublicKey, found
-	}
-
-	return backend.GetDataDHT(hash)
-}
-
-// GetDataLocal returns data from the local warehouse.
-func (backend *Backend) GetDataLocal(hash []byte) (data []byte, found bool) {
-	return backend.dhtStore.Get(hash)
-}
-
-// GetDataDHT requests data via DHT. The sender is the peer ID of the peer that provided the data.
-func (backend *Backend) GetDataDHT(hash []byte) (data []byte, senderPublicKey []byte, found bool) {
-	data, senderPublicKey, found, _ = backend.nodesDHT.Get(hash)
-	return data, senderPublicKey, found
-}
-
-// StoreDataLocal stores data into the local warehouse.
-func (backend *Backend) StoreDataLocal(data []byte) error {
-	key := protocol.HashData(data)
-	return backend.dhtStore.Set(key, data)
-}
-
-// StoreDataDHT stores data locally and informs closestCount peers in the DHT about it.
-// Remote peers may choose to keep a record (in case another peers asks) or mirror the full data.
-func (backend *Backend) StoreDataDHT(data []byte, closestCount int) error {
-	key := protocol.HashData(data)
-	if err := backend.dhtStore.Set(key, data); err != nil {
-		return err
-	}
-	return backend.nodesDHT.Store(key, uint64(len(data)), closestCount)
 }
 
 // ---- NODE FUNCTIONS ----

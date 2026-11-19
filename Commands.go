@@ -24,7 +24,7 @@ const respondClosesContactsCount = 5
 // Maximum count of addresses per family in a peer record, by the response record that carries it.
 const (
 	respondAddressesMaxDHTA = protocol.PeerRecordAddressesMax // A_RESPONSE_SELF, A_RESPONSE_PEER
-	respondAddressesMaxDHTB = 1                               // B_RESPONSE_BLOCKCHAIN, B_RESPONSE_FILE
+	respondAddressesMaxDHTB = 1                               // B_RESPONSE_BLOCKCHAIN
 )
 
 // respondPeerRecordsSizeTarget is the target size in bytes of the peer records of the closest peers per request key.
@@ -34,7 +34,7 @@ const (
 // A response that carries the User Agent or a storing peer record is larger.
 const respondPeerRecordsSizeTarget = 380
 
-// announcementMaxKeys is the maximum number of keys answered per announcement across A_FIND_PEER, B_FIND_BLOCKCHAIN and B_FIND_FILE. Keys beyond that are declined (no response record).
+// announcementMaxKeys is the maximum number of keys answered per announcement across A_FIND_PEER and B_FIND_BLOCKCHAIN. Keys beyond that are declined (no response record).
 const announcementMaxKeys = 20
 
 // cmdAnouncement handles an incoming announcement. Connection is nil for an announcement that was embedded in a Traverse or Relay message.
@@ -96,48 +96,9 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		records = append(records, record)
 	}
 
-	// B_FIND_FILE: self if the file is stored here, and peers close to the key
-	for _, key := range msg.FindFile {
-		if keyBudget == 0 {
-			break
-		}
-		keyBudget--
-		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBFindFile, key, nil)
-
-		record := protocol.ResponseRecord{Type: protocol.ResponseBFile, Key: key, Closest: closestPeers(key, respondAddressesMaxDHTB), IsLast: true}
-		if stored, _ := peer.announcementGetData(key); stored {
-			record.Storing = []protocol.StoringPeer{{PeerRecord: peer.Backend.selfPeerRecord()}}
-		}
-		records = append(records, record)
-	}
-
-	// B_FIND_FILE_EMBED: the file embedded if stored here and it fits into the packet, otherwise as B_FIND_FILE
-	for _, key := range msg.FindFileEmbed {
-		if keyBudget == 0 {
-			break
-		}
-		keyBudget--
-		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBFindFileEmbed, key, nil)
-
-		stored, data := peer.announcementGetData(key)
-		if stored && len(data) > 0 {
-			records = append(records, protocol.ResponseRecord{Type: protocol.ResponseBFileEmbed, Key: key, Data: data})
-			continue
-		}
-
-		record := protocol.ResponseRecord{Type: protocol.ResponseBFile, Key: key, Closest: closestPeers(key, respondAddressesMaxDHTB), IsLast: true}
-		if stored {
-			record.Storing = []protocol.StoringPeer{{PeerRecord: peer.Backend.selfPeerRecord()}}
-		}
-		records = append(records, record)
-	}
-
-	// B_STORE_BLOCKCHAIN, B_STORE_FILE: listings of what other peers store are not kept. Store requests do not trigger a response.
+	// B_STORE_BLOCKCHAIN: listings of what other peers store are not kept. Store requests do not trigger a response.
 	for n := range msg.StoreBlockchain {
 		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBStoreBlockchain, msg.StoreBlockchain[n].PublicKey, &msg.StoreBlockchain[n])
-	}
-	for n := range msg.StoreFile {
-		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBStoreFile, msg.StoreFile[n].Hash, &msg.StoreFile[n])
 	}
 
 	sendUA := msg.UserAgent != "" // Send user agent if one was provided. Per protocol the first announcement message must have the User Agent set.
@@ -230,20 +191,13 @@ func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Con
 			}
 
 			switch record.Type {
-			case protocol.ResponseASelf, protocol.ResponseAPeer, protocol.ResponseBBlockchain, protocol.ResponseBFile:
+			case protocol.ResponseASelf, protocol.ResponseAPeer, protocol.ResponseBBlockchain:
 				var storing []protocol.PeerRecord
 				for n := range record.Storing {
 					storing = append(storing, record.Storing[n].PeerRecord)
 				}
 
 				info.QueueResult(&dht.NodeMessage{SenderID: peer.PublicKey, Closest: peer.records2Nodes(record.Closest, connection.IsLocal()), Storing: peer.records2Nodes(storing, connection.IsLocal())})
-
-			case protocol.ResponseBFileEmbed:
-				info.QueueResult(&dht.NodeMessage{SenderID: peer.PublicKey, Data: record.Data})
-
-				info.Done()
-				info.Terminate() // file was found, terminate the request.
-				return
 			}
 		}
 

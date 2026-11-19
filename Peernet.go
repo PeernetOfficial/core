@@ -14,7 +14,6 @@ import (
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/search"
-	"github.com/PeernetOfficial/core/store"
 	"github.com/PeernetOfficial/core/warehouse"
 )
 
@@ -60,7 +59,6 @@ func Init(UserAgent string, ConfigFilename string, Filters *Filters, ConfigOut i
 	backend.initSeedList()
 	initMulticastIPv6()
 	initBroadcastIPv4()
-	backend.initStore()
 	backend.initNetwork()
 	backend.initBlockchainCache()
 
@@ -95,7 +93,6 @@ type Backend struct {
 	GlobalBlockchainCache *BlockchainCache         // Caches blockchains of other peers.
 	SearchIndex           *search.SearchIndexStore // Search index of blockchain records.
 	networks              *Networks                // All connected networks.
-	dhtStore              store.Store              // dhtStore contains all key-value data served via DHT
 	UserBlockchain        *blockchain.Blockchain   // UserBlockchain is the user's blockchain and exports functions to directly read and write it
 	UserWarehouse         *warehouse.Warehouse     // UserWarehouse is the user's warehouse for storing files that are shared
 	nodesDHT              *dht.DHT                 // Nodes connected in the DHT.

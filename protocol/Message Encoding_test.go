@@ -116,39 +116,55 @@ func TestAnnouncementRequests(t *testing.T) {
 		FindSelf:        true,
 		FindPeer:        testKeys(t, 2),
 		FindBlockchain:  testKeys(t, 1),
-		FindFile:        testKeys(t, 3),
-		FindFileEmbed:   testKeys(t, 2),
 		StoreBlockchain: []BlockchainStore{{PublicKey: testKey(t), Height: 12, Version: 2}},
-		StoreFile:       []FileStore{{Hash: HashData([]byte("a")), Size: 1, Type: 0}, {Hash: HashData([]byte("b")), Size: 99, Type: 1}},
 	}
 
 	packets := EncodeAnnouncement(false, requests, 0, 0, 0, "")
 	if len(packets) != 1 {
 		t.Fatalf("expected 1 packet, got %d", len(packets))
 	}
-	if packets[0][announcementPayloadHeaderSize] != 7 {
-		t.Fatalf("expected 7 records, got %d", packets[0][announcementPayloadHeaderSize])
+	if packets[0][announcementPayloadHeaderSize] != 4 {
+		t.Fatalf("expected 4 records, got %d", packets[0][announcementPayloadHeaderSize])
+	}
+
+	// The records in the payload: type (1), size of data (2), data. The types are the numbers of the whitepaper.
+	expected := []struct {
+		recordType uint8
+		size       int
+	}{
+		{0, 0},      // A_FIND_SELF
+		{1, 2 * 32}, // A_FIND_PEER
+		{2, 32},     // B_FIND_BLOCKCHAIN
+		{3, 48},     // B_STORE_BLOCKCHAIN
+	}
+	offset := announcementPayloadHeaderSize + 1
+	for n, record := range expected {
+		if offset+recordHeaderSize > len(packets[0]) {
+			t.Fatalf("record %d: payload too short", n)
+		}
+		if recordType, size := packets[0][offset], int(binary.LittleEndian.Uint16(packets[0][offset+1:offset+3])); recordType != record.recordType || size != record.size {
+			t.Fatalf("record %d: type %d with %d bytes data, expected type %d with %d bytes", n, recordType, size, record.recordType, record.size)
+		}
+		offset += recordHeaderSize + record.size
+	}
+	if offset != len(packets[0]) {
+		t.Fatalf("payload of %d bytes, expected %d", len(packets[0]), offset)
 	}
 
 	result := decodeAll(t, packets)[0]
-	if !result.FindSelf || len(result.FindPeer) != 2 || len(result.FindBlockchain) != 1 || len(result.FindFile) != 3 || len(result.FindFileEmbed) != 2 || len(result.StoreBlockchain) != 1 || len(result.StoreFile) != 2 {
+	if !result.FindSelf || len(result.FindPeer) != 2 || len(result.FindBlockchain) != 1 || len(result.StoreBlockchain) != 1 {
 		t.Fatal("record counts mismatch")
 	}
-	for n := range requests.FindFile {
-		if !bytes.Equal(result.FindFile[n], requests.FindFile[n]) {
-			t.Fatal("B_FIND_FILE key mismatch")
+	for n := range requests.FindPeer {
+		if !bytes.Equal(result.FindPeer[n], requests.FindPeer[n]) {
+			t.Fatal("A_FIND_PEER key mismatch")
 		}
 	}
-	for n := range requests.FindFileEmbed {
-		if !bytes.Equal(result.FindFileEmbed[n], requests.FindFileEmbed[n]) {
-			t.Fatal("B_FIND_FILE_EMBED key mismatch")
-		}
+	if !bytes.Equal(result.FindBlockchain[0], requests.FindBlockchain[0]) {
+		t.Fatal("B_FIND_BLOCKCHAIN key mismatch")
 	}
 	if !result.StoreBlockchain[0].PublicKey.Equal(requests.StoreBlockchain[0].PublicKey) || result.StoreBlockchain[0].Height != 12 || result.StoreBlockchain[0].Version != 2 {
 		t.Fatal("B_STORE_BLOCKCHAIN mismatch")
-	}
-	if !bytes.Equal(result.StoreFile[1].Hash, requests.StoreFile[1].Hash) || result.StoreFile[1].Size != 99 || result.StoreFile[1].Type != 1 {
-		t.Fatal("B_STORE_FILE mismatch")
 	}
 }
 
@@ -175,19 +191,26 @@ func TestAnnouncementSplit(t *testing.T) {
 }
 
 func TestAnnouncementUnknownRecord(t *testing.T) {
-	packets := EncodeAnnouncement(false, &Requests{FindSelf: true}, 0, 0, 0, "")
-	raw := packets[0]
+	// Types 4 to 6 are not assigned. The sizes are those of a key and of the list items that had these types.
+	for _, unknown := range []struct {
+		recordType uint8
+		size       int
+	}{{200, 5}, {4, 32}, {5, 48}, {6, 41}} {
+		packets := EncodeAnnouncement(false, &Requests{FindSelf: true}, 0, 0, 0, "")
+		raw := packets[0]
 
-	// append a record of unknown type 200 with 5 bytes data, then a known A_FIND_PEER record
-	raw[announcementPayloadHeaderSize] = 3
-	raw = append(raw, 200, 5, 0, 1, 2, 3, 4, 5)
-	key := testKey(t)
-	raw = append(raw, RequestAFindPeer, 32, 0)
-	raw = append(raw, key...)
+		// append a record of the unknown type, then a known A_FIND_PEER record
+		raw[announcementPayloadHeaderSize] = 3
+		raw = append(raw, unknown.recordType, byte(unknown.size), 0)
+		raw = append(raw, bytes.Repeat([]byte{0xFF}, unknown.size)...)
+		key := testKey(t)
+		raw = append(raw, RequestAFindPeer, 32, 0)
+		raw = append(raw, key...)
 
-	result := decodeAll(t, [][]byte{raw})[0]
-	if !result.FindSelf || len(result.FindPeer) != 1 || !bytes.Equal(result.FindPeer[0], key) {
-		t.Fatal("unknown record was not skipped correctly")
+		result := decodeAll(t, [][]byte{raw})[0]
+		if !result.FindSelf || len(result.FindPeer) != 1 || !bytes.Equal(result.FindPeer[0], key) || len(result.FindBlockchain) != 0 || len(result.StoreBlockchain) != 0 {
+			t.Fatalf("record of unknown type %d was not skipped correctly", unknown.recordType)
+		}
 	}
 }
 
@@ -197,6 +220,8 @@ func TestAnnouncementInvalid(t *testing.T) {
 		append(make([]byte, announcementPayloadHeaderSize), 1),                                   // count 1 but no record
 		append(make([]byte, announcementPayloadHeaderSize), 1, RequestAFindPeer, 32, 0, 1, 2, 3), // record data overflow
 		append(make([]byte, announcementPayloadHeaderSize), 1, RequestAFindPeer, 3, 0, 1, 2, 3),  // key list not a multiple of 32
+		// list of blockchain records not a multiple of 48
+		append(append(make([]byte, announcementPayloadHeaderSize), 1, RequestBStoreBlockchain, 32, 0), make([]byte, 32)...),
 	}
 	invalid[0][22] = 0
 
@@ -210,7 +235,6 @@ func TestAnnouncementInvalid(t *testing.T) {
 }
 
 func TestResponseRecords(t *testing.T) {
-	fileData := []byte("embedded file content")
 	keyPeer := testKey(t)
 	keyBlockchain := testKey(t)
 	keyFile := HashData([]byte("some file"))
@@ -224,10 +248,6 @@ func TestResponseRecords(t *testing.T) {
 		{Type: ResponseBBlockchain, Key: keyBlockchain, Storing: []StoringPeer{{PeerRecord: testPeerRecordAddresses(t, 7, 0, 0), BlockchainHeight: 10, BlockchainVersion: 1}, {PeerRecord: testPeerRecord(t, 8), BlockchainHeight: 11, BlockchainVersion: 2}}, Closest: []PeerRecord{testPeerRecord(t, 9), testPeerRecordAddresses(t, 10, 0, 1)}, IsLast: true},
 		{Type: ResponseBBlockchain, Key: keyBlockchain, Closest: []PeerRecord{testPeerRecord(t, 11)}, IsLast: false},
 		{Type: ResponseBBlockchain, Key: keyFile, IsLast: true}, // not found
-		{Type: ResponseBFile, Key: keyFile, Storing: []StoringPeer{{PeerRecord: testPeerRecordAddresses(t, 12, 0, 0)}, {PeerRecord: testPeerRecordAddresses(t, 13, 1, 0)}}, Closest: []PeerRecord{testPeerRecord(t, 14)}, IsLast: false},
-		{Type: ResponseBFile, Key: keyFile, Storing: []StoringPeer{{PeerRecord: testPeerRecord(t, 15)}}, IsLast: true},
-		{Type: ResponseBFile, Key: keyBlockchain, IsLast: true}, // not found
-		{Type: ResponseBFileEmbed, Key: HashData(fileData), Data: fileData},
 	}
 
 	packets, err := EncodeResponse(true, records, 1<<FeatureIPv6Listen, 5, 1, "Test Client/1.0")
@@ -254,7 +274,7 @@ func TestResponseRecords(t *testing.T) {
 
 	for n, record := range result.Records {
 		want := records[n]
-		if record.Type != want.Type || !bytes.Equal(record.Key, want.Key) || record.IsLast != want.IsLast || len(record.Closest) != len(want.Closest) || len(record.Storing) != len(want.Storing) || !bytes.Equal(record.Data, want.Data) {
+		if record.Type != want.Type || !bytes.Equal(record.Key, want.Key) || record.IsLast != want.IsLast || len(record.Closest) != len(want.Closest) || len(record.Storing) != len(want.Storing) {
 			t.Fatalf("record %d mismatch: %+v", n, record)
 		}
 		for m := range want.Closest {
@@ -349,7 +369,7 @@ func TestPeerRecordSize(t *testing.T) {
 func TestResponseCounts(t *testing.T) {
 	key := testKey(t)
 	closest := []PeerRecord{testPeerRecord(t, 1), testPeerRecord(t, 2), testPeerRecord(t, 3)}
-	storing := []StoringPeer{{PeerRecord: testPeerRecord(t, 4)}, {PeerRecord: testPeerRecord(t, 5)}}
+	storing := []StoringPeer{{PeerRecord: testPeerRecord(t, 4), BlockchainHeight: 10, BlockchainVersion: 1}, {PeerRecord: testPeerRecord(t, 5), BlockchainHeight: 11, BlockchainVersion: 2}}
 
 	tests := []struct {
 		record ResponseRecord
@@ -364,10 +384,8 @@ func TestResponseCounts(t *testing.T) {
 		{ResponseRecord{Type: ResponseAPeer, Key: key, IsLast: true}, 32, []byte{0x80}}, // not found
 		{ResponseRecord{Type: ResponseBBlockchain, Key: key, Storing: storing, Closest: closest, IsLast: true}, 32, []byte{0x80 | 2, 3}},
 		{ResponseRecord{Type: ResponseBBlockchain, Key: key, Storing: storing, Closest: closest}, 32, []byte{2, 3}},
+		{ResponseRecord{Type: ResponseBBlockchain, Key: key, Closest: closest}, 32, []byte{0, 3}},
 		{ResponseRecord{Type: ResponseBBlockchain, Key: key, IsLast: true}, 32, []byte{0x80, 0}}, // not found
-		{ResponseRecord{Type: ResponseBFile, Key: key, Storing: storing, Closest: closest, IsLast: true}, 32, []byte{0x80 | 2, 3}},
-		{ResponseRecord{Type: ResponseBFile, Key: key, Closest: closest}, 32, []byte{0, 3}},
-		{ResponseRecord{Type: ResponseBFile, Key: key, IsLast: true}, 32, []byte{0x80, 0}}, // not found
 	}
 
 	for n, test := range tests {
@@ -376,10 +394,7 @@ func TestResponseCounts(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		size := test.offset + len(test.counts) + len(test.record.Closest)*66 + len(test.record.Storing)*66
-		if test.record.Type == ResponseBBlockchain {
-			size += len(test.record.Storing) * 16
-		}
+		size := test.offset + len(test.counts) + len(test.record.Closest)*66 + len(test.record.Storing)*(66+16)
 		if len(data) != size || !bytes.Equal(data[test.offset:test.offset+len(test.counts)], test.counts) {
 			t.Fatalf("test %d: %d bytes with counts %v, expected %d bytes with counts %v", n, len(data), data[test.offset:test.offset+len(test.counts)], size, test.counts)
 		}
@@ -402,7 +417,6 @@ func TestResponseTrailingData(t *testing.T) {
 		{Type: ResponseAPeer, Key: key, Closest: []PeerRecord{testPeerRecord(t, 2), testPeerRecordAddresses(t, 3, 3, 3)}, IsLast: true},
 		{Type: ResponseAPeer, Key: key, IsLast: true}, // not found
 		{Type: ResponseBBlockchain, Key: key, Storing: []StoringPeer{{PeerRecord: testPeerRecordAddresses(t, 4, 0, 0), BlockchainHeight: 10, BlockchainVersion: 1}}, Closest: []PeerRecord{testPeerRecord(t, 5)}, IsLast: true},
-		{Type: ResponseBFile, Key: key, Storing: []StoringPeer{{PeerRecord: testPeerRecordAddresses(t, 6, 0, 0)}}, Closest: []PeerRecord{testPeerRecord(t, 7)}, IsLast: true},
 	}
 
 	for n := range records {
@@ -463,7 +477,6 @@ func TestResponseEncodeLimits(t *testing.T) {
 		{Type: ResponseASelf, Closest: closest127, IsLast: true},
 		{Type: ResponseAPeer, Key: key, Closest: closest127, IsLast: true},
 		{Type: ResponseBBlockchain, Key: key, Storing: storing127, Closest: closest127, IsLast: true},
-		{Type: ResponseBFile, Key: key, Storing: storing127, Closest: closest127, IsLast: true},
 	}
 	for n := range accepted {
 		data, err := encodeResponseRecord(&accepted[n])
@@ -481,8 +494,6 @@ func TestResponseEncodeLimits(t *testing.T) {
 		{Type: ResponseAPeer, Key: key, Closest: closest128, IsLast: true},
 		{Type: ResponseBBlockchain, Key: key, Storing: storing128, IsLast: true},
 		{Type: ResponseBBlockchain, Key: key, Closest: closest128, IsLast: true},
-		{Type: ResponseBFile, Key: key, Storing: storing128, IsLast: true},
-		{Type: ResponseBFile, Key: key, Closest: closest128, IsLast: true},
 	}
 	for n := range refused {
 		if _, err := encodeResponseRecord(&refused[n]); err == nil {
@@ -561,24 +572,6 @@ func TestResponseSplit(t *testing.T) {
 }
 
 func TestResponseInvalid(t *testing.T) {
-	fileData := []byte("embedded file content")
-
-	// embedded file with wrong hash
-	packets, err := EncodeResponse(false, []ResponseRecord{{Type: ResponseBFileEmbed, Key: HashData([]byte("other")), Data: fileData}}, 0, 0, 0, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	msg := &MessageRaw{PacketRaw: PacketRaw{Command: CommandResponse}}
-	msg.Payload = packets[0]
-	if _, err := DecodeResponse(msg); err == nil {
-		t.Fatal("embedded file with wrong hash accepted")
-	}
-
-	// embedded file too big
-	if _, err := EncodeResponse(false, []ResponseRecord{{Type: ResponseBFileEmbed, Key: HashData(nil), Data: make([]byte, EmbeddedFileSizeMax+1)}}, 0, 0, 0, ""); err == nil {
-		t.Fatal("oversized embedded file accepted")
-	}
-
 	// a count that runs past the data
 	key := testKey(t)
 	peer1, peer2 := testPeerRecord(t, 1), testPeerRecord(t, 2)
@@ -602,11 +595,12 @@ func TestResponseInvalid(t *testing.T) {
 		{ResponseBBlockchain, join(key, []byte{0x80 | 1, 0}, raw1, make([]byte, 15))}, // version cut short
 		{ResponseBBlockchain, join(key, []byte{0x80 | 1, 1}, raw1, make([]byte, 16))}, // closest peer missing
 		{ResponseBBlockchain, join(key, []byte{0x80 | 1})},                            // second count missing
-		{ResponseBFile, join(key, []byte{0x80 | 2, 0}, raw1)},                         // second storing peer missing
-		{ResponseBFile, join(key, []byte{0x80 | 1, 1}, raw1, raw2[:len(raw2)-1])},     // closest peer cut short
-		{ResponseBFile, join(key, []byte{0x80, 127})},                                 // closest peers missing
+		{ResponseBBlockchain, join(key, []byte{0x80 | 2, 0}, raw1, make([]byte, 16))}, // second storing peer missing
+		{ResponseBBlockchain, join(key, []byte{0x80, 127})},                           // closest peers missing
 		{ResponseAPeer, key[:31]},                                                     // key cut short
 		{ResponseAPeer, key},                                                          // count missing
+		// closest peer cut short
+		{ResponseBBlockchain, join(key, []byte{0x80 | 1, 1}, raw1, make([]byte, 16), raw2[:len(raw2)-1])},
 	}
 	for n, test := range overrun {
 		if _, err := DecodeResponse(responseWithRecord(test.recordType, test.data)); err == nil {
@@ -632,7 +626,7 @@ func TestResponseInvalid(t *testing.T) {
 		comparePeerRecord(t, &result.Records[0].Closest[0], &peer1)
 		comparePeerRecord(t, &result.Records[0].Closest[1], &peer2)
 
-		result, err = DecodeResponse(responseWithRecord(ResponseBFile, join(key, []byte{0x80 | 1, 1}, reserved, raw2)))
+		result, err = DecodeResponse(responseWithRecord(ResponseBBlockchain, join(key, []byte{0x80 | 1, 1}, reserved, make([]byte, 16), raw2)))
 		if err != nil || len(result.Records) != 1 || len(result.Records[0].Storing) != 1 || len(result.Records[0].Closest) != 1 {
 			t.Fatalf("response with a storing peer record with bit %d of the address counts set: %v", bit, err)
 		}
@@ -648,20 +642,25 @@ func TestResponseInvalid(t *testing.T) {
 	}
 
 	// bit 7 of the second count is not part of the count
-	result, err := DecodeResponse(responseWithRecord(ResponseBFile, join(key, []byte{1, 0x80 | 1}, raw1, raw2)))
+	result, err := DecodeResponse(responseWithRecord(ResponseBBlockchain, join(key, []byte{1, 0x80 | 1}, raw1, make([]byte, 16), raw2)))
 	if err != nil || len(result.Records) != 1 || len(result.Records[0].Storing) != 1 || len(result.Records[0].Closest) != 1 || result.Records[0].IsLast {
 		t.Fatalf("second count with bit 7 set: %v %+v", err, result)
 	}
 
-	// unknown record type is skipped, following record decoded
-	packets, _ = EncodeResponse(false, []ResponseRecord{{Type: ResponseASelf, IsLast: true}}, 0, 0, 0, "")
-	raw := packets[0]
-	raw[announcementPayloadHeaderSize] = sequenceLastFlag | 3
-	raw = append(raw, 200, 1, 0, 0xFF)
-	raw = append(raw, ResponseASelf, 1, 0, 0x80)
-	msg.Payload = raw
-	result, err = DecodeResponse(msg)
-	if err != nil || len(result.Records) != 2 || result.Records[1].Type != ResponseASelf || !result.Records[1].IsLast {
-		t.Fatalf("unknown record not skipped: %v %+v", err, result)
+	// unknown record type is skipped, following record decoded. Types 3 and 4 are not assigned.
+	for _, unknown := range []uint8{200, 3, 4} {
+		packets, _ := EncodeResponse(false, []ResponseRecord{{Type: ResponseASelf, IsLast: true}}, 0, 0, 0, "")
+		raw := packets[0]
+		raw[announcementPayloadHeaderSize] = sequenceLastFlag | 3
+		raw = append(raw, unknown, 34, 0)
+		raw = append(raw, join(key, []byte{0x80, 0})...)
+		raw = append(raw, ResponseASelf, 1, 0, 0x80)
+
+		msg := &MessageRaw{PacketRaw: PacketRaw{Command: CommandResponse}}
+		msg.Payload = raw
+		result, err = DecodeResponse(msg)
+		if err != nil || len(result.Records) != 2 || result.Records[1].Type != ResponseASelf || !result.Records[1].IsLast {
+			t.Fatalf("record of unknown type %d not skipped: %v %+v", unknown, err, result)
+		}
 	}
 }

@@ -15,7 +15,6 @@ import (
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
-	"github.com/PeernetOfficial/core/store"
 )
 
 // testPeerConnections returns a peer with active connections to the IPs. The first one is the latest connection.
@@ -37,12 +36,12 @@ func testPeerConnections(t *testing.T, backend *Backend, ips ...string) (peer *P
 }
 
 // TestAnnouncementResponseAddresses checks the addresses in the peer records of the response to an announcement:
-// up to 3 per family in A_RESPONSE_SELF and A_RESPONSE_PEER, at most one per family in B_RESPONSE_BLOCKCHAIN and B_RESPONSE_FILE.
+// up to 3 per family in A_RESPONSE_SELF and A_RESPONSE_PEER, at most one per family in B_RESPONSE_BLOCKCHAIN.
 // A peer known only by link-local and loopback addresses is not reported.
 func TestAnnouncementResponseAddresses(t *testing.T) {
 	self, _, _ := ed25519.GenerateKey(rand.Reader)
 
-	backend := &Backend{peerPublicKey: self, UserBlockchain: &blockchain.Blockchain{}, dhtStore: store.NewMemoryStore(), networks: &Networks{}}
+	backend := &Backend{peerPublicKey: self, UserBlockchain: &blockchain.Blockchain{}, networks: &Networks{}}
 	backend.initFilters()
 	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha, beta)
 
@@ -54,13 +53,6 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 	for _, peer := range []*PeerInfo{peerMany, peerOne, peerNotShared, peerLocal} {
 		backend.nodesDHT.AddNode(&dht.Node{ID: peer.PublicKey, Info: peer})
 	}
-
-	fileData := make([]byte, protocol.EmbeddedFileSizeMax+1) // stored, but too big to embed
-	fileHash := protocol.HashData(fileData)
-	if err := backend.dhtStore.Set(fileHash, fileData); err != nil {
-		t.Fatal(err)
-	}
-	fileOther := protocol.HashData([]byte("not stored"))
 
 	// The response is captured before it is sent. The requester has no connection, sending it fails.
 	var records []protocol.ResponseRecord
@@ -74,8 +66,6 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 	announcement.FindSelf = true
 	announcement.FindPeer = [][]byte{peerOne.PublicKey}
 	announcement.FindBlockchain = [][]byte{self, peerOne.PublicKey}
-	announcement.FindFile = [][]byte{fileHash, fileOther}
-	announcement.FindFileEmbed = [][]byte{fileHash}
 
 	requester.cmdAnouncement(announcement, nil)
 
@@ -88,9 +78,6 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 		{protocol.ResponseAPeer, 3, false},
 		{protocol.ResponseBBlockchain, 1, true},
 		{protocol.ResponseBBlockchain, 1, false},
-		{protocol.ResponseBFile, 1, true},
-		{protocol.ResponseBFile, 1, false},
-		{protocol.ResponseBFile, 1, true},
 	}
 
 	if len(records) != len(expected) {
