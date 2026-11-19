@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/dht"
@@ -39,9 +40,9 @@ func testPeerConnections(t *testing.T, backend *Backend, ips ...string) (peer *P
 // up to 3 per family in A_RESPONSE_SELF and A_RESPONSE_PEER, at most one per family in B_RESPONSE_BLOCKCHAIN.
 // A peer known only by link-local and loopback addresses is not reported.
 func TestAnnouncementResponseAddresses(t *testing.T) {
-	self, _, _ := ed25519.GenerateKey(rand.Reader)
+	self, selfPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 
-	backend := &Backend{peerPublicKey: self, UserBlockchain: &blockchain.Blockchain{}, networks: &Networks{}}
+	backend := &Backend{peerPublicKey: self, peerPrivateKey: selfPrivateKey, UserBlockchain: &blockchain.Blockchain{}, networks: &Networks{}}
 	backend.initFilters()
 	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha, beta)
 
@@ -97,6 +98,14 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 			if !storing.PublicKey.Equal(self) || len(storing.IPv4) != 0 || len(storing.IPv6) != 0 {
 				t.Errorf("record %d: storing peer with %d IPv4 and %d IPv6 addresses", n, len(storing.IPv4), len(storing.IPv6))
 			}
+
+			// Its blockchain record is signed by it at the current time.
+			if !protocol.BlockchainRecordValid(self, record.Key, storing.BlockchainVersion, storing.BlockchainHeight, storing.Time, storing.Signature, time.Now()) {
+				t.Errorf("record %d: blockchain record of the storing peer is not valid", n)
+			}
+			if age := time.Now().Unix() - int64(storing.Time); age < 0 || age > 60 {
+				t.Errorf("record %d: blockchain record of the storing peer is %d seconds old", n, age)
+			}
 		}
 
 		// The closest peers are the 2 peers with public addresses. Only local addresses are not shared over a connection that is not local.
@@ -130,6 +139,61 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 	msg := &protocol.MessageRaw{PacketRaw: protocol.PacketRaw{Command: protocol.CommandResponse, Payload: packets[0]}}
 	if decoded, err := protocol.DecodeResponse(msg); err != nil || len(decoded.Records) != len(records) {
 		t.Fatalf("decoding the response: %v", err)
+	}
+}
+
+// TestStoreBlockchainValid checks which blockchain records of a B_STORE_BLOCKCHAIN request are handled: those signed by the sender with a time that is valid.
+func TestStoreBlockchainValid(t *testing.T) {
+	self, _, _ := ed25519.GenerateKey(rand.Reader)
+
+	backend := &Backend{peerPublicKey: self, UserBlockchain: &blockchain.Blockchain{}, networks: &Networks{}}
+	backend.initFilters()
+	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha, beta)
+
+	var handled []*protocol.BlockchainStore
+	backend.Filters.IncomingRequest = func(peer *PeerInfo, RequestType int, Key []byte, Info interface{}) {
+		if RequestType == protocol.RequestBStoreBlockchain {
+			handled = append(handled, Info.(*protocol.BlockchainStore))
+		}
+	}
+
+	senderPublicKey, senderPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+	_, otherPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+	sender := &PeerInfo{Backend: backend, PublicKey: senderPublicKey}
+
+	now := time.Now().Unix()
+
+	// record returns a blockchain record with a time relative to now, signed by the key.
+	record := func(privateKey ed25519.PrivateKey, version, height uint64, timeOffset int64) (record protocol.BlockchainStore) {
+		blockchainPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+		record = protocol.BlockchainStore{PublicKey: blockchainPublicKey, Version: version, Height: height, Time: uint32(now + timeOffset)}
+		record.Signature = protocol.BlockchainRecordSign(privateKey, record.PublicKey, record.Version, record.Height, record.Time)
+		return record
+	}
+
+	changedHeight := record(senderPrivateKey, 1, 4, 0)
+	changedHeight.Height++
+
+	announcement := &protocol.MessageAnnouncement{MessageRaw: &protocol.MessageRaw{}}
+	announcement.StoreBlockchain = []protocol.BlockchainStore{
+		record(senderPrivateKey, 1, 1, 0),        // valid
+		record(otherPrivateKey, 1, 2, 0),         // signed by another peer
+		{PublicKey: self, Version: 1, Height: 3}, // without signature and time
+		changedHeight,                            // height changed after signing
+		record(senderPrivateKey, 1, 5, -25*3600), // 25 hours in the past
+		record(senderPrivateKey, 1, 6, 2*3600),   // 2 hours in the future
+		record(senderPrivateKey, 1, 7, -23*3600), // valid, 23 hours in the past
+		record(senderPrivateKey, 1, 8, 1800),     // valid, 30 minutes in the future
+	}
+
+	sender.cmdAnouncement(announcement, nil)
+
+	if len(handled) != 3 || handled[0].Height != 1 || handled[1].Height != 7 || handled[2].Height != 8 {
+		heights := []uint64{}
+		for _, record := range handled {
+			heights = append(heights, record.Height)
+		}
+		t.Fatalf("blockchain records handled: heights %v, expected 1, 7 and 8", heights)
 	}
 }
 

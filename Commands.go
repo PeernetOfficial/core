@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"time"
 	"uuid"
 
 	"github.com/PeernetOfficial/core/dht"
@@ -91,14 +92,17 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 
 		record := protocol.ResponseRecord{Type: protocol.ResponseBBlockchain, Key: key, Closest: closestPeers(key, respondAddressesMaxDHTB), IsLast: true}
 		if stored, height, version := peer.Backend.blockchainStored(key); stored {
-			record.Storing = []protocol.StoringPeer{{PeerRecord: peer.Backend.selfPeerRecord(), BlockchainHeight: height, BlockchainVersion: version}}
+			record.Storing = []protocol.StoringPeer{peer.Backend.selfStoringPeer(key, version, height)}
 		}
 		records = append(records, record)
 	}
 
-	// B_STORE_BLOCKCHAIN: listings of what other peers store are not kept. Store requests do not trigger a response.
+	// B_STORE_BLOCKCHAIN: a blockchain record that is not valid is ignored. Listings of what other peers store are not kept. Store requests do not trigger a response.
+	now := time.Now()
 	for n := range msg.StoreBlockchain {
-		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBStoreBlockchain, msg.StoreBlockchain[n].PublicKey, &msg.StoreBlockchain[n])
+		if record := &msg.StoreBlockchain[n]; protocol.BlockchainRecordValid(peer.PublicKey, record.PublicKey, record.Version, record.Height, record.Time, record.Signature, now) {
+			peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBStoreBlockchain, record.PublicKey, record)
+		}
 	}
 
 	sendUA := msg.UserAgent != "" // Send user agent if one was provided. Per protocol the first announcement message must have the User Agent set.

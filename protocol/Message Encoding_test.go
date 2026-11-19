@@ -117,7 +117,10 @@ func TestAnnouncementRequests(t *testing.T) {
 		FindSelf:        true,
 		FindPeer:        testKeys(t, 2),
 		FindBlockchain:  testKeys(t, 1),
-		StoreBlockchain: []BlockchainStore{{PublicKey: testKey(t), Height: 12, Version: 2}},
+		StoreBlockchain: []BlockchainStore{{PublicKey: testKey(t), Version: 2, Height: 12, Time: 1795000000}},
+	}
+	for n := range requests.StoreBlockchain[0].Signature {
+		requests.StoreBlockchain[0].Signature[n] = byte(n + 1)
 	}
 
 	packets := EncodeAnnouncement(false, requests, 0, 0, 0, "")
@@ -136,7 +139,7 @@ func TestAnnouncementRequests(t *testing.T) {
 		{0, 0},      // A_FIND_SELF
 		{1, 2 * 32}, // A_FIND_PEER
 		{2, 32},     // B_FIND_BLOCKCHAIN
-		{3, 48},     // B_STORE_BLOCKCHAIN
+		{3, 116},    // B_STORE_BLOCKCHAIN
 	}
 	offset := announcementPayloadHeaderSize + 1
 	for n, record := range expected {
@@ -152,6 +155,12 @@ func TestAnnouncementRequests(t *testing.T) {
 		t.Fatalf("payload of %d bytes, expected %d", len(packets[0]), offset)
 	}
 
+	// The blockchain record is the last record: Peer ID of the blockchain (32), version (8), height (8), time (4), signature (64).
+	store := requests.StoreBlockchain[0]
+	if record := packets[0][offset-116:]; !bytes.Equal(record[0:32], store.PublicKey) || binary.LittleEndian.Uint64(record[32:40]) != 2 || binary.LittleEndian.Uint64(record[40:48]) != 12 || binary.LittleEndian.Uint32(record[48:52]) != 1795000000 || !bytes.Equal(record[52:116], store.Signature[:]) {
+		t.Fatal("blockchain record fields at wrong offsets")
+	}
+
 	result := decodeAll(t, packets)[0]
 	if !result.FindSelf || len(result.FindPeer) != 2 || len(result.FindBlockchain) != 1 || len(result.StoreBlockchain) != 1 {
 		t.Fatal("record counts mismatch")
@@ -164,7 +173,7 @@ func TestAnnouncementRequests(t *testing.T) {
 	if !bytes.Equal(result.FindBlockchain[0], requests.FindBlockchain[0]) {
 		t.Fatal("B_FIND_BLOCKCHAIN key mismatch")
 	}
-	if !result.StoreBlockchain[0].PublicKey.Equal(requests.StoreBlockchain[0].PublicKey) || result.StoreBlockchain[0].Height != 12 || result.StoreBlockchain[0].Version != 2 {
+	if got := result.StoreBlockchain[0]; !got.PublicKey.Equal(store.PublicKey) || got.Version != 2 || got.Height != 12 || got.Time != 1795000000 || got.Signature != store.Signature {
 		t.Fatal("B_STORE_BLOCKCHAIN mismatch")
 	}
 }
@@ -221,8 +230,11 @@ func TestAnnouncementInvalid(t *testing.T) {
 		append(make([]byte, announcementPayloadHeaderSize), 1),                                   // count 1 but no record
 		append(make([]byte, announcementPayloadHeaderSize), 1, RequestAFindPeer, 32, 0, 1, 2, 3), // record data overflow
 		append(make([]byte, announcementPayloadHeaderSize), 1, RequestAFindPeer, 3, 0, 1, 2, 3),  // key list not a multiple of 32
-		// list of blockchain records not a multiple of 48
+		// list of blockchain records not a multiple of 116
 		append(append(make([]byte, announcementPayloadHeaderSize), 1, RequestBStoreBlockchain, 32, 0), make([]byte, 32)...),
+		append(append(make([]byte, announcementPayloadHeaderSize), 1, RequestBStoreBlockchain, 48, 0), make([]byte, 48)...),
+		append(append(make([]byte, announcementPayloadHeaderSize), 1, RequestBStoreBlockchain, 115, 0), make([]byte, 115)...),
+		append(append(make([]byte, announcementPayloadHeaderSize), 1, RequestBStoreBlockchain, 117, 0), make([]byte, 117)...),
 	}
 	invalid[0][22] = 0
 
@@ -246,7 +258,7 @@ func TestResponseRecords(t *testing.T) {
 		{Type: ResponseAPeer, Key: keyPeer, Closest: []PeerRecord{testPeerRecordAddresses(t, 4, 2, 0), testPeerRecordAddresses(t, 5, 0, 2)}, IsLast: true},
 		{Type: ResponseAPeer, Key: keyPeer, Closest: []PeerRecord{testPeerRecord(t, 6)}, IsLast: false},
 		{Type: ResponseAPeer, Key: keyFile, IsLast: true}, // not found
-		{Type: ResponseBBlockchain, Key: keyBlockchain, Storing: []StoringPeer{{PeerRecord: testPeerRecordAddresses(t, 7, 0, 0), BlockchainHeight: 10, BlockchainVersion: 1}, {PeerRecord: testPeerRecord(t, 8), BlockchainHeight: 11, BlockchainVersion: 2}}, Closest: []PeerRecord{testPeerRecord(t, 9), testPeerRecordAddresses(t, 10, 0, 1)}, IsLast: true},
+		{Type: ResponseBBlockchain, Key: keyBlockchain, Storing: []StoringPeer{{PeerRecord: testPeerRecordAddresses(t, 7, 0, 0), BlockchainVersion: 1, BlockchainHeight: 10, Time: 1795000001, Signature: [64]byte{1, 2, 3}}, {PeerRecord: testPeerRecord(t, 8), BlockchainVersion: 2, BlockchainHeight: 11, Time: 1795000002, Signature: [64]byte{63: 4}}}, Closest: []PeerRecord{testPeerRecord(t, 9), testPeerRecordAddresses(t, 10, 0, 1)}, IsLast: true},
 		{Type: ResponseBBlockchain, Key: keyBlockchain, Closest: []PeerRecord{testPeerRecord(t, 11)}, IsLast: false},
 		{Type: ResponseBBlockchain, Key: keyFile, IsLast: true}, // not found
 	}
@@ -283,8 +295,8 @@ func TestResponseRecords(t *testing.T) {
 		}
 		for m := range want.Storing {
 			comparePeerRecord(t, &record.Storing[m].PeerRecord, &want.Storing[m].PeerRecord)
-			if record.Storing[m].BlockchainHeight != want.Storing[m].BlockchainHeight || record.Storing[m].BlockchainVersion != want.Storing[m].BlockchainVersion {
-				t.Fatalf("record %d storing peer %d height/version mismatch", n, m)
+			if record.Storing[m].BlockchainVersion != want.Storing[m].BlockchainVersion || record.Storing[m].BlockchainHeight != want.Storing[m].BlockchainHeight || record.Storing[m].Time != want.Storing[m].Time || record.Storing[m].Signature != want.Storing[m].Signature {
+				t.Fatalf("record %d storing peer %d blockchain record mismatch", n, m)
 			}
 		}
 	}
@@ -354,13 +366,14 @@ func TestPeerRecordSize(t *testing.T) {
 			t.Fatalf("%d IPv4 + %d IPv6 addresses: truncated peer record accepted", test.countIPv4, test.countIPv6)
 		}
 
-		// storing peer record in B_RESPONSE_BLOCKCHAIN: peer record followed by height (8) and version (8)
+		// storing peer record in B_RESPONSE_BLOCKCHAIN: peer record followed by version (8), height (8), time (4) and signature (64)
 		key := testKey(t)
-		data, err := encodeResponseRecord(&ResponseRecord{Type: ResponseBBlockchain, Key: key, Storing: []StoringPeer{{PeerRecord: want, BlockchainHeight: 7, BlockchainVersion: 3}}, IsLast: true})
+		signature := [64]byte{0: 0xA1, 63: 0xA2}
+		data, err := encodeResponseRecord(&ResponseRecord{Type: ResponseBBlockchain, Key: key, Storing: []StoringPeer{{PeerRecord: want, BlockchainVersion: 3, BlockchainHeight: 7, Time: 1795000000, Signature: signature}}, IsLast: true})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(data) != 32+2+test.size+16 || binary.LittleEndian.Uint64(data[34+test.size:]) != 7 || binary.LittleEndian.Uint64(data[34+test.size+8:]) != 3 {
+		if o := 34 + test.size; len(data) != o+84 || binary.LittleEndian.Uint64(data[o:]) != 3 || binary.LittleEndian.Uint64(data[o+8:]) != 7 || binary.LittleEndian.Uint32(data[o+16:]) != 1795000000 || !bytes.Equal(data[o+20:o+84], signature[:]) {
 			t.Fatalf("%d IPv4 + %d IPv6 addresses: storing peer record in B_RESPONSE_BLOCKCHAIN of %d bytes", test.countIPv4, test.countIPv6, len(data)-34)
 		}
 	}
@@ -395,7 +408,7 @@ func TestResponseCounts(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		size := test.offset + len(test.counts) + len(test.record.Closest)*66 + len(test.record.Storing)*(66+16)
+		size := test.offset + len(test.counts) + len(test.record.Closest)*66 + len(test.record.Storing)*(66+84)
 		if len(data) != size || !bytes.Equal(data[test.offset:test.offset+len(test.counts)], test.counts) {
 			t.Fatalf("test %d: %d bytes with counts %v, expected %d bytes with counts %v", n, len(data), data[test.offset:test.offset+len(test.counts)], size, test.counts)
 		}
@@ -592,16 +605,17 @@ func TestResponseInvalid(t *testing.T) {
 		{ResponseASelf, join([]byte{0x80 | 2}, raw1, raw2[:len(raw2)-1])},
 		{ResponseAPeer, join(key, []byte{0x80 | 2})},
 		{ResponseAPeer, join(key, []byte{0x80 | 2}, raw1, raw2[:33])},
-		{ResponseBBlockchain, join(key, []byte{0x80 | 1, 0}, raw1)},                   // height and version missing
-		{ResponseBBlockchain, join(key, []byte{0x80 | 1, 0}, raw1, make([]byte, 15))}, // version cut short
-		{ResponseBBlockchain, join(key, []byte{0x80 | 1, 1}, raw1, make([]byte, 16))}, // closest peer missing
+		{ResponseBBlockchain, join(key, []byte{0x80 | 1, 0}, raw1)},                   // version, height, time and signature missing
+		{ResponseBBlockchain, join(key, []byte{0x80 | 1, 0}, raw1, make([]byte, 16))}, // time and signature missing
+		{ResponseBBlockchain, join(key, []byte{0x80 | 1, 0}, raw1, make([]byte, 83))}, // signature cut short
+		{ResponseBBlockchain, join(key, []byte{0x80 | 1, 1}, raw1, make([]byte, 84))}, // closest peer missing
 		{ResponseBBlockchain, join(key, []byte{0x80 | 1})},                            // second count missing
-		{ResponseBBlockchain, join(key, []byte{0x80 | 2, 0}, raw1, make([]byte, 16))}, // second storing peer missing
+		{ResponseBBlockchain, join(key, []byte{0x80 | 2, 0}, raw1, make([]byte, 84))}, // second storing peer missing
 		{ResponseBBlockchain, join(key, []byte{0x80, 127})},                           // closest peers missing
 		{ResponseAPeer, key[:31]},                                                     // key cut short
 		{ResponseAPeer, key},                                                          // count missing
 		// closest peer cut short
-		{ResponseBBlockchain, join(key, []byte{0x80 | 1, 1}, raw1, make([]byte, 16), raw2[:len(raw2)-1])},
+		{ResponseBBlockchain, join(key, []byte{0x80 | 1, 1}, raw1, make([]byte, 84), raw2[:len(raw2)-1])},
 	}
 	for n, test := range overrun {
 		if _, err := DecodeResponse(responseWithRecord(test.recordType, test.data)); err == nil {
@@ -627,7 +641,7 @@ func TestResponseInvalid(t *testing.T) {
 		comparePeerRecord(t, &result.Records[0].Closest[0], &peer1)
 		comparePeerRecord(t, &result.Records[0].Closest[1], &peer2)
 
-		result, err = DecodeResponse(responseWithRecord(ResponseBBlockchain, join(key, []byte{0x80 | 1, 1}, reserved, make([]byte, 16), raw2)))
+		result, err = DecodeResponse(responseWithRecord(ResponseBBlockchain, join(key, []byte{0x80 | 1, 1}, reserved, make([]byte, 84), raw2)))
 		if err != nil || len(result.Records) != 1 || len(result.Records[0].Storing) != 1 || len(result.Records[0].Closest) != 1 {
 			t.Fatalf("response with a storing peer record with bit %d of the address counts set: %v", bit, err)
 		}
@@ -643,7 +657,7 @@ func TestResponseInvalid(t *testing.T) {
 	}
 
 	// bit 7 of the second count is not part of the count
-	result, err := DecodeResponse(responseWithRecord(ResponseBBlockchain, join(key, []byte{1, 0x80 | 1}, raw1, make([]byte, 16), raw2)))
+	result, err := DecodeResponse(responseWithRecord(ResponseBBlockchain, join(key, []byte{1, 0x80 | 1}, raw1, make([]byte, 84), raw2)))
 	if err != nil || len(result.Records) != 1 || len(result.Records[0].Storing) != 1 || len(result.Records[0].Closest) != 1 || result.Records[0].IsLast {
 		t.Fatalf("second count with bit 7 set: %v %+v", err, result)
 	}
