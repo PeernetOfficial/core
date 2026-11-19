@@ -108,8 +108,8 @@ func decodeMessageHeader(payload []byte, name string) (header messageHeader, rec
 
 	header.Protocol = payload[0] & 0x0F // Protocol version support is stored in the first 4 bits
 	header.Features = payload[1]
-	header.BlockchainHeight = binary.LittleEndian.Uint64(payload[2 : 2+8])
-	header.BlockchainVersion = binary.LittleEndian.Uint64(payload[10 : 10+8])
+	header.BlockchainVersion = binary.LittleEndian.Uint64(payload[2 : 2+8])
+	header.BlockchainHeight = binary.LittleEndian.Uint64(payload[10 : 10+8])
 	header.PortInternal = binary.LittleEndian.Uint16(payload[18 : 18+2])
 	header.PortExternal = binary.LittleEndian.Uint16(payload[20 : 20+2])
 
@@ -253,8 +253,8 @@ func (b *messageBuilder) start() {
 	b.raw = make([]byte, messagePayloadMax)
 	b.raw[0] = byte(ProtocolVersion)
 	b.raw[1] = b.features
-	binary.LittleEndian.PutUint64(b.raw[2:2+8], b.blockchainHeight)
-	binary.LittleEndian.PutUint64(b.raw[10:10+8], b.blockchainVersion)
+	binary.LittleEndian.PutUint64(b.raw[2:2+8], b.blockchainVersion)
+	binary.LittleEndian.PutUint64(b.raw[10:10+8], b.blockchainHeight)
 	b.size = announcementPayloadHeaderSize
 
 	// only on the initial announcement/response the User Agent must be provided according to the protocol spec

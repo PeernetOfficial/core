@@ -84,7 +84,8 @@ func TestAnnouncementHeader(t *testing.T) {
 	if len(packets[0]) != announcementPayloadHeaderSize+len("Test Client/1.0")+1 {
 		t.Fatalf("unexpected size %d", len(packets[0]))
 	}
-	if binary.LittleEndian.Uint64(packets[0][2:10]) != 7 || binary.LittleEndian.Uint64(packets[0][10:18]) != 3 || packets[0][22] != byte(len("Test Client/1.0")) {
+	// version at offset 2, height at offset 10
+	if binary.LittleEndian.Uint64(packets[0][2:10]) != 3 || binary.LittleEndian.Uint64(packets[0][10:18]) != 7 || packets[0][22] != byte(len("Test Client/1.0")) {
 		t.Fatal("header fields at wrong offsets")
 	}
 	if packets[0][len(packets[0])-1] != 0 {
