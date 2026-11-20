@@ -18,9 +18,13 @@ import (
 	"github.com/PeernetOfficial/core/warehouse"
 )
 
-// respondClosesContactsCount is the number of closest peers to return per request key.
+// respondClosesContactsCount is the number of closest peers to return per request key in DHT A.
 // A peer record with one IPv4 and one IPv6 address takes 66 bytes. Reporting back 5 peers keeps a response to a single request well below the MTU.
 const respondClosesContactsCount = 5
+
+// respondClosestRecordDHTB is the number of closest peers per response record of B_RESPONSE_BLOCKCHAIN. The gamma closest peers that are returned per request key are spread over response records.
+// 10 peer records with one IPv4 and one IPv6 address each take 660 bytes: a packet with one such record, a storing peer record and the User Agent stays within 1232 bytes.
+const respondClosestRecordDHTB = 10
 
 // Maximum count of addresses per family in a peer record, by the response record that carries it.
 const (
@@ -50,13 +54,19 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 	allowIPv4 := msg.Features&(1<<protocol.FeatureIPv4Listen) > 0
 	allowIPv6 := msg.Features&(1<<protocol.FeatureIPv6Listen) > 0
 
-	// closestPeers returns the closest peers to the key, excluding the sender. addressesMax is the maximum count of addresses per family in each peer record.
-	closestPeers := func(key []byte, addressesMax int) (closest []protocol.PeerRecord) {
-		for _, node := range peer.Backend.nodesDHT.GetClosestContacts(respondClosesContactsCount, key, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.PublicKey) {
+	// closestPeers returns the count closest peers to the key, excluding the sender. addressesMax is the maximum count of addresses per family in each peer record.
+	closestPeers := func(key []byte, count, addressesMax int) (closest []protocol.PeerRecord) {
+		for _, node := range peer.Backend.nodesDHT.GetClosestContacts(count, key, filterFunc(connection.IsLocal(), allowIPv4, allowIPv6), peer.PublicKey) {
 			if info := node.Info.(*PeerInfo).peer2Record(connection.IsLocal(), allowIPv4, allowIPv6, addressesMax); info != nil {
 				closest = append(closest, *info)
 			}
 		}
+		return closest
+	}
+
+	// closestPeersDHTA returns the closest peers to the key for a response record of DHT A.
+	closestPeersDHTA := func(key []byte) (closest []protocol.PeerRecord) {
+		closest = closestPeers(key, respondClosesContactsCount, respondAddressesMaxDHTA)
 		limitPeerRecordsSize(closest, respondPeerRecordsSizeTarget)
 		return closest
 	}
@@ -68,7 +78,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 	if msg.FindSelf {
 		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestAFindSelf, peer.PublicKey, nil)
 
-		records = append(records, protocol.ResponseRecord{Type: protocol.ResponseASelf, Closest: closestPeers(peer.PublicKey, respondAddressesMaxDHTA), IsLast: true})
+		records = append(records, protocol.ResponseRecord{Type: protocol.ResponseASelf, Closest: closestPeersDHTA(peer.PublicKey), IsLast: true})
 	}
 
 	// A_FIND_PEER: peers close to each key
@@ -79,10 +89,10 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		keyBudget--
 		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestAFindPeer, key, nil)
 
-		records = append(records, protocol.ResponseRecord{Type: protocol.ResponseAPeer, Key: key, Closest: closestPeers(key, respondAddressesMaxDHTA), IsLast: true})
+		records = append(records, protocol.ResponseRecord{Type: protocol.ResponseAPeer, Key: key, Closest: closestPeersDHTA(key), IsLast: true})
 	}
 
-	// B_FIND_BLOCKCHAIN: self if the key is the own blockchain, and peers close to the key
+	// B_FIND_BLOCKCHAIN: self if the key is the own blockchain, and the gamma peers closest to the key
 	for _, key := range msg.FindBlockchain {
 		if keyBudget == 0 {
 			break
@@ -90,11 +100,23 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		keyBudget--
 		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBFindBlockchain, key, nil)
 
-		record := protocol.ResponseRecord{Type: protocol.ResponseBBlockchain, Key: key, Closest: closestPeers(key, respondAddressesMaxDHTB), IsLast: true}
+		record := protocol.ResponseRecord{Type: protocol.ResponseBBlockchain, Key: key}
 		if bytes.Equal(key, peer.Backend.peerPublicKey) {
 			_, height, version := peer.Backend.UserBlockchain.Header()
 			record.Storing = []protocol.StoringPeer{peer.Backend.selfStoringPeer(key, version, height)}
 		}
+
+		// The closest peers are spread over response records for the key. The last one indicates the last result.
+		closest := closestPeers(key, gamma, respondAddressesMaxDHTB)
+		for len(closest) > respondClosestRecordDHTB {
+			record.Closest = closest[:respondClosestRecordDHTB]
+			records = append(records, record)
+
+			record = protocol.ResponseRecord{Type: protocol.ResponseBBlockchain, Key: key}
+			closest = closest[respondClosestRecordDHTB:]
+		}
+
+		record.Closest, record.IsLast = closest, true
 		records = append(records, record)
 	}
 
@@ -195,9 +217,13 @@ func (peer *PeerInfo) cmdResponse(msg *protocol.MessageResponse, connection *Con
 				continue
 			}
 
-			switch record.Type {
-			case protocol.ResponseASelf, protocol.ResponseAPeer, protocol.ResponseBBlockchain:
+			// The type of the record is the one that answers the request.
+			switch {
+			case info.Action == dht.ActionFindNode && (record.Type == protocol.ResponseASelf || record.Type == protocol.ResponseAPeer):
 				info.QueueResult(&dht.NodeMessage{SenderID: peer.PublicKey, Closest: peer.records2Nodes(record.Closest, connection.IsLocal())})
+
+			case info.Action == dht.ActionFindBlockchain && record.Type == protocol.ResponseBBlockchain:
+				info.QueueResult(&dht.NodeMessage{SenderID: peer.PublicKey, Closest: peer.records2Nodes(record.Closest, connection.IsLocal()), Storing: peer.storing2Nodes(record.Key, record.Storing, connection.IsLocal())})
 			}
 		}
 

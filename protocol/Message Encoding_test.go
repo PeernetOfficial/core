@@ -585,6 +585,80 @@ func TestResponseSplit(t *testing.T) {
 	}
 }
 
+// TestResponseSizeTarget checks that a response is split over messages so that a packet stays within 1232 bytes, and that a single record above that size is sent in a message of its own.
+func TestResponseSizeTarget(t *testing.T) {
+	// 7 records of 5 closest peers with one IPv4 and one IPv6 address each: 3 + 32 + 1 + 5 * 66 = 366 bytes per record.
+	var records []ResponseRecord
+	for n := 0; n < 7; n++ {
+		record := ResponseRecord{Type: ResponseAPeer, Key: testKey(t), IsLast: true}
+		for m := 0; m < 5; m++ {
+			record.Closest = append(record.Closest, testPeerRecord(t, m))
+		}
+		records = append(records, record)
+	}
+
+	// A record of 20 closest peers: 3 + 32 + 1 + 20 * 66 = 1356 bytes.
+	large := ResponseRecord{Type: ResponseAPeer, Key: testKey(t), IsLast: true}
+	for m := 0; m < 20; m++ {
+		large.Closest = append(large.Closest, testPeerRecord(t, m))
+	}
+	records = append(records, large, records[0])
+
+	packets, err := EncodeResponse(true, records, 0, 0, 0, "Test Client/1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The header with the User Agent and the record count is 39 bytes: 3 records fit into a payload of 1232 - 68 bytes.
+	expected := []int{3, 3, 1, 1, 1}
+	if len(packets) != len(expected) {
+		t.Fatalf("%d packets, expected %d", len(packets), len(expected))
+	}
+
+	total := 0
+	for n, packet := range packets {
+		// The packet of the record of 1356 bytes is the one above 1232 bytes.
+		if size := len(packet) + PacketLengthMin; (size > 1232) != (n == 3) {
+			t.Fatalf("packet %d: %d bytes", n, size)
+		}
+
+		msg := &MessageRaw{PacketRaw: PacketRaw{Command: CommandResponse}}
+		msg.Payload = packet
+		result, err := DecodeResponse(msg)
+		if err != nil {
+			t.Fatalf("DecodeResponse packet %d: %s", n, err)
+		}
+		if len(result.Records) != expected[n] || result.SequenceLast != (n == len(packets)-1) || result.UserAgent != "Test Client/1.0" {
+			t.Fatalf("packet %d: %d records, SEQUENCE_LAST %t, expected %d records", n, len(result.Records), result.SequenceLast, expected[n])
+		}
+		for _, record := range result.Records {
+			if !bytes.Equal(record.Key, records[total].Key) || len(record.Closest) != len(records[total].Closest) {
+				t.Fatalf("record %d mismatch", total)
+			}
+			total++
+		}
+	}
+
+	// 3 records of 366 bytes: with a User Agent of 42 bytes the payload is 23 + 42 + 1 + 3 * 366 = 1164 bytes, a packet of 1232 bytes. One byte more starts a second message.
+	for _, test := range []struct {
+		userAgent int
+		packets   int
+	}{{42, 1}, {43, 2}} {
+		packets, err := EncodeResponse(true, records[:3], 0, 0, 0, string(bytes.Repeat([]byte{'a'}, test.userAgent)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(packets) != test.packets || test.packets == 1 && len(packets[0])+PacketLengthMin != 1232 {
+			t.Fatalf("User Agent of %d bytes: %d packets, the first of %d bytes, expected %d packets", test.userAgent, len(packets), len(packets[0])+PacketLengthMin, test.packets)
+		}
+	}
+
+	// A record above the size alone is one message.
+	if packets, err := EncodeResponse(true, []ResponseRecord{large}, 0, 0, 0, "Test Client/1.0"); err != nil || len(packets) != 1 {
+		t.Fatalf("record above the size: %d packets (%v), expected 1", len(packets), err)
+	}
+}
+
 func TestResponseInvalid(t *testing.T) {
 	// a count that runs past the data
 	key := testKey(t)

@@ -18,7 +18,8 @@ import (
 	"time"
 )
 
-// MaxClosest is maximum number of closest peers accepted from a response record. A response record carries at most 5.
+// MaxClosest is maximum number of closest peers accepted from a response record in a search for a node. A response record carries at most 5.
+// In a search for the nodes that store a blockchain, gamma closest peers are accepted from a node in total.
 const MaxClosest = 5
 
 // MaxLevel defines the max level.
@@ -38,11 +39,14 @@ type SearchClient struct {
 	timeoutIR           time.Duration                                   // Timeout for information requests (entire roundtrip).
 	alpha               int                                             // Count of concurrent information requests per level.
 	beta                int                                             // ActionFindNode: Count of closest nodes that must have answered for the search to end.
-	answered            map[string]bool                                 // ActionFindNode: Nodes that answered.
-	unanswered          map[string]bool                                 // ActionFindNode: Nodes that did not answer by the end of their information request.
+	gamma               int                                             // ActionFindBlockchain: Count of closest nodes that must have answered for the search to end.
+	answered            map[string]bool                                 // Nodes that answered.
+	closestAccepted     map[string]int                                  // ActionFindBlockchain: Count of closest nodes accepted from each node.
+	unanswered          map[string]bool                                 // Nodes that did not answer by the end of their information request.
 	target              []*Node                                         // ActionFindNode: The node searched for, as known from the routing table or reported in a result. Each one after the first holds addresses the ones before do not.
 	targetActive        int                                             // ActionFindNode: Count of information requests to the node searched for that are under way.
 	Results             chan *SearchResult                              // Result channel. It is closed when the search is terminated.
+	Storing             chan *SearchResult                              // ActionFindBlockchain: Each storing node that a node reports. The search waits until the caller has read it; after TerminateSignal no more follow.
 	list                *shortList                                      // List of nodes to contact
 	contactedNodesMap   map[string]struct{}                             // List of nodes already contacted
 	contactedNodesMutex sync.RWMutex                                    // Sync map access
@@ -57,6 +61,9 @@ type SearchResult struct {
 
 	// data for ActionFindNode
 	TargetNode *Node // The node that was requested. It answered the request.
+
+	// data for ActionFindBlockchain
+	StoringNode *Node // A node that stores the blockchain of the key, as reported by the sender.
 }
 
 // NewSearch creates a new search client.
@@ -72,11 +79,14 @@ func (dht *DHT) NewSearch(Action int, Key []byte, Timeout, TimeoutIR time.Durati
 		timeoutIR:         TimeoutIR,
 		alpha:             Alpha,
 		beta:              dht.beta,
+		gamma:             dht.gamma,
 		answered:          make(map[string]bool),
+		closestAccepted:   make(map[string]int),
 		unanswered:        make(map[string]bool),
 		contactedNodesMap: make(map[string]struct{}),
 		TerminateSignal:   make(chan struct{}),
 		Results:           make(chan *SearchResult, 1),
+		Storing:           make(chan *SearchResult),
 		LogStatus:         func(function, format string, v ...interface{}) {},
 	}
 
@@ -117,6 +127,23 @@ func (client *SearchClient) sendResult(result *SearchResult) {
 
 	client.Results <- result
 	client.terminate()
+}
+
+// sendStoring hands a storing node to the caller and waits until it is read or the search is terminated.
+func (client *SearchClient) sendStoring(result *SearchResult) {
+	select {
+	case client.Storing <- result:
+	case <-client.TerminateSignal:
+	}
+}
+
+// closestEnd returns the count of closest nodes that must have answered for the search to end.
+func (client *SearchClient) closestEnd() int {
+	if client.Action == ActionFindBlockchain {
+		return client.gamma
+	}
+
+	return client.beta
 }
 
 // isContactedNode checks if a node was contacted
@@ -214,6 +241,7 @@ func (client *SearchClient) sendInfoRequest(nodes []*Node, resultChan chan *Node
 // A search for a node starts the next level as soon as one of the beta closest nodes is not yet contacted, and ends when they have all answered.
 // A node that does not answer is not counted among the beta. The node searched for is sent the request as soon as a result reports it, and is found when it answers.
 // If a later result reports it with addresses that are not yet tried, it is sent the request at those.
+// A search for the nodes that store a blockchain proceeds the same way with the gamma closest nodes. It hands over each storing node that a result reports and ends when the gamma closest nodes have all answered.
 func (client *SearchClient) startSearch() {
 	results := make(chan *NodeMessage, messageChannelSize)
 	levelEnd := make(chan []*Node)
@@ -261,7 +289,7 @@ func (client *SearchClient) startSearch() {
 	// handleResult handles the result of a node. It returns true if the search is terminated.
 	handleResult := func(result *NodeMessage) (terminated bool) {
 		// search for node and it answered?
-		if result.Node != nil && bytes.Equal(result.SenderID, client.Key) {
+		if client.Action == ActionFindNode && result.Node != nil && bytes.Equal(result.SenderID, client.Key) {
 			client.LogStatus("search.startSearch", "result: sender %s: node found!\n", hex.EncodeToString(result.SenderID))
 			client.sendResult(&SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, TargetNode: result.Node})
 			return true
@@ -269,9 +297,17 @@ func (client *SearchClient) startSearch() {
 
 		client.answered[string(result.SenderID)] = true
 
+		// The storing nodes that are reported are handed over.
+		if client.Action == ActionFindBlockchain {
+			for _, storing := range result.Storing {
+				client.LogStatus("search.startSearch", "result: sender %s: node %s stores the blockchain\n", hex.EncodeToString(result.SenderID), hex.EncodeToString(storing.ID))
+				client.sendStoring(&SearchResult{Key: client.Key, Action: client.Action, SenderID: result.SenderID, StoringNode: storing})
+			}
+		}
+
 		// The node searched for is reported: it is sent the request at once. If it is known already, it is sent the request at the addresses that are not yet tried.
 		for _, closePeer := range result.Closest {
-			if !bytes.Equal(closePeer.ID, client.Key) || level >= MaxLevel {
+			if client.Action != ActionFindNode || !bytes.Equal(closePeer.ID, client.Key) || level >= MaxLevel {
 				continue
 			}
 
@@ -289,7 +325,17 @@ func (client *SearchClient) startSearch() {
 			startRequest([]*Node{closePeer})
 		}
 
-		result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
+		if client.Action == ActionFindBlockchain {
+			// A node reports at most gamma closest nodes, in one or more results.
+			if limit := client.gamma - client.closestAccepted[string(result.SenderID)]; limit > 0 {
+				result.Closest = client.filterUncontactedNodes(result.Closest, limit)
+				client.closestAccepted[string(result.SenderID)] += len(result.Closest)
+			} else {
+				result.Closest = nil
+			}
+		} else {
+			result.Closest = client.filterUncontactedNodes(result.Closest, MaxClosest)
+		}
 
 		client.LogStatus("search.startSearch", "find node: sender %s: %d nodes are close to value\n", hex.EncodeToString(result.SenderID), len(result.Closest))
 
@@ -300,9 +346,9 @@ func (client *SearchClient) startSearch() {
 		return false
 	}
 
-	// findNodeNext continues a search for a node after a result or the end of a level. It returns true if the search is terminated.
+	// findNodeNext continues the search after a result or the end of a level. It returns true if the search is terminated.
 	findNodeNext := func() (terminated bool) {
-		// Check the beta closest nodes of the list, without the nodes that did not answer.
+		// Check the beta closest nodes of the list (gamma in a search for the nodes that store a blockchain), without the nodes that did not answer.
 		count, allAnswered, allContacted := 0, true, true
 
 		for _, node := range client.list.Nodes {
@@ -317,13 +363,13 @@ func (client *SearchClient) startSearch() {
 				allContacted = false
 			}
 
-			if count++; count == client.beta {
+			if count++; count == client.closestEnd() {
 				break
 			}
 		}
 
 		if allAnswered {
-			client.LogStatus("search.startSearch", "the %d closest nodes have all answered, not found, terminate search\n", count)
+			client.LogStatus("search.startSearch", "the %d closest nodes have all answered, terminate search\n", count)
 			client.Terminate()
 			return true
 		}
@@ -334,7 +380,7 @@ func (client *SearchClient) startSearch() {
 		}
 
 		if activeLevels == 0 {
-			client.LogStatus("search.startSearch", "last active level ended, not found, terminate search\n")
+			client.LogStatus("search.startSearch", "last active level ended, terminate search\n")
 			client.Terminate()
 			return true
 		}
@@ -358,7 +404,7 @@ func (client *SearchClient) startSearch() {
 				return
 			}
 
-			// A search for a node continues once the results that arrived are all handled.
+			// The search continues once the results that arrived are all handled.
 			if len(results) == 0 && findNodeNext() {
 				return
 			}

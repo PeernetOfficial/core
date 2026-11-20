@@ -259,6 +259,26 @@ func (peerSource *PeerInfo) records2Nodes(records []protocol.PeerRecord, allowLo
 	return
 }
 
+// storing2Nodes translates the storing peer records that the peer reported for a blockchain to nodes. The Info of a node is a *BlockchainStoring.
+// A storing peer record whose blockchain record is not valid is ignored.
+func (peerSource *PeerInfo) storing2Nodes(blockchainPublicKey ed25519.PublicKey, records []protocol.StoringPeer, allowLocal bool) (nodes []*dht.Node) {
+	now := time.Now()
+
+	for n := range records {
+		record := &records[n]
+		if !protocol.BlockchainRecordValid(record.PublicKey, blockchainPublicKey, record.BlockchainVersion, record.BlockchainHeight, record.Time, record.Signature, now) {
+			continue
+		}
+
+		for _, node := range peerSource.records2Nodes([]protocol.PeerRecord{record.PeerRecord}, allowLocal) {
+			storing := &BlockchainStoring{Peer: node.Info.(*PeerInfo), Version: record.BlockchainVersion, Height: record.BlockchainHeight, Time: time.Unix(int64(record.Time), 0)}
+			nodes = append(nodes, &dht.Node{ID: node.ID, LastSeen: node.LastSeen, Info: storing})
+		}
+	}
+
+	return nodes
+}
+
 // reportingPeer returns the peer as the one that forwards Traverse messages to the peers it reported.
 // It is nil if the peer is reached via a relay: only Announcement and Response messages are sent via a relay.
 func (peer *PeerInfo) reportingPeer() *PeerInfo {

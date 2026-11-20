@@ -16,7 +16,7 @@ import (
 func TestRefreshBuckets(t *testing.T) {
 	for _, count := range []int{0, 1, 3, 20, 200} {
 		self := testID(t)
-		dht := NewDHT(&Node{ID: self}, 256, 20, 5, 5)
+		dht := NewDHT(&Node{ID: self}, 256, 20, 5, 5, 20)
 
 		for n := 0; n < count; n++ {
 			dht.AddNode(&Node{ID: testID(t)})

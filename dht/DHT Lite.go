@@ -25,6 +25,9 @@ type DHT struct {
 	// A lookup for a node ends when the beta closest nodes known have all answered.
 	beta int
 
+	// A lookup for the nodes that store a blockchain ends when the gamma closest nodes known have all answered.
+	gamma int
+
 	// Functions below must be set and provided by the caller.
 
 	// SendRequest sends an information request to request.Nodes. The message to send follows from request.Action.
@@ -45,11 +48,12 @@ type DHT struct {
 }
 
 // NewDHT initializes a new DHT node with default values.
-func NewDHT(self *Node, bits, bucketSize, alpha, beta int) *DHT {
+func NewDHT(self *Node, bits, bucketSize, alpha, beta, gamma int) *DHT {
 	return &DHT{
 		ht:                 newHashTable(self, bits, bucketSize),
 		alpha:              alpha,
 		beta:               beta,
+		gamma:              gamma,
 		NewNodeAddresses:   func(known []*Node, reported *Node) (node *Node) { return nil },
 		FilterSearchStatus: func(client *SearchClient, function, format string, v ...interface{}) {},
 		TimeoutSearch:      10 * time.Second,
@@ -122,6 +126,24 @@ func (dht *DHT) FindNode(key []byte) (node *Node, err error) {
 		return nil, nil
 	}
 	return result.TargetNode, nil
+}
+
+// FindBlockchain starts a search for the nodes that store the blockchain of the key. Non-blocking.
+// Each storing node that a node reports is handed over on the Storing channel of the search; the caller reads it until TerminateSignal is closed.
+// The search ends when the gamma closest nodes known have all answered, or when no node is left to ask. The caller may end it earlier with Terminate.
+func (dht *DHT) FindBlockchain(key []byte) (search *SearchClient, err error) {
+	if len(key)*8 != dht.ht.bBits {
+		return nil, errors.New("invalid key size")
+	}
+
+	search = dht.NewSearch(ActionFindBlockchain, key, dht.TimeoutSearch, dht.TimeoutIR, dht.alpha)
+	search.LogStatus = func(function, format string, v ...interface{}) {
+		dht.FilterSearchStatus(search, function, format, v...)
+	}
+	search.LogStatus("dht.FindBlockchain", "Search for the nodes that store the blockchain %s. Full timeout %s, per node %s. Alpha = %d.\n", hex.EncodeToString(key), dht.TimeoutSearch.String(), dht.TimeoutIR.String(), dht.alpha)
+	search.SearchAway()
+
+	return search, nil
 }
 
 // ---- DHT Health ----

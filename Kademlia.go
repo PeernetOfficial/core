@@ -17,13 +17,14 @@ import (
 
 const alpha = 5       // Count of nodes to be contacted in parallel for finding a key (α in the whitepaper)
 const beta = 5        // Count of closest nodes that must have answered for a lookup to end (β in the whitepaper)
+const gamma = 20      // Count of closest nodes that must have answered for a lookup in DHT B to end (γ in the whitepaper)
 const bucketSize = 20 // Count of nodes per bucket (k in the whitepaper)
 
 // bucketRefreshTime is the interval of the routing table refresh.
 const bucketRefreshTime = 5 * time.Minute
 
 func (backend *Backend) initKademlia() {
-	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.peerPublicKey}, 256, bucketSize, alpha, beta)
+	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.peerPublicKey}, 256, bucketSize, alpha, beta, gamma)
 
 	// SendRequest sends the announcement matching the action of the information request to the nodes.
 	backend.nodesDHT.SendRequest = func(request *dht.InformationRequest) {
@@ -33,6 +34,9 @@ func (backend *Backend) initKademlia() {
 			switch request.Action {
 			case dht.ActionFindNode:
 				peer.sendAnnouncementFindPeer(request)
+
+			case dht.ActionFindBlockchain:
+				peer.sendAnnouncement(false, &protocol.Requests{FindBlockchain: [][]byte{request.Key}}, request)
 			}
 		}
 	}
@@ -168,6 +172,22 @@ func (backend *Backend) FindNode(publicKey ed25519.PublicKey, Timeout time.Durat
 }
 
 // ---- Asynchronous Search ----
+
+// BlockchainStoring is a peer that stores a blockchain, as a lookup in DHT B reports it. Its blockchain record is valid.
+type BlockchainStoring struct {
+	Peer    *PeerInfo // The peer that stores the blockchain. A peer that is not in the peer list is a virtual one.
+	Version uint64    // Blockchain version stored
+	Height  uint64    // Blockchain height stored: the count of blocks stored from block 0 on, without a gap
+	Time    time.Time // Time of its blockchain record
+}
+
+// FindBlockchain starts a lookup in DHT B for the peers that store the blockchain of the Peer ID. Non-blocking.
+// Each storing peer that a peer reports is handed over on the Storing channel of the search, the Info of its StoringNode is a *BlockchainStoring. A peer may be reported by several peers.
+// The caller reads the channel until TerminateSignal of the search is closed. The lookup ends when the gamma closest peers known have all answered, or when no peer is left to ask;
+// the caller may end it earlier by terminating the search.
+func (backend *Backend) FindBlockchain(publicKey ed25519.PublicKey) (search *dht.SearchClient, err error) {
+	return backend.nodesDHT.FindBlockchain(publicKey)
+}
 
 // AsyncSearch creates an async search for the given key in the DHT.
 // Timeout is the total time the search may take, covering all information requests. TimeoutIR is the time an information request may take.

@@ -7,6 +7,7 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"net"
@@ -46,7 +47,7 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 
 	backend := &Backend{peerPublicKey: self, peerPrivateKey: selfPrivateKey, UserBlockchain: &blockchain.Blockchain{}, networks: &Networks{}}
 	backend.initFilters()
-	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha, beta)
+	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha, beta, gamma)
 
 	peerMany := testPeerConnections(t, backend, "203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.4", "2001:db8::1", "2001:db8::2", "2001:db8::3", "2001:db8::4", "192.168.1.1", "127.0.0.1", "fe80::1")
 	peerOne := testPeerConnections(t, backend, "203.0.113.5", "2001:db8::5")
@@ -153,13 +154,117 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 	}
 }
 
+// TestAnnouncementResponseBlockchain checks the peers close to the key in the response to B_FIND_BLOCKCHAIN: the gamma closest peers of the routing table,
+// spread over response records of at most 10, in packets within 1232 bytes. The storing peer is in the first record, the last record indicates the last result.
+func TestAnnouncementResponseBlockchain(t *testing.T) {
+	self, selfPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+
+	backend := &Backend{peerPublicKey: self, peerPrivateKey: selfPrivateKey, UserBlockchain: &blockchain.Blockchain{}, networks: &Networks{}}
+	backend.initFilters()
+
+	var records []protocol.ResponseRecord
+	backend.Filters.MessageOutResponse = func(peer *PeerInfo, packet *protocol.PacketRaw, recordsOut []protocol.ResponseRecord) {
+		records = recordsOut
+	}
+
+	requester := testPeerConnections(t, backend)
+	other, _, _ := ed25519.GenerateKey(rand.Reader)
+
+	for _, test := range []struct {
+		peers   int // count of peers in the routing table
+		key     []byte
+		closest []int // count of closest peers per response record
+	}{
+		{0, self, []int{0}},
+		{4, self, []int{4}},
+		{10, other, []int{10}},
+		{12, self, []int{10, 2}},
+		{20, other, []int{10, 10}},
+		{30, self, []int{10, 10}},
+		{30, other, []int{10, 10}},
+	} {
+		backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha, beta, gamma)
+		for n := 0; n < test.peers; n++ {
+			peer := testPeerConnections(t, backend, "203.0.113.1", "2001:db8::1", "203.0.113.2", "2001:db8::2")
+			backend.nodesDHT.AddNode(&dht.Node{ID: peer.PublicKey, Info: peer})
+		}
+		// A bucket holds 20 peers: of 30 peers at least 20 are in the routing table.
+		if count := backend.nodesDHT.NumNodes(); count != test.peers && (test.peers <= 20 || count < 20) {
+			t.Fatalf("%d peers: the routing table holds %d", test.peers, count)
+		}
+
+		announcement := &protocol.MessageAnnouncement{MessageRaw: &protocol.MessageRaw{}, Features: 1<<protocol.FeatureIPv4Listen | 1<<protocol.FeatureIPv6Listen, UserAgent: "Test Client/1.0"}
+		announcement.FindBlockchain = [][]byte{test.key}
+
+		records = nil
+		requester.cmdAnouncement(announcement, nil)
+
+		if len(records) != len(test.closest) {
+			t.Fatalf("%d peers: %d response records, expected %d", test.peers, len(records), len(test.closest))
+		}
+
+		var closest []protocol.PeerRecord
+
+		for n, record := range records {
+			if record.Type != protocol.ResponseBBlockchain || !bytes.Equal(record.Key, test.key) || len(record.Closest) != test.closest[n] || record.IsLast != (n == len(records)-1) {
+				t.Fatalf("%d peers: record %d of type %d with %d closest peers, last %t, expected %d closest peers", test.peers, n, record.Type, len(record.Closest), record.IsLast, test.closest[n])
+			}
+			if storing := n == 0 && bytes.Equal(test.key, self); storing != (len(record.Storing) == 1) {
+				t.Fatalf("%d peers: record %d with %d storing peers", test.peers, n, len(record.Storing))
+			}
+			for _, peer := range record.Closest {
+				if len(peer.IPv4) != 1 || len(peer.IPv6) != 1 {
+					t.Fatalf("%d peers: closest peer with %d IPv4 and %d IPv6 addresses", test.peers, len(peer.IPv4), len(peer.IPv6))
+				}
+			}
+			closest = append(closest, record.Closest...)
+		}
+
+		// The closest peers are the closest ones of the routing table, closest first.
+		expected := backend.nodesDHT.GetClosestContacts(gamma, test.key, nil)
+		if len(closest) != len(expected) {
+			t.Fatalf("%d peers: %d closest peers, expected %d", test.peers, len(closest), len(expected))
+		}
+		for n := range expected {
+			if !bytes.Equal(closest[n].PublicKey, expected[n].ID) {
+				t.Fatalf("%d peers: closest peer %d is not the one of the routing table", test.peers, n)
+			}
+		}
+
+		// The response encodes into packets within 1232 bytes, and decodes.
+		packets, err := protocol.EncodeResponse(true, records, 0, 0, 0, "Test Client/1.0")
+		if err != nil {
+			t.Fatalf("%d peers: encoding the response: %v", test.peers, err)
+		}
+
+		decoded := 0
+		for n, packet := range packets {
+			if size := len(packet) + protocol.PacketLengthMin; size > 1232 {
+				t.Fatalf("%d peers: packet %d of %d bytes", test.peers, n, size)
+			}
+
+			msg := &protocol.MessageRaw{PacketRaw: protocol.PacketRaw{Command: protocol.CommandResponse, Payload: packet}}
+			response, err := protocol.DecodeResponse(msg)
+			if err != nil {
+				t.Fatalf("%d peers: decoding the response: %v", test.peers, err)
+			}
+			for _, record := range response.Records {
+				decoded += len(record.Closest)
+			}
+		}
+		if decoded != len(expected) {
+			t.Fatalf("%d peers: %d closest peers decoded, expected %d", test.peers, decoded, len(expected))
+		}
+	}
+}
+
 // TestStoreBlockchainValid checks which blockchain records of a B_STORE_BLOCKCHAIN request are handled: those signed by the sender with a time that is valid.
 func TestStoreBlockchainValid(t *testing.T) {
 	self, _, _ := ed25519.GenerateKey(rand.Reader)
 
 	backend := &Backend{peerPublicKey: self, UserBlockchain: &blockchain.Blockchain{}, networks: &Networks{}}
 	backend.initFilters()
-	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha, beta)
+	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha, beta, gamma)
 
 	var handled []*protocol.BlockchainStore
 	backend.Filters.IncomingRequest = func(peer *PeerInfo, RequestType int, Key []byte, Info interface{}) {
