@@ -209,7 +209,7 @@ func testBackendLoopback(t *testing.T) (backend *Backend, network *Network) {
 
 	backend = &Backend{peerPublicKey: publicKey, peerPrivateKey: privateKey, peerKeyPair: testKeyPair(t, privateKey), Config: &Config{}, UserBlockchain: &blockchain.Blockchain{}, peerList: make(map[[ed25519.PublicKeySize]byte]*PeerInfo)}
 	backend.initFilters()
-	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: publicKey}, 256, bucketSize, alpha, beta)
+	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: publicKey}, 256, bucketSize, alpha, beta, gamma)
 	backend.networks = &Networks{backend: backend, Sequences: protocol.NewSequenceManager(ReplyTimeout)}
 
 	socket, address := testSocket(t)

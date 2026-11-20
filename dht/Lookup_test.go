@@ -17,8 +17,10 @@ import (
 
 // testNetwork is a simulated network. Every node has its own routing table and answers a request with the closest nodes of that table.
 type testNetwork struct {
-	ids   [][]byte
-	nodes map[string]*DHT
+	ids     [][]byte
+	nodes   map[string]*DHT
+	all     []*Node            // All nodes of the network.
+	storing map[string][]*Node // Search for a blockchain: the storing nodes that a node reports, by the ID of the node that reports them.
 }
 
 // newTestNetwork creates a network of count nodes. Every node is added to the routing table of every other node.
@@ -27,10 +29,11 @@ func newTestNetwork(t *testing.T, count int) (network *testNetwork) {
 
 	for n := 0; n < count; n++ {
 		id := testID(t)
-		node := NewDHT(&Node{ID: id}, 256, 20, 5, 5)
+		node := NewDHT(&Node{ID: id}, 256, 20, 5, 5, 20)
 
 		network.ids = append(network.ids, id)
 		network.nodes[string(id)] = node
+		network.all = append(network.all, &Node{ID: id})
 	}
 
 	for _, node := range network.nodes {
@@ -62,9 +65,24 @@ type testLookup struct {
 	requests int     // Count of nodes that were sent the request.
 	reported []*Node // All nodes reported in responses.
 	failed   string  // Set if a request was sent to a node that was not the closest one not yet contacted.
+
+	activeMutex sync.Mutex
+	active      int // Count of nodes that were sent the request and did not answer yet.
+	activeMax   int // Highest count of such nodes during the search.
+}
+
+// activeAdd changes the count of nodes that were sent the request and did not answer yet.
+func (lookup *testLookup) activeAdd(count int) {
+	lookup.activeMutex.Lock()
+	defer lookup.activeMutex.Unlock()
+
+	if lookup.active += count; lookup.active > lookup.activeMax {
+		lookup.activeMax = lookup.active
+	}
 }
 
 // start runs a search from the node with the given ID. Every node that is sent the request answers with the 5 closest nodes of its routing table, the requesting node excluded.
+// In a search for a blockchain it answers with the 20 closest nodes in two messages of 10, and reports the storing nodes that network.storing holds for it.
 // It answers at once, or if delayed is set after 1 to 20 ms.
 // Each information request is checked: its nodes must be closer to the key than every node of the search list that is not yet contacted.
 func (network *testNetwork) start(self []byte, action int, key []byte, alpha int, delayed bool) (lookup *testLookup) {
@@ -98,19 +116,39 @@ func (network *testNetwork) start(self []byte, action int, key []byte, alpha int
 		for _, node := range request.Nodes {
 			lookup.requests++
 
-			closest := network.nodes[string(node.ID)].GetClosestContacts(5, key, nil, self)
+			count := 5
+			if action == ActionFindBlockchain {
+				count = 20
+			}
+
+			closest := network.nodes[string(node.ID)].GetClosestContacts(count, key, nil, self)
 			lookup.reported = append(lookup.reported, closest...)
 
-			message := &NodeMessage{SenderID: node.ID, Closest: closest}
+			messages := []*NodeMessage{{SenderID: node.ID, Closest: closest}}
+			if action == ActionFindBlockchain {
+				first := len(closest)
+				if first > 10 {
+					first = 10
+				}
+				messages = []*NodeMessage{{SenderID: node.ID, Closest: closest[:first], Storing: network.storing[string(node.ID)]}, {SenderID: node.ID, Closest: closest[first:]}}
+			}
+
+			lookup.activeAdd(1)
 
 			if delayed {
 				go func() {
 					time.Sleep(time.Duration(1+rand.Intn(20)) * time.Millisecond)
-					request.QueueResult(message)
+					lookup.activeAdd(-1)
+					for _, message := range messages {
+						request.QueueResult(message)
+					}
 					request.Done()
 				}()
 			} else {
-				request.QueueResult(message)
+				lookup.activeAdd(-1)
+				for _, message := range messages {
+					request.QueueResult(message)
+				}
 				request.Done()
 			}
 		}
@@ -123,7 +161,7 @@ func (network *testNetwork) start(self []byte, action int, key []byte, alpha int
 }
 
 // checkEnd checks a search that ended without result.
-// A search for a node: the beta closest nodes of the search list have all answered, the nodes that did not answer left out.
+// The beta closest nodes of the search list (gamma in a search for a blockchain) have all answered, the nodes that did not answer left out.
 // All reported nodes are in the search list. A search for a node ends while requests are under way, the check is left out if the nodes answer delayed.
 func (lookup *testLookup) checkEnd(t *testing.T, key []byte) {
 	t.Helper()
@@ -146,10 +184,10 @@ func (lookup *testLookup) checkEnd(t *testing.T, key []byte) {
 		}
 	}
 
-	closest := testClosest(list.Nodes, key, search.beta, func(node *Node) bool { return !search.unanswered[string(node.ID)] })
+	closest := testClosest(list.Nodes, key, search.closestEnd(), func(node *Node) bool { return !search.unanswered[string(node.ID)] })
 	for _, node := range closest {
 		if !search.answered[string(node.ID)] {
-			t.Fatalf("search ended while node %x, one of the %d closest nodes in the search list, did not answer", node.ID, search.beta)
+			t.Fatalf("search ended while node %x, one of the %d closest nodes in the search list, did not answer", node.ID, search.closestEnd())
 		}
 	}
 }
@@ -294,7 +332,7 @@ func testNewNodeAddresses(known []*Node, reported *Node) (node *Node) {
 
 // testLookupNodesDelay is testLookupNodes with nodes that answer after the delay that answer returns for them.
 func testLookupNodesDelay(t *testing.T, key []byte, table []*Node, timeoutIR time.Duration, answer func(node *Node) (closest []*Node, ok bool, delay time.Duration)) (search *SearchClient, found *Node, requests map[string]int, elapsed time.Duration) {
-	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5, 5)
+	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5, 5, 20)
 	dht.NewNodeAddresses = testNewNodeAddresses
 	for _, node := range table {
 		dht.AddNode(node)

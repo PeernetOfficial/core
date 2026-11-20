@@ -24,7 +24,7 @@ func testID(t *testing.T) []byte {
 func TestSearchTerminate(t *testing.T) {
 	target := &Node{ID: testID(t)}
 
-	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5, 5)
+	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5, 5, 20)
 	dht.AddNode(&Node{ID: testID(t)})
 
 	// A search for a node: the node is reported and answers, the timeout of the search passes before the result is read.

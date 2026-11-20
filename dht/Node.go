@@ -126,6 +126,7 @@ type NodeMessage struct {
 	SenderID []byte  // Sender of the message
 	Node     *Node   // Node of the information request that sent the message. Set when the message is queued.
 	Closest  []*Node // Closest nodes to the requested key
+	Storing  []*Node // ActionFindBlockchain: Nodes that store the blockchain of the requested key
 }
 
 // NodeFilterFunc is called to filter nodes based on the callers choice

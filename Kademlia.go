@@ -17,13 +17,14 @@ import (
 
 const alpha = 5       // Count of nodes to be contacted in parallel for finding a key (α in the whitepaper)
 const beta = 5        // Count of closest nodes that must have answered for a lookup to end (β in the whitepaper)
+const gamma = 20      // Count of closest nodes that must have answered for a lookup in DHT B to end (γ in the whitepaper)
 const bucketSize = 20 // Count of nodes per bucket (k in the whitepaper)
 
 // bucketRefreshTime is the interval of the routing table refresh.
 const bucketRefreshTime = 5 * time.Minute
 
 func (backend *Backend) initKademlia() {
-	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.peerPublicKey}, 256, bucketSize, alpha, beta)
+	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: backend.peerPublicKey}, 256, bucketSize, alpha, beta, gamma)
 
 	// SendRequest sends the announcement matching the action of the information request to the nodes.
 	backend.nodesDHT.SendRequest = func(request *dht.InformationRequest) {

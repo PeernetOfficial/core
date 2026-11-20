@@ -30,7 +30,8 @@ type InformationRequest struct {
 
 // Actions for performing the information request
 const (
-	ActionFindNode = iota // Find a node
+	ActionFindNode       = iota // Find a node
+	ActionFindBlockchain        // Find the nodes that store the blockchain of the key
 )
 
 const messageChannelSize = 100
