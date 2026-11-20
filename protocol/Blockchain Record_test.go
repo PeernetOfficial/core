@@ -125,5 +125,8 @@ func TestBlockchainRecordTime(t *testing.T) {
 		if valid := BlockchainRecordValid(storingPublicKey, blockchain, 1, 5, recordTime, signature, now); valid != test.valid {
 			t.Errorf("blockchain record with time %d seconds from now: valid %t, expected %t", test.offset, valid, test.valid)
 		}
+		if valid := BlockchainRecordTimeValid(recordTime, now); valid != test.valid {
+			t.Errorf("time %d seconds from now: valid %t, expected %t", test.offset, valid, test.valid)
+		}
 	}
 }

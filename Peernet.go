@@ -1,6 +1,6 @@
 /*
 File Name:  Peernet.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -80,6 +80,7 @@ func (backend *Backend) Connect() {
 	go backend.networks.networkChangeMonitor()
 	go backend.networks.startUPnP()
 	go backend.autoBucketRefresh()
+	go backend.autoListingsRemoveExpired()
 }
 
 // The Backend represents an instance of a Peernet client to be used by a frontend.
@@ -96,6 +97,7 @@ type Backend struct {
 	UserBlockchain        *blockchain.Blockchain   // UserBlockchain is the user's blockchain and exports functions to directly read and write it
 	UserWarehouse         *warehouse.Warehouse     // UserWarehouse is the user's warehouse for storing files that are shared
 	nodesDHT              *dht.DHT                 // Nodes connected in the DHT.
+	listings              blockchainListings       // Listings of DHT B: peers that announced a blockchain they store.
 
 	// peerID is the current peer's ID. It is an Ed25519 public key. It is also the peer's key in the DHT.
 	peerPrivateKey ed25519.PrivateKey
