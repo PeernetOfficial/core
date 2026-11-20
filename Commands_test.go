@@ -20,6 +20,26 @@ import (
 	"github.com/PeernetOfficial/core/store"
 )
 
+// testBlockchain returns a blockchain with the count of blocks, held in memory.
+func testBlockchain(t *testing.T, privateKey ed25519.PrivateKey, height int) (result *blockchain.Blockchain) {
+	result, err := blockchain.InitStore(privateKey, store.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for n := 0; n < height; n++ {
+		if _, _, status := result.Append([]blockchain.BlockRecordRaw{{Type: blockchain.RecordTypeProfile, Data: []byte{byte(n)}}}); status != blockchain.StatusOK {
+			t.Fatalf("appending block %d: status %d", n, status)
+		}
+	}
+
+	if _, got, _ := result.Header(); got != uint64(height) {
+		t.Fatalf("blockchain of height %d, expected %d", got, height)
+	}
+
+	return result
+}
+
 // testPeerConnections returns a peer with active connections to the IPs. The first one is the latest connection.
 func testPeerConnections(t *testing.T, backend *Backend, ips ...string) (peer *PeerInfo) {
 	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
@@ -45,7 +65,7 @@ func testPeerConnections(t *testing.T, backend *Backend, ips ...string) (peer *P
 func TestAnnouncementResponseAddresses(t *testing.T) {
 	self, selfPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 
-	backend := &Backend{peerPublicKey: self, peerPrivateKey: selfPrivateKey, UserBlockchain: &blockchain.Blockchain{}, networks: &Networks{}}
+	backend := &Backend{peerPublicKey: self, peerPrivateKey: selfPrivateKey, UserBlockchain: testBlockchain(t, selfPrivateKey, 1), networks: &Networks{}}
 	backend.initFilters()
 	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha, beta, gamma)
 
@@ -159,7 +179,7 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 func TestAnnouncementResponseBlockchain(t *testing.T) {
 	self, selfPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 
-	backend := &Backend{peerPublicKey: self, peerPrivateKey: selfPrivateKey, UserBlockchain: &blockchain.Blockchain{}, networks: &Networks{}}
+	backend := &Backend{peerPublicKey: self, peerPrivateKey: selfPrivateKey, UserBlockchain: testBlockchain(t, selfPrivateKey, 1), networks: &Networks{}}
 	backend.initFilters()
 
 	var records []protocol.ResponseRecord
@@ -254,6 +274,50 @@ func TestAnnouncementResponseBlockchain(t *testing.T) {
 		}
 		if decoded != len(expected) {
 			t.Fatalf("%d peers: %d closest peers decoded, expected %d", test.peers, decoded, len(expected))
+		}
+	}
+}
+
+// TestAnnouncementResponseBlockchainHeight checks when the peer lists itself as storing peer in the response to B_FIND_BLOCKCHAIN for the own blockchain:
+// if the blockchain has a block. The peers close to the key are returned in both cases.
+func TestAnnouncementResponseBlockchainHeight(t *testing.T) {
+	for _, height := range []int{0, 1, 3} {
+		self, selfPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+
+		backend := &Backend{peerPublicKey: self, peerPrivateKey: selfPrivateKey, UserBlockchain: testBlockchain(t, selfPrivateKey, height), networks: &Networks{}}
+		backend.initFilters()
+		backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha, beta, gamma)
+
+		for n := 0; n < 3; n++ {
+			peer := testPeerConnections(t, backend, "203.0.113.1")
+			backend.nodesDHT.AddNode(&dht.Node{ID: peer.PublicKey, Info: peer})
+		}
+
+		var records []protocol.ResponseRecord
+		backend.Filters.MessageOutResponse = func(peer *PeerInfo, packet *protocol.PacketRaw, recordsOut []protocol.ResponseRecord) {
+			records = recordsOut
+		}
+
+		announcement := &protocol.MessageAnnouncement{MessageRaw: &protocol.MessageRaw{}, Features: 1 << protocol.FeatureIPv4Listen}
+		announcement.FindBlockchain = [][]byte{self}
+
+		testPeerConnections(t, backend).cmdAnouncement(announcement, nil)
+
+		if len(records) != 1 || !records[0].IsLast || len(records[0].Closest) != 3 {
+			t.Fatalf("height %d: %d response records", height, len(records))
+		}
+
+		expected := 0
+		if height > 0 {
+			expected = 1
+		}
+		if len(records[0].Storing) != expected {
+			t.Fatalf("height %d: %d storing peers, expected %d", height, len(records[0].Storing), expected)
+		}
+		for _, storing := range records[0].Storing {
+			if !storing.PublicKey.Equal(self) || storing.BlockchainHeight != uint64(height) || storing.BlockchainVersion != 0 {
+				t.Fatalf("height %d: storing peer of version %d, height %d", height, storing.BlockchainVersion, storing.BlockchainHeight)
+			}
 		}
 	}
 }

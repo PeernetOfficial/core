@@ -92,7 +92,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		records = append(records, protocol.ResponseRecord{Type: protocol.ResponseAPeer, Key: key, Closest: closestPeersDHTA(key), IsLast: true})
 	}
 
-	// B_FIND_BLOCKCHAIN: self if the key is the own blockchain, and the gamma peers closest to the key
+	// B_FIND_BLOCKCHAIN: self if the key is the own blockchain and it has a block, and the gamma peers closest to the key
 	for _, key := range msg.FindBlockchain {
 		if keyBudget == 0 {
 			break
@@ -102,8 +102,9 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 
 		record := protocol.ResponseRecord{Type: protocol.ResponseBBlockchain, Key: key}
 		if bytes.Equal(key, peer.Backend.peerPublicKey) {
-			_, height, version := peer.Backend.UserBlockchain.Header()
-			record.Storing = []protocol.StoringPeer{peer.Backend.selfStoringPeer(key, version, height)}
+			if _, height, version := peer.Backend.UserBlockchain.Header(); height > 0 {
+				record.Storing = []protocol.StoringPeer{peer.Backend.selfStoringPeer(key, version, height)}
+			}
 		}
 
 		// The closest peers are spread over response records for the key. The last one indicates the last result.
