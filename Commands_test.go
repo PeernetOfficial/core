@@ -322,6 +322,49 @@ func TestAnnouncementResponseBlockchainHeight(t *testing.T) {
 	}
 }
 
+// TestAnnouncementStoreNoResponse checks which announcements are answered with a Response: one whose only requests are store requests is not.
+func TestAnnouncementStoreNoResponse(t *testing.T) {
+	self, _, _ := ed25519.GenerateKey(rand.Reader)
+
+	backend := &Backend{peerPublicKey: self, UserBlockchain: &blockchain.Blockchain{}, networks: &Networks{}}
+	backend.initFilters()
+	backend.nodesDHT = dht.NewDHT(&dht.Node{ID: self}, 256, bucketSize, alpha, beta, gamma)
+
+	responses := 0
+	backend.Filters.MessageOutResponse = func(peer *PeerInfo, packet *protocol.PacketRaw, recordsOut []protocol.ResponseRecord) {
+		responses++
+	}
+
+	senderPublicKey, senderPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+	sender := &PeerInfo{Backend: backend, PublicKey: senderPublicKey}
+	key, _, _ := ed25519.GenerateKey(rand.Reader)
+
+	valid := protocol.BlockchainStore{PublicKey: key, Version: 1, Height: 1, Time: uint32(time.Now().Unix())}
+	valid.Signature = protocol.BlockchainRecordSign(senderPrivateKey, valid.PublicKey, valid.Version, valid.Height, valid.Time)
+	invalid := protocol.BlockchainStore{PublicKey: key, Version: 1, Height: 1}
+
+	for _, test := range []struct {
+		name     string
+		requests protocol.Requests
+		expected int
+	}{
+		{"no requests", protocol.Requests{}, 1},
+		{"store request", protocol.Requests{StoreBlockchain: []protocol.BlockchainStore{valid}}, 0},
+		{"store request with a record that is not valid", protocol.Requests{StoreBlockchain: []protocol.BlockchainStore{invalid}}, 0},
+		{"store request and A_FIND_SELF", protocol.Requests{StoreBlockchain: []protocol.BlockchainStore{valid}, FindSelf: true}, 1},
+		{"store request and A_FIND_PEER", protocol.Requests{StoreBlockchain: []protocol.BlockchainStore{valid}, FindPeer: [][]byte{key}}, 1},
+		{"store request and B_FIND_BLOCKCHAIN", protocol.Requests{StoreBlockchain: []protocol.BlockchainStore{valid}, FindBlockchain: [][]byte{key}}, 1},
+		{"B_FIND_BLOCKCHAIN", protocol.Requests{FindBlockchain: [][]byte{key}}, 1},
+	} {
+		responses = 0
+		sender.cmdAnouncement(&protocol.MessageAnnouncement{MessageRaw: &protocol.MessageRaw{}, Requests: test.requests}, nil)
+
+		if responses != test.expected {
+			t.Errorf("%s: %d Responses, expected %d", test.name, responses, test.expected)
+		}
+	}
+}
+
 // TestStoreBlockchainValid checks which blockchain records of a B_STORE_BLOCKCHAIN request are handled: those signed by the sender with a time that is valid.
 func TestStoreBlockchainValid(t *testing.T) {
 	self, _, _ := ed25519.GenerateKey(rand.Reader)

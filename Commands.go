@@ -129,6 +129,11 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		}
 	}
 
+	// An announcement whose only requests are store requests is not answered.
+	if len(msg.StoreBlockchain) > 0 && !msg.FindSelf && len(msg.FindPeer) == 0 && len(msg.FindBlockchain) == 0 {
+		return
+	}
+
 	sendUA := msg.UserAgent != "" // Send user agent if one was provided. Per protocol the first announcement message must have the User Agent set.
 	peer.sendResponse(msg.Sequence, sendUA, records, connection)
 }
