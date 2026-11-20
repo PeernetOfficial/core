@@ -86,6 +86,10 @@ const PeerRecordAddressesMax = 3
 // storingBlockchainInfoSize is the size of the data that follows the peer record of a storing peer in B_RESPONSE_BLOCKCHAIN: version (8) + height (8) + time (4) + signature (64).
 const storingBlockchainInfoSize = 84
 
+// responsePayloadTarget is the payload size that a response message with more than one record stays within: a record that would exceed it starts a new message.
+// A packet of that payload size is 1232 bytes, the size a packet should not exceed.
+const responsePayloadTarget = internetSafeMTU - PacketLengthMin
+
 // peerCountLastFlag is bit 7 of the first peer record count: the last result for the key.
 const peerCountLastFlag = 0x80
 
@@ -342,6 +346,7 @@ func encodeResponseRecord(record *ResponseRecord) (data []byte, err error) {
 }
 
 // EncodeResponse encodes a response message. It returns multiple messages if the records do not fit into one; the last message carries the SEQUENCE_LAST flag.
+// A record that would make the message larger than a packet of 1232 bytes allows starts a new message.
 // A record is never split over messages; the caller limits the peer records per response record.
 func EncodeResponse(sendUA bool, records []ResponseRecord, features byte, blockchainHeight, blockchainVersion uint64, userAgent string) (packetsRaw [][]byte, err error) {
 	b := newMessageBuilder(sendUA, features, blockchainHeight, blockchainVersion, userAgent)
@@ -352,7 +357,7 @@ func EncodeResponse(sendUA bool, records []ResponseRecord, features byte, blockc
 			return nil, err
 		}
 
-		if len(data) > b.space() {
+		if len(data) > b.space() || b.count > 0 && b.size+recordHeaderSize+len(data) > responsePayloadTarget {
 			b.finish(false)
 			b.start()
 
