@@ -73,7 +73,11 @@ func Init(UserAgent string, ConfigFilename string, Filters *Filters, ConfigOut i
 
 // Connect starts bootstrapping and local peer discovery.
 func (backend *Backend) Connect() {
-	go backend.bootstrapKademlia()
+	go func() {
+		// The own blockchain is announced after the routing table refresh at startup.
+		backend.bootstrapKademlia()
+		backend.autoAnnounceBlockchain()
+	}()
 	go backend.bootstrap()
 	go backend.networks.autoMulticastBroadcast()
 	go backend.autoPingAll()
