@@ -47,6 +47,13 @@ func BlockchainRecordSign(privateKey ed25519.PrivateKey, blockchainPublicKey ed2
 	return signature
 }
 
+// BlockchainRecordTimeValid checks the time of a blockchain record at the time now: it is valid if it is at most 24 hours in the past and at most 1 hour in the future.
+func BlockchainRecordTimeValid(recordTime uint32, now time.Time) (valid bool) {
+	age := now.Unix() - int64(recordTime)
+
+	return age <= int64(BlockchainRecordTimePast/time.Second) && -age <= int64(BlockchainRecordTimeFuture/time.Second)
+}
+
 // BlockchainRecordValid checks a blockchain record at the time now. It is valid if its signature verifies against the Peer ID of the peer that stores the blockchain,
 // and its time is at most 24 hours in the past and at most 1 hour in the future.
 func BlockchainRecordValid(storingPeerPublicKey, blockchainPublicKey ed25519.PublicKey, version, height uint64, recordTime uint32, signature [ed25519.SignatureSize]byte, now time.Time) (valid bool) {
@@ -54,7 +61,7 @@ func BlockchainRecordValid(storingPeerPublicKey, blockchainPublicKey ed25519.Pub
 		return false
 	}
 
-	if age := now.Unix() - int64(recordTime); age > int64(BlockchainRecordTimePast/time.Second) || -age > int64(BlockchainRecordTimeFuture/time.Second) {
+	if !BlockchainRecordTimeValid(recordTime, now) {
 		return false
 	}
 

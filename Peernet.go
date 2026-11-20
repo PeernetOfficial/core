@@ -1,6 +1,6 @@
 /*
 File Name:  Peernet.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -73,13 +73,18 @@ func Init(UserAgent string, ConfigFilename string, Filters *Filters, ConfigOut i
 
 // Connect starts bootstrapping and local peer discovery.
 func (backend *Backend) Connect() {
-	go backend.bootstrapKademlia()
+	go func() {
+		// The own blockchain is announced after the routing table refresh at startup.
+		backend.bootstrapKademlia()
+		backend.autoAnnounceBlockchain()
+	}()
 	go backend.bootstrap()
 	go backend.networks.autoMulticastBroadcast()
 	go backend.autoPingAll()
 	go backend.networks.networkChangeMonitor()
 	go backend.networks.startUPnP()
 	go backend.autoBucketRefresh()
+	go backend.autoListingsRemoveExpired()
 }
 
 // The Backend represents an instance of a Peernet client to be used by a frontend.
@@ -96,6 +101,7 @@ type Backend struct {
 	UserBlockchain        *blockchain.Blockchain   // UserBlockchain is the user's blockchain and exports functions to directly read and write it
 	UserWarehouse         *warehouse.Warehouse     // UserWarehouse is the user's warehouse for storing files that are shared
 	nodesDHT              *dht.DHT                 // Nodes connected in the DHT.
+	listings              blockchainListings       // Listings of DHT B: peers that announced a blockchain they store.
 
 	// peerID is the current peer's ID. It is an Ed25519 public key. It is also the peer's key in the DHT.
 	peerPrivateKey ed25519.PrivateKey

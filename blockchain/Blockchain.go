@@ -1,6 +1,6 @@
 /*
 File Name:  Blockchain.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 
 All blocks and the blockchain header are stored in a key-value database.
@@ -54,12 +54,21 @@ type Blockchain struct {
 
 // Init initializes the given blockchain. It creates the blockchain file if it does not exist already.
 func Init(privateKey ed25519.PrivateKey, path string) (blockchain *Blockchain, err error) {
-	blockchain = &Blockchain{privateKey: privateKey, publicKey: privateKey.Public().(ed25519.PublicKey), path: path}
-
 	// open existing blockchain file or create new one
-	if blockchain.database, err = store.NewPogrebStore(path); err != nil {
+	database, err := store.NewPogrebStore(path)
+	if err != nil {
 		return nil, err
 	}
+
+	blockchain, err = InitStore(privateKey, database)
+	blockchain.path = path
+
+	return blockchain, err
+}
+
+// InitStore initializes the blockchain in the given key-value store. It creates the blockchain header if the store holds none.
+func InitStore(privateKey ed25519.PrivateKey, database store.Store) (blockchain *Blockchain, err error) {
+	blockchain = &Blockchain{privateKey: privateKey, publicKey: privateKey.Public().(ed25519.PublicKey), database: database}
 
 	// verify header
 	var found bool

@@ -23,8 +23,13 @@ import (
 const respondClosesContactsCount = 5
 
 // respondClosestRecordDHTB is the number of closest peers per response record of B_RESPONSE_BLOCKCHAIN. The gamma closest peers that are returned per request key are spread over response records.
-// 10 peer records with one IPv4 and one IPv6 address each take 660 bytes: a packet with one such record, a storing peer record and the User Agent stays within 1232 bytes.
+// 10 peer records with one IPv4 and one IPv6 address each take 660 bytes.
 const respondClosestRecordDHTB = 10
+
+// respondStoringCountDHTB is the number of storing peers to return per request key in B_RESPONSE_BLOCKCHAIN. They are in the first response record for the key.
+// A storing peer record with one IPv4 and one IPv6 address takes 150 bytes. A packet with 2 of them, 10 peer records of close peers and a User Agent of up to 143 bytes
+// stays within 1232 bytes; with a longer User Agent it is larger.
+const respondStoringCountDHTB = 2
 
 // Maximum count of addresses per family in a peer record, by the response record that carries it.
 const (
@@ -92,7 +97,8 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		records = append(records, protocol.ResponseRecord{Type: protocol.ResponseAPeer, Key: key, Closest: closestPeersDHTA(key), IsLast: true})
 	}
 
-	// B_FIND_BLOCKCHAIN: self if the key is the own blockchain, and the gamma peers closest to the key
+	// B_FIND_BLOCKCHAIN: self if the key is the own blockchain and it has a block, the peers listed as storing the blockchain, and the gamma peers closest to the key
+	now := time.Now()
 	for _, key := range msg.FindBlockchain {
 		if keyBudget == 0 {
 			break
@@ -102,9 +108,11 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 
 		record := protocol.ResponseRecord{Type: protocol.ResponseBBlockchain, Key: key}
 		if bytes.Equal(key, peer.Backend.peerPublicKey) {
-			_, height, version := peer.Backend.UserBlockchain.Header()
-			record.Storing = []protocol.StoringPeer{peer.Backend.selfStoringPeer(key, version, height)}
+			if _, height, version := peer.Backend.UserBlockchain.Header(); height > 0 {
+				record.Storing = []protocol.StoringPeer{peer.Backend.selfStoringPeer(key, version, height)}
+			}
 		}
+		record.Storing = append(record.Storing, peer.Backend.listingsStoring(key, peer.PublicKey, connection.IsLocal(), allowIPv4, allowIPv6, respondStoringCountDHTB-len(record.Storing), now)...)
 
 		// The closest peers are spread over response records for the key. The last one indicates the last result.
 		closest := closestPeers(key, gamma, respondAddressesMaxDHTB)
@@ -120,12 +128,18 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		records = append(records, record)
 	}
 
-	// B_STORE_BLOCKCHAIN: a blockchain record that is not valid is ignored. Listings of what other peers store are not kept. Store requests do not trigger a response.
-	now := time.Now()
+	// B_STORE_BLOCKCHAIN: a blockchain record that is not valid is ignored. Store requests do not trigger a response.
 	for n := range msg.StoreBlockchain {
 		if record := &msg.StoreBlockchain[n]; protocol.BlockchainRecordValid(peer.PublicKey, record.PublicKey, record.Version, record.Height, record.Time, record.Signature, now) {
 			peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBStoreBlockchain, record.PublicKey, record)
+
+			peer.listingAdd(record)
 		}
+	}
+
+	// An announcement whose only requests are store requests is not answered.
+	if len(msg.StoreBlockchain) > 0 && !msg.FindSelf && len(msg.FindPeer) == 0 && len(msg.FindBlockchain) == 0 {
+		return
 	}
 
 	sendUA := msg.UserAgent != "" // Send user agent if one was provided. Per protocol the first announcement message must have the User Agent set.
