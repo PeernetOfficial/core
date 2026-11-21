@@ -405,6 +405,8 @@ func testLookupNodesDelay(t *testing.T, key []byte, table []*Node, timeoutIR tim
 
 	requests = make(map[string]int)
 
+	var answers sync.WaitGroup
+
 	dht.SendRequest = func(request *InformationRequest) {
 		for _, node := range request.Nodes {
 			requests[string(node.ID)]++
@@ -417,11 +419,11 @@ func testLookupNodesDelay(t *testing.T, key []byte, table []*Node, timeoutIR tim
 			message := &NodeMessage{SenderID: node.ID, Closest: closest}
 
 			if delay > 0 {
-				go func() {
+				answers.Go(func() {
 					time.Sleep(delay)
 					request.QueueResult(message)
 					request.Done()
-				}()
+				})
 			} else {
 				request.QueueResult(message)
 				request.Done()
@@ -438,8 +440,12 @@ func testLookupNodesDelay(t *testing.T, key []byte, table []*Node, timeoutIR tim
 		found = result.TargetNode
 	}
 	<-search.TerminateSignal
+	elapsed = time.Since(timeStart)
 
-	return search, found, requests, time.Since(timeStart)
+	// The answers that are under way when the search ends are waited for: a synctest bubble ends with a panic if a goroutine is left.
+	answers.Wait()
+
+	return search, found, requests, elapsed
 }
 
 // TestLookupClosestNode searches for a node that only node N knows. N is reported by node A and is not the closest node to the key:
@@ -526,7 +532,12 @@ func TestLookupTargetAnswers(t *testing.T) {
 }
 
 // TestLookupTargetAddresses checks a search for a node that is reported with different addresses. The Info of a node stands for its address.
+// It runs in a synctest bubble: the delays of the answers and the timeouts pass on the clock of the bubble.
 func TestLookupTargetAddresses(t *testing.T) {
+	synctest.Test(t, testLookupTargetAddresses)
+}
+
+func testLookupTargetAddresses(t *testing.T) {
 	key := testID(t)
 	targetWrong := &Node{ID: key, Info: "X:1234"}
 	targetWrong2 := &Node{ID: key, Info: "X:1234"}

@@ -8,6 +8,7 @@ package dht
 
 import (
 	"bytes"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -303,7 +304,12 @@ func TestLookupBlockchainNotAnswered(t *testing.T) {
 }
 
 // TestLookupBlockchainTerminate checks a search for the nodes that store a blockchain that the caller ends when the first storing node is handed over.
+// It runs in a synctest bubble: the delays of the answers and the waiting pass on the clock of the bubble.
 func TestLookupBlockchainTerminate(t *testing.T) {
+	synctest.Test(t, testLookupBlockchainTerminate)
+}
+
+func testLookupBlockchainTerminate(t *testing.T) {
 	key := testID(t)
 
 	var nodes []*Node
@@ -318,6 +324,7 @@ func TestLookupBlockchainTerminate(t *testing.T) {
 
 	// Every node answers after 30 ms and reports two storing nodes.
 	var requests int32
+	var answers sync.WaitGroup
 
 	dht.SendRequest = func(request *InformationRequest) {
 		for _, node := range request.Nodes {
@@ -325,11 +332,11 @@ func TestLookupBlockchainTerminate(t *testing.T) {
 
 			message := &NodeMessage{SenderID: node.ID, Storing: []*Node{{ID: testID(t)}, {ID: testID(t)}}}
 
-			go func() {
+			answers.Go(func() {
 				time.Sleep(30 * time.Millisecond)
 				request.QueueResult(message)
 				request.Done()
-			}()
+			})
 		}
 	}
 
@@ -339,6 +346,12 @@ func TestLookupBlockchainTerminate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// When the test ends, the search is ended and the answers under way are waited for: a synctest bubble ends with a panic if a goroutine is left.
+	defer func() {
+		search.Terminate()
+		answers.Wait()
+	}()
 
 	select {
 	case result := <-search.Storing:

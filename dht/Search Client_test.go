@@ -9,6 +9,7 @@ package dht
 import (
 	"crypto/rand"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -21,7 +22,12 @@ func testID(t *testing.T) []byte {
 }
 
 // TestSearchTerminate checks a search that is terminated while it hands over what it found.
+// It runs in a synctest bubble: the timeout of the search passes on the clock of the bubble.
 func TestSearchTerminate(t *testing.T) {
+	synctest.Test(t, testSearchTerminate)
+}
+
+func testSearchTerminate(t *testing.T) {
 	target := &Node{ID: testID(t)}
 
 	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5, 5, 20)
