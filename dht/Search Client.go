@@ -22,8 +22,8 @@ import (
 // In a search for the nodes that store a blockchain, gamma closest peers are accepted from a node in total.
 const MaxClosest = 5
 
-// MaxLevel defines the max level.
-const MaxLevel = 10
+// MaxRequests is the maximum count of nodes a search sends the request to. It bounds a search in which nodes keep reporting closer nodes.
+const MaxRequests = 100
 
 // SearchClient defines a search in the distributed hash table involving multiple information requests.
 type SearchClient struct {
@@ -245,7 +245,7 @@ func (client *SearchClient) sendInfoRequest(nodes []*Node, resultChan chan *Node
 func (client *SearchClient) startSearch() {
 	results := make(chan *NodeMessage, messageChannelSize)
 	levelEnd := make(chan []*Node)
-	level, activeLevels := 0, 0
+	level, activeLevels, requests := 0, 0, 0
 
 	// startRequest sends an information request to the nodes.
 	startRequest := func(nodes []*Node) (started bool) {
@@ -257,6 +257,7 @@ func (client *SearchClient) startSearch() {
 		}
 
 		activeLevels++
+		requests += len(nodes)
 
 		for _, node := range nodes {
 			if bytes.Equal(node.ID, client.Key) {
@@ -276,9 +277,13 @@ func (client *SearchClient) startSearch() {
 		return true
 	}
 
-	// startLevel sends an information request to the closest nodes not yet contacted.
+	// startLevel sends an information request to the closest nodes not yet contacted, to at most alpha and to as many as MaxRequests leaves.
 	startLevel := func() (started bool) {
-		nodes := client.list.GetUncontacted(client.alpha, true)
+		count := client.alpha
+		if count > MaxRequests-requests {
+			count = MaxRequests - requests
+		}
+		nodes := client.list.GetUncontacted(count, true)
 		if len(nodes) == 0 {
 			return false
 		}
@@ -307,7 +312,7 @@ func (client *SearchClient) startSearch() {
 
 		// The node searched for is reported: it is sent the request at once. If it is known already, it is sent the request at the addresses that are not yet tried.
 		for _, closePeer := range result.Closest {
-			if client.Action != ActionFindNode || !bytes.Equal(closePeer.ID, client.Key) || level >= MaxLevel {
+			if client.Action != ActionFindNode || !bytes.Equal(closePeer.ID, client.Key) || requests >= MaxRequests {
 				continue
 			}
 
@@ -374,7 +379,7 @@ func (client *SearchClient) startSearch() {
 			return true
 		}
 
-		if !allContacted && level < MaxLevel {
+		if !allContacted {
 			level++
 			startLevel()
 		}

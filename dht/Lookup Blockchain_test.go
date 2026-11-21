@@ -88,7 +88,7 @@ func TestLookupBlockchain(t *testing.T) {
 				delete(expected, string(result.StoringNode.ID))
 			}
 
-			if max := 5 * (MaxLevel + 1); lookup.requests > max {
+			if max := MaxRequests; lookup.requests > max {
 				t.Fatalf("lookup %d: %d requests sent, expected at most %d", n, lookup.requests, max)
 			}
 
@@ -151,6 +151,38 @@ func testLookupBlockchainNodes(t *testing.T, key []byte, table []*Node, timeoutI
 	}
 
 	return search, requests, time.Since(timeStart)
+}
+
+// TestLookupBlockchainChain searches for the nodes that store a blockchain while each node reports one node that is closer to the key, 30 nodes in a row.
+// Each answer starts a request to one node. The search ends when all 30 nodes have answered: the count of information requests does not end it.
+func TestLookupBlockchainChain(t *testing.T) {
+	key := testID(t)
+
+	// Nodes 1 to 30 by their distance to the key. The routing table holds node 30. Node n reports node n-1, node 1 reports no node.
+	var nodes []*Node
+	for distance := uint32(1); distance <= 30; distance++ {
+		nodes = append(nodes, &Node{ID: testIDDistance(key, distance)})
+	}
+
+	search, requests, _ := testLookupBlockchainNodes(t, key, nodes[29:], 200*time.Millisecond, func(node *Node) (closest, storing []*Node, ok bool, delay time.Duration) {
+		for number := 1; number < len(nodes); number++ {
+			if bytes.Equal(node.ID, nodes[number].ID) {
+				return nodes[number-1 : number], nil, true, 0
+			}
+		}
+		return nil, nil, true, 0
+	}, func(search *SearchClient, result *SearchResult) {
+		t.Fatalf("unexpected storing node %x", result.StoringNode.ID)
+	})
+
+	for number, node := range nodes {
+		if requests[string(node.ID)] != 1 || !search.answered[string(node.ID)] {
+			t.Fatalf("node %d was sent %d requests, answered %t; %d nodes were sent the request, expected all 30", number+1, requests[string(node.ID)], search.answered[string(node.ID)], len(requests))
+		}
+	}
+	if len(requests) != len(nodes) {
+		t.Fatalf("%d nodes were sent the request, expected %d", len(requests), len(nodes))
+	}
 }
 
 // TestLookupBlockchainNotAnswered searches for the nodes that store a blockchain with nodes that do not answer.

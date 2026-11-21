@@ -249,7 +249,7 @@ func TestLookupNotFound(t *testing.T) {
 
 		lookup.checkEnd(t, key)
 
-		if max := 5 * (MaxLevel + 1); lookup.requests > max {
+		if max := MaxRequests; lookup.requests > max {
 			t.Fatalf("lookup %d: %d requests sent, expected at most %d", n, lookup.requests, max)
 		}
 
@@ -618,9 +618,9 @@ func TestLookupNotAnswered(t *testing.T) {
 	}
 }
 
-// TestLookupMaxLevel searches for an ID that no node has, while every node answers with 5 nodes that are closer to the key than all nodes before.
-// The search ends at the max level.
-func TestLookupMaxLevel(t *testing.T) {
+// TestLookupMaxRequests searches for an ID that no node has, while every node answers with 5 nodes that are closer to the key than all nodes before.
+// The search ends once 100 nodes were sent the request. The routing table holds 3 nodes: the last information request goes to the 2 nodes that are left to 100.
+func TestLookupMaxRequests(t *testing.T) {
 	key := testID(t)
 	distance := uint32(1 << 30)
 
@@ -632,14 +632,14 @@ func TestLookupMaxLevel(t *testing.T) {
 		return nodes
 	}
 
-	_, found, requests, elapsed := testLookupNodes(t, key, next(), 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
+	_, found, requests, elapsed := testLookupNodes(t, key, next()[:3], 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
 		return next(), true
 	})
 
 	if found != nil {
 		t.Fatalf("unexpected result %x", found.ID)
 	}
-	if expected := 5 * (MaxLevel + 1); len(requests) != expected {
+	if expected := 100; len(requests) != expected {
 		t.Errorf("%d nodes were sent the request, expected %d", len(requests), expected)
 	}
 	if elapsed > time.Second {
@@ -649,7 +649,7 @@ func TestLookupMaxLevel(t *testing.T) {
 	// Every node also reports the node searched for at a new address, where it does not answer.
 	target := 0
 
-	_, found, requests, _ = testLookupNodes(t, key, next(), 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
+	_, found, requests, _ = testLookupNodes(t, key, next()[:3], 100*time.Millisecond, func(node *Node) (closest []*Node, ok bool) {
 		if bytes.Equal(node.ID, key) {
 			return nil, false
 		}
@@ -661,8 +661,12 @@ func TestLookupMaxLevel(t *testing.T) {
 	if found != nil {
 		t.Fatalf("node reported at new addresses: unexpected result %x", found.ID)
 	}
-	// Each request to the node searched for counts as a level, like each information request to 5 other nodes after the first one.
-	if count, levels := requests[string(key)], (len(requests)-1-5)/5; count == 0 || count+levels > MaxLevel {
-		t.Errorf("node reported at new addresses: it was sent %d requests and %d levels were started, expected at most %d together", count, levels, MaxLevel)
+	// Each request to the node searched for counts like a request to another node.
+	total := 0
+	for _, count := range requests {
+		total += count
+	}
+	if count := requests[string(key)]; count == 0 || total != 100 {
+		t.Errorf("node reported at new addresses: it was sent %d requests of %d in total, expected 100 in total", count, total)
 	}
 }
