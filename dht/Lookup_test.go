@@ -12,8 +12,25 @@ import (
 	"math/rand"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
+
+// testSeed is the seed of the simulated network of 2000 nodes and of the searches with delayed answers: the IDs of the nodes, the keys searched for and the order of the answers.
+// It is random in each run and logged by every test that uses the network. Set it here to repeat a run.
+var testSeed = time.Now().UnixNano()
+
+// testRandom returns the random generator of a test. Each test uses a stream of its own, the network uses stream 0.
+func testRandom(stream int64) *rand.Rand {
+	return rand.New(rand.NewSource(testSeed + stream))
+}
+
+// testIDRandom returns an ID from the random generator.
+func testIDRandom(random *rand.Rand) []byte {
+	id := make([]byte, 32)
+	random.Read(id)
+	return id
+}
 
 // testNetwork is a simulated network. Every node has its own routing table and answers a request with the closest nodes of that table.
 type testNetwork struct {
@@ -23,12 +40,12 @@ type testNetwork struct {
 	storing map[string][]*Node // Search for a blockchain: the storing nodes that a node reports, by the ID of the node that reports them.
 }
 
-// newTestNetwork creates a network of count nodes. Every node is added to the routing table of every other node.
-func newTestNetwork(t *testing.T, count int) (network *testNetwork) {
+// newTestNetwork creates a network of count nodes with IDs from the random generator. Every node is added to the routing table of every other node.
+func newTestNetwork(count int, random *rand.Rand) (network *testNetwork) {
 	network = &testNetwork{nodes: make(map[string]*DHT)}
 
 	for n := 0; n < count; n++ {
-		id := testID(t)
+		id := testIDRandom(random)
 		node := NewDHT(&Node{ID: id}, 256, 20, 5, 5, 20)
 
 		network.ids = append(network.ids, id)
@@ -50,10 +67,12 @@ func newTestNetwork(t *testing.T, count int) (network *testNetwork) {
 var testNetworkLarge *testNetwork
 var testNetworkLargeOnce sync.Once
 
-// testNetwork2000 returns a network of 2000 nodes that is shared by the tests.
+// testNetwork2000 returns a network of 2000 nodes that is shared by the tests, and logs the seed.
 func testNetwork2000(t *testing.T) *testNetwork {
+	t.Logf("seed %d", testSeed)
+
 	testNetworkLargeOnce.Do(func() {
-		testNetworkLarge = newTestNetwork(t, 2000)
+		testNetworkLarge = newTestNetwork(2000, testRandom(0))
 	})
 	return testNetworkLarge
 }
@@ -61,32 +80,26 @@ func testNetwork2000(t *testing.T) *testNetwork {
 // testLookup is a single search started by one node of the simulated network.
 type testLookup struct {
 	search   *SearchClient
-	delayed  bool    // Set if the nodes answer after 1 to 20 ms.
 	requests int     // Count of nodes that were sent the request.
 	reported []*Node // All nodes reported in responses.
 	failed   string  // Set if a request was sent to a node that was not the closest one not yet contacted.
 
-	activeMutex sync.Mutex
-	active      int // Count of nodes that were sent the request and did not answer yet.
-	activeMax   int // Highest count of such nodes during the search.
+	pending   []testAnswer // Delayed answers: the nodes that were sent the request and did not answer yet.
+	activeMax int          // Delayed answers: highest count of such nodes during the search.
 }
 
-// activeAdd changes the count of nodes that were sent the request and did not answer yet.
-func (lookup *testLookup) activeAdd(count int) {
-	lookup.activeMutex.Lock()
-	defer lookup.activeMutex.Unlock()
-
-	if lookup.active += count; lookup.active > lookup.activeMax {
-		lookup.activeMax = lookup.active
-	}
+// testAnswer is the answer of one node to an information request.
+type testAnswer struct {
+	request  *InformationRequest
+	messages []*NodeMessage
 }
 
 // start runs a search from the node with the given ID. Every node that is sent the request answers with the 5 closest nodes of its routing table, the requesting node excluded.
 // In a search for a blockchain it answers with the 20 closest nodes in two messages of 10, and reports the storing nodes that network.storing holds for it.
-// It answers at once, or if delayed is set after 1 to 20 ms.
+// It answers at once. If delayed is set, the answers are kept until run delivers them.
 // Each information request is checked: its nodes must be closer to the key than every node of the search list that is not yet contacted.
 func (network *testNetwork) start(self []byte, action int, key []byte, alpha int, delayed bool) (lookup *testLookup) {
-	lookup = &testLookup{delayed: delayed}
+	lookup = &testLookup{}
 	dht := network.nodes[string(self)]
 
 	dht.SendRequest = func(request *InformationRequest) {
@@ -122,7 +135,6 @@ func (network *testNetwork) start(self []byte, action int, key []byte, alpha int
 			}
 
 			closest := network.nodes[string(node.ID)].GetClosestContacts(count, key, nil, self)
-			lookup.reported = append(lookup.reported, closest...)
 
 			messages := []*NodeMessage{{SenderID: node.ID, Closest: closest}}
 			if action == ActionFindBlockchain {
@@ -133,19 +145,10 @@ func (network *testNetwork) start(self []byte, action int, key []byte, alpha int
 				messages = []*NodeMessage{{SenderID: node.ID, Closest: closest[:first], Storing: network.storing[string(node.ID)]}, {SenderID: node.ID, Closest: closest[first:]}}
 			}
 
-			lookup.activeAdd(1)
-
 			if delayed {
-				go func() {
-					time.Sleep(time.Duration(1+rand.Intn(20)) * time.Millisecond)
-					lookup.activeAdd(-1)
-					for _, message := range messages {
-						request.QueueResult(message)
-					}
-					request.Done()
-				}()
+				lookup.pending = append(lookup.pending, testAnswer{request: request, messages: messages})
 			} else {
-				lookup.activeAdd(-1)
+				lookup.reported = append(lookup.reported, closest...)
 				for _, message := range messages {
 					request.QueueResult(message)
 				}
@@ -160,9 +163,69 @@ func (network *testNetwork) start(self []byte, action int, key []byte, alpha int
 	return lookup
 }
 
+// run delivers the delayed answers of a search until the search ended: one node at a time, picked by the random generator. It returns the storing nodes that the search handed over.
+// It is called inside a synctest bubble. The search has handled each answer before the next one is delivered, and has handled the results of a node before the node is done.
+// The search must end while answers are under way or with the last one, without waiting for a timeout: the clock of the bubble does not advance.
+func (lookup *testLookup) run(t *testing.T, random *rand.Rand) (storing []*SearchResult) {
+	t.Helper()
+	search := lookup.search
+	timeStart := time.Now()
+
+	// handled waits until the search has handled everything delivered and reads the storing nodes it hands over. It returns false if the search ended.
+	handled := func() bool {
+		for {
+			synctest.Wait()
+
+			select {
+			case result := <-search.Storing:
+				storing = append(storing, result)
+				continue
+			default:
+			}
+
+			select {
+			case <-search.TerminateSignal:
+				return false
+			default:
+				return true
+			}
+		}
+	}
+
+	for handled() {
+		if len(lookup.pending) == 0 {
+			search.Terminate()
+			t.Fatalf("search did not end after all %d nodes that were sent the request answered", lookup.requests)
+		}
+		if len(lookup.pending) > lookup.activeMax {
+			lookup.activeMax = len(lookup.pending)
+		}
+
+		number := random.Intn(len(lookup.pending))
+		answer := lookup.pending[number]
+		lookup.pending = append(lookup.pending[:number], lookup.pending[number+1:]...)
+
+		for _, message := range answer.messages {
+			lookup.reported = append(lookup.reported, message.Closest...)
+			answer.request.QueueResult(message)
+		}
+		if !handled() {
+			break
+		}
+
+		answer.request.Done()
+	}
+
+	if elapsed := time.Since(timeStart); elapsed != 0 {
+		t.Fatalf("search ended after %s on the clock of the bubble, expected no waiting", elapsed)
+	}
+
+	return storing
+}
+
 // checkEnd checks a search that ended without result.
 // The beta closest nodes of the search list (gamma in a search for a blockchain) have all answered, the nodes that did not answer left out.
-// All reported nodes are in the search list. A search for a node ends while requests are under way, the check is left out if the nodes answer delayed.
+// All reported nodes are in the search list.
 func (lookup *testLookup) checkEnd(t *testing.T, key []byte) {
 	t.Helper()
 	search := lookup.search
@@ -172,15 +235,13 @@ func (lookup *testLookup) checkEnd(t *testing.T, key []byte) {
 		t.Fatal(lookup.failed)
 	}
 
-	if !lookup.delayed {
-		candidates := make(map[string]struct{})
-		for _, node := range list.Nodes {
-			candidates[string(node.ID)] = struct{}{}
-		}
-		for _, node := range lookup.reported {
-			if _, ok := candidates[string(node.ID)]; !ok {
-				t.Fatalf("reported node %x is not in the search list", node.ID)
-			}
+	candidates := make(map[string]struct{})
+	for _, node := range list.Nodes {
+		candidates[string(node.ID)] = struct{}{}
+	}
+	for _, node := range lookup.reported {
+		if _, ok := candidates[string(node.ID)]; !ok {
+			t.Fatalf("reported node %x is not in the search list", node.ID)
 		}
 	}
 
@@ -259,46 +320,50 @@ func TestLookupNotFound(t *testing.T) {
 	t.Logf("%d lookups for IDs that no node has, %.1f requests per lookup", lookups, float64(requests)/lookups)
 }
 
-// TestLookupDelayed searches in a simulated network of 2000 nodes in which every node answers after 1 to 20 ms: for nodes that exist, and for IDs that no node has.
+// TestLookupDelayed searches in a simulated network of 2000 nodes in which the nodes answer delayed, one at a time in random order: for nodes that exist, and for IDs that no node has.
 func TestLookupDelayed(t *testing.T) {
 	network := testNetwork2000(t)
+	random := testRandom(1)
 	requestsFound, requestsNotFound := 0, 0
 
 	const lookups = 100
 
-	for n := 0; n < lookups; n++ {
-		self, key := network.ids[n], network.ids[len(network.ids)-1-n]
+	synctest.Test(t, func(t *testing.T) {
+		for n := 0; n < lookups; n++ {
+			self, key := network.ids[n], network.ids[len(network.ids)-1-n]
 
-		lookup := network.start(self, ActionFindNode, key, 5, true)
+			lookup := network.start(self, ActionFindNode, key, 5, true)
+			lookup.run(t, random)
 
-		result, ok := <-lookup.search.Results
-		if !ok {
-			t.Fatalf("lookup %d: node %x not found after %d requests", n, key, lookup.requests)
-		} else if !bytes.Equal(result.TargetNode.ID, key) {
-			t.Fatalf("lookup %d: result is node %x, searched for %x", n, result.TargetNode.ID, key)
+			result, ok := <-lookup.search.Results
+			if !ok {
+				t.Fatalf("lookup %d: node %x not found after %d requests", n, key, lookup.requests)
+			} else if !bytes.Equal(result.TargetNode.ID, key) {
+				t.Fatalf("lookup %d: result is node %x, searched for %x", n, result.TargetNode.ID, key)
+			}
+
+			if lookup.failed != "" {
+				t.Fatalf("lookup %d: %s", n, lookup.failed)
+			}
+
+			requestsFound += lookup.requests
 		}
 
-		<-lookup.search.TerminateSignal
-		if lookup.failed != "" {
-			t.Fatalf("lookup %d: %s", n, lookup.failed)
+		for n := 0; n < lookups; n++ {
+			self, key := network.ids[n], testIDRandom(random)
+
+			lookup := network.start(self, ActionFindNode, key, 5, true)
+			lookup.run(t, random)
+
+			if result, ok := <-lookup.search.Results; ok {
+				t.Fatalf("lookup %d: unexpected result from %x", n, result.SenderID)
+			}
+
+			lookup.checkEnd(t, key)
+
+			requestsNotFound += lookup.requests
 		}
-
-		requestsFound += lookup.requests
-	}
-
-	for n := 0; n < lookups; n++ {
-		self, key := network.ids[n], testID(t)
-
-		lookup := network.start(self, ActionFindNode, key, 5, true)
-
-		if result, ok := <-lookup.search.Results; ok {
-			t.Fatalf("lookup %d: unexpected result from %x", n, result.SenderID)
-		}
-
-		lookup.checkEnd(t, key)
-
-		requestsNotFound += lookup.requests
-	}
+	})
 
 	t.Logf("%d lookups each: %.1f requests per lookup for existing nodes, %.1f for IDs that no node has", lookups, float64(requestsFound)/lookups, float64(requestsNotFound)/lookups)
 }

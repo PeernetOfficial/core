@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -25,77 +26,95 @@ func testCollectStoring(search *SearchClient) (storing []*SearchResult) {
 	}
 }
 
-// TestLookupBlockchain searches for the nodes that store a blockchain in a simulated network of 2000 nodes, with nodes that answer at once and nodes that answer after 1 to 20 ms.
+// TestLookupBlockchain searches for the nodes that store a blockchain in a simulated network of 2000 nodes, with nodes that answer at once and nodes that answer delayed, one at a time in random order.
 // One of the gamma closest nodes to the key reports two storing nodes: the closest one, the 6th, the 13th or the 20th. In every 8th search the key is the ID of a node, which reports itself as storing node.
 // The search must end when the gamma closest nodes have all answered, long before the timeout of the search, and hand over every storing node.
 func TestLookupBlockchain(t *testing.T) {
 	network := testNetwork2000(t)
 	defer func() { network.storing = nil }()
+	random := testRandom(2)
 
 	for _, delayed := range []bool{false, true} {
 		lookups, requests, activeMax := 200, 0, 0
+		newID := func() []byte { return testID(t) }
 		if delayed {
 			lookups = 80
+			newID = func() []byte { return testIDRandom(random) }
 		}
 
-		for n := 0; n < lookups; n++ {
-			self, key := network.ids[n], testID(t)
-			keyIsNode := n%8 == 0
-			if keyIsNode {
-				key = network.ids[len(network.ids)-1-n]
-			}
+		run := func(t *testing.T) {
+			for n := 0; n < lookups; n++ {
+				self, key := network.ids[n], newID()
+				keyIsNode := n%8 == 0
+				if keyIsNode {
+					key = network.ids[len(network.ids)-1-n]
+				}
 
-			// The gamma closest nodes of the network to the key. Every node knows all nodes, the searching node is not reported.
-			closest := testClosest(network.all, key, 20, func(node *Node) bool { return !bytes.Equal(node.ID, self) })
+				// The gamma closest nodes of the network to the key. Every node knows all nodes, the searching node is not reported.
+				closest := testClosest(network.all, key, 20, func(node *Node) bool { return !bytes.Equal(node.ID, self) })
 
-			keeper := closest[[]int{5, 12, 19, 0}[n%4]]
-			storingNodes := []*Node{{ID: testID(t)}, {ID: testID(t)}}
-			network.storing = map[string][]*Node{string(keeper.ID): storingNodes}
+				keeper := closest[[]int{5, 12, 19, 0}[n%4]]
+				storingNodes := []*Node{{ID: newID()}, {ID: newID()}}
+				network.storing = map[string][]*Node{string(keeper.ID): storingNodes}
 
-			expected := map[string]string{string(storingNodes[0].ID): string(keeper.ID), string(storingNodes[1].ID): string(keeper.ID)}
-			if keyIsNode {
-				network.storing[string(key)] = []*Node{{ID: key}}
-				expected[string(key)] = string(key)
-			}
+				expected := map[string]string{string(storingNodes[0].ID): string(keeper.ID), string(storingNodes[1].ID): string(keeper.ID)}
+				if keyIsNode {
+					network.storing[string(key)] = []*Node{{ID: key}}
+					expected[string(key)] = string(key)
+				}
 
-			timeStart := time.Now()
-			lookup := network.start(self, ActionFindBlockchain, key, 5, delayed)
-			storing := testCollectStoring(lookup.search)
+				timeStart := time.Now()
+				lookup := network.start(self, ActionFindBlockchain, key, 5, delayed)
 
-			if result, ok := <-lookup.search.Results; ok {
-				t.Fatalf("lookup %d: unexpected result from %x", n, result.SenderID)
-			}
-			if elapsed := time.Since(timeStart); elapsed > network.nodes[string(self)].TimeoutIR/2 {
-				t.Fatalf("lookup %d: search ended after %s", n, elapsed)
-			}
+				var storing []*SearchResult
+				if delayed {
+					storing = lookup.run(t, random)
+				} else {
+					storing = testCollectStoring(lookup.search)
+				}
 
-			lookup.checkEnd(t, key)
+				if result, ok := <-lookup.search.Results; ok {
+					t.Fatalf("lookup %d: unexpected result from %x", n, result.SenderID)
+				}
+				if elapsed := time.Since(timeStart); elapsed > network.nodes[string(self)].TimeoutIR/2 {
+					t.Fatalf("lookup %d: search ended after %s", n, elapsed)
+				}
 
-			for rank, node := range closest {
-				if !lookup.search.answered[string(node.ID)] {
-					t.Fatalf("lookup %d: search ended after %d requests while node %x, number %d of the closest nodes to the key, did not answer", n, lookup.requests, node.ID, rank+1)
+				lookup.checkEnd(t, key)
+
+				for rank, node := range closest {
+					if !lookup.search.answered[string(node.ID)] {
+						t.Fatalf("lookup %d: search ended after %d requests while node %x, number %d of the closest nodes to the key, did not answer", n, lookup.requests, node.ID, rank+1)
+					}
+				}
+
+				if len(storing) != len(expected) {
+					t.Fatalf("lookup %d: %d storing nodes handed over, expected %d", n, len(storing), len(expected))
+				}
+				for _, result := range storing {
+					sender, ok := expected[string(result.StoringNode.ID)]
+					if !ok || sender != string(result.SenderID) || !bytes.Equal(result.Key, key) || result.Action != ActionFindBlockchain {
+						t.Fatalf("lookup %d: unexpected storing node %x reported by %x", n, result.StoringNode.ID, result.SenderID)
+					}
+					delete(expected, string(result.StoringNode.ID))
+				}
+
+				if max := MaxRequests; lookup.requests > max {
+					t.Fatalf("lookup %d: %d requests sent, expected at most %d", n, lookup.requests, max)
+				}
+
+				requests += lookup.requests
+				if lookup.activeMax > activeMax {
+					activeMax = lookup.activeMax
 				}
 			}
+		}
 
-			if len(storing) != len(expected) {
-				t.Fatalf("lookup %d: %d storing nodes handed over, expected %d", n, len(storing), len(expected))
-			}
-			for _, result := range storing {
-				sender, ok := expected[string(result.StoringNode.ID)]
-				if !ok || sender != string(result.SenderID) || !bytes.Equal(result.Key, key) || result.Action != ActionFindBlockchain {
-					t.Fatalf("lookup %d: unexpected storing node %x reported by %x", n, result.StoringNode.ID, result.SenderID)
-				}
-				delete(expected, string(result.StoringNode.ID))
-			}
-
-			if max := MaxRequests; lookup.requests > max {
-				t.Fatalf("lookup %d: %d requests sent, expected at most %d", n, lookup.requests, max)
-			}
-
-			requests += lookup.requests
-			if lookup.activeMax > activeMax {
-				activeMax = lookup.activeMax
-			}
+		// The nodes answer delayed inside a bubble, see run.
+		if delayed {
+			synctest.Test(t, run)
+		} else {
+			run(t)
 		}
 
 		if delayed {
