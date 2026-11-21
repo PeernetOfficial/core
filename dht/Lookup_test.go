@@ -284,38 +284,40 @@ func TestLookupFound(t *testing.T) {
 }
 
 // TestLookupNotFound searches for IDs that no node has in a simulated network of 2000 nodes, and for the own ID.
-// The search must end when the beta closest nodes of the search list have all answered, long before the timeout of the search.
+// The search must end when the beta closest nodes of the search list have all answered, without waiting for a timeout: it runs in a synctest bubble and the clock of the bubble does not advance.
 func TestLookupNotFound(t *testing.T) {
 	network := testNetwork2000(t)
 	requests := 0
 
 	const lookups = 500
 
-	for n := 0; n < lookups; n++ {
-		self, key := network.ids[n], testID(t)
-		if n%10 == 0 {
-			key = self
+	synctest.Test(t, func(t *testing.T) {
+		for n := 0; n < lookups; n++ {
+			self, key := network.ids[n], testID(t)
+			if n%10 == 0 {
+				key = self
+			}
+
+			timeStart := time.Now()
+			lookup := network.start(self, ActionFindNode, key, 5, false)
+
+			if result, ok := <-lookup.search.Results; ok {
+				t.Fatalf("lookup %d: unexpected result from %x", n, result.SenderID)
+			}
+
+			if elapsed := time.Since(timeStart); elapsed != 0 {
+				t.Fatalf("lookup %d: search ended after %s", n, elapsed)
+			}
+
+			lookup.checkEnd(t, key)
+
+			if max := MaxRequests; lookup.requests > max {
+				t.Fatalf("lookup %d: %d requests sent, expected at most %d", n, lookup.requests, max)
+			}
+
+			requests += lookup.requests
 		}
-
-		timeStart := time.Now()
-		lookup := network.start(self, ActionFindNode, key, 5, false)
-
-		if result, ok := <-lookup.search.Results; ok {
-			t.Fatalf("lookup %d: unexpected result from %x", n, result.SenderID)
-		}
-
-		if elapsed := time.Since(timeStart); elapsed > network.nodes[string(self)].TimeoutIR/2 {
-			t.Fatalf("lookup %d: search ended after %s", n, elapsed)
-		}
-
-		lookup.checkEnd(t, key)
-
-		if max := MaxRequests; lookup.requests > max {
-			t.Fatalf("lookup %d: %d requests sent, expected at most %d", n, lookup.requests, max)
-		}
-
-		requests += lookup.requests
-	}
+	})
 
 	t.Logf("%d lookups for IDs that no node has, %.1f requests per lookup", lookups, float64(requests)/lookups)
 }
@@ -450,7 +452,12 @@ func testLookupNodesDelay(t *testing.T, key []byte, table []*Node, timeoutIR tim
 
 // TestLookupClosestNode searches for a node that only node N knows. N is reported by node A and is not the closest node to the key:
 // the closest node S does not answer, answers without any node, or answers with nodes it knows. The node must be found in each case.
+// It runs in a synctest bubble: the timeouts pass on the clock of the bubble, and the time a search takes is exact.
 func TestLookupClosestNode(t *testing.T) {
+	synctest.Test(t, testLookupClosestNode)
+}
+
+func testLookupClosestNode(t *testing.T) {
 	for _, test := range []string{"does not answer", "answers without any node", "answers with nodes it knows"} {
 		key := testID(t)
 		target := &Node{ID: key}
@@ -488,7 +495,12 @@ func TestLookupClosestNode(t *testing.T) {
 }
 
 // TestLookupTargetAnswers checks that a node is found when it answers, and only then.
+// It runs in a synctest bubble: the timeouts pass on the clock of the bubble, and the time a search takes is exact.
 func TestLookupTargetAnswers(t *testing.T) {
+	synctest.Test(t, testLookupTargetAnswers)
+}
+
+func testLookupTargetAnswers(t *testing.T) {
 	key := testID(t)
 	target := &Node{ID: key}
 	nodeA := &Node{ID: testIDDistance(key, 8)}
@@ -505,8 +517,9 @@ func TestLookupTargetAnswers(t *testing.T) {
 	if count := requests[string(key)]; count != 1 {
 		t.Errorf("node is reported and does not answer: it was sent %d requests, expected 1", count)
 	}
-	if elapsed > time.Second {
-		t.Errorf("node is reported and does not answer: search ended after %s", elapsed)
+	// The search waits for the node until the request to it times out.
+	if expected := 100 * time.Millisecond; elapsed != expected {
+		t.Errorf("node is reported and does not answer: search ended after %s, expected %s", elapsed, expected)
 	}
 
 	// A and B report the node, it answers.
@@ -628,7 +641,12 @@ func testLookupTargetAddresses(t *testing.T) {
 }
 
 // TestLookupNotAnswered searches for an ID that no node has, with nodes that do not answer.
+// It runs in a synctest bubble: the timeouts pass on the clock of the bubble, and the time a search takes is exact.
 func TestLookupNotAnswered(t *testing.T) {
+	synctest.Test(t, testLookupNotAnswered)
+}
+
+func testLookupNotAnswered(t *testing.T) {
 	key := testID(t)
 	nodeS := &Node{ID: testIDDistance(key, 1)}
 	nodeA := &Node{ID: testIDDistance(key, 8)}
@@ -659,8 +677,9 @@ func TestLookupNotAnswered(t *testing.T) {
 			t.Errorf("closest node does not answer: node %s is not recorded as answered", name)
 		}
 	}
-	if elapsed > time.Second {
-		t.Errorf("closest node does not answer: search ended after %s", elapsed)
+	// The search waits for S until the first information request times out. F answers at once.
+	if expected := 100 * time.Millisecond; elapsed != expected {
+		t.Errorf("closest node does not answer: search ended after %s, expected %s", elapsed, expected)
 	}
 
 	// No node answers. Every node of the routing table is sent the request, then no node is left to ask.
@@ -674,8 +693,9 @@ func TestLookupNotAnswered(t *testing.T) {
 	if len(requests) != 7 {
 		t.Errorf("no node answers: %d nodes were sent the request, expected 7", len(requests))
 	}
-	if elapsed > time.Second {
-		t.Errorf("no node answers: search ended after %s", elapsed)
+	// Two information requests, to 5 and to 2 nodes: the second one starts when the first one times out.
+	if expected := 200 * time.Millisecond; elapsed != expected {
+		t.Errorf("no node answers: search ended after %s, expected %s", elapsed, expected)
 	}
 
 	// Node G does not answer and is not one of the beta closest nodes once A reports S and F. The search ends while the request to G is under way.
@@ -689,14 +709,19 @@ func TestLookupNotAnswered(t *testing.T) {
 	if len(requests) != 7 {
 		t.Errorf("far node does not answer: %d nodes were sent the request, expected 7", len(requests))
 	}
-	if elapsed > time.Second/2 {
+	if elapsed != 0 {
 		t.Errorf("far node does not answer: search ended after %s", elapsed)
 	}
 }
 
 // TestLookupMaxRequests searches for an ID that no node has, while every node answers with 5 nodes that are closer to the key than all nodes before.
 // The search ends once 100 nodes were sent the request. The routing table holds 3 nodes: the last information request goes to the 2 nodes that are left to 100.
+// It runs in a synctest bubble: the timeouts pass on the clock of the bubble, and the time a search takes is exact.
 func TestLookupMaxRequests(t *testing.T) {
+	synctest.Test(t, testLookupMaxRequests)
+}
+
+func testLookupMaxRequests(t *testing.T) {
 	key := testID(t)
 	distance := uint32(1 << 30)
 
@@ -718,7 +743,7 @@ func TestLookupMaxRequests(t *testing.T) {
 	if expected := 100; len(requests) != expected {
 		t.Errorf("%d nodes were sent the request, expected %d", len(requests), expected)
 	}
-	if elapsed > time.Second {
+	if elapsed != 0 {
 		t.Errorf("search ended after %s", elapsed)
 	}
 

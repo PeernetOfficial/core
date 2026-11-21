@@ -29,7 +29,7 @@ func testCollectStoring(search *SearchClient) (storing []*SearchResult) {
 
 // TestLookupBlockchain searches for the nodes that store a blockchain in a simulated network of 2000 nodes, with nodes that answer at once and nodes that answer delayed, one at a time in random order.
 // One of the gamma closest nodes to the key reports two storing nodes: the closest one, the 6th, the 13th or the 20th. In every 8th search the key is the ID of a node, which reports itself as storing node.
-// The search must end when the gamma closest nodes have all answered, long before the timeout of the search, and hand over every storing node.
+// The search must end when the gamma closest nodes have all answered and hand over every storing node, without waiting for a timeout: it runs in a synctest bubble and the clock of the bubble does not advance.
 func TestLookupBlockchain(t *testing.T) {
 	network := testNetwork2000(t)
 	defer func() { network.storing = nil }()
@@ -77,7 +77,7 @@ func TestLookupBlockchain(t *testing.T) {
 				if result, ok := <-lookup.search.Results; ok {
 					t.Fatalf("lookup %d: unexpected result from %x", n, result.SenderID)
 				}
-				if elapsed := time.Since(timeStart); elapsed > network.nodes[string(self)].TimeoutIR/2 {
+				if elapsed := time.Since(timeStart); elapsed != 0 {
 					t.Fatalf("lookup %d: search ended after %s", n, elapsed)
 				}
 
@@ -111,12 +111,7 @@ func TestLookupBlockchain(t *testing.T) {
 			}
 		}
 
-		// The nodes answer delayed inside a bubble, see run.
-		if delayed {
-			synctest.Test(t, run)
-		} else {
-			run(t)
-		}
+		synctest.Test(t, run)
 
 		if delayed {
 			t.Logf("%d lookups with delayed answers, %.1f requests per lookup, at most %d requests under way at once", lookups, float64(requests)/float64(lookups), activeMax)
@@ -206,7 +201,12 @@ func TestLookupBlockchainChain(t *testing.T) {
 }
 
 // TestLookupBlockchainNotAnswered searches for the nodes that store a blockchain with nodes that do not answer.
+// It runs in a synctest bubble: the timeouts pass on the clock of the bubble, and the time a search takes is exact.
 func TestLookupBlockchainNotAnswered(t *testing.T) {
+	synctest.Test(t, testLookupBlockchainNotAnswered)
+}
+
+func testLookupBlockchainNotAnswered(t *testing.T) {
 	key := testID(t)
 
 	// Nodes 1 to 23 by their distance to the key. The routing table holds nodes 1 to 20.
@@ -248,8 +248,9 @@ func TestLookupBlockchainNotAnswered(t *testing.T) {
 	if len(storing) != 1 || storing[0].StoringNode != storingNode || !isNode(&Node{ID: storing[0].SenderID}, 23) {
 		t.Errorf("closest nodes do not answer: %d storing nodes handed over, expected the one that node 23 reports", len(storing))
 	}
-	if elapsed > time.Second {
-		t.Errorf("closest nodes do not answer: search ended after %s", elapsed)
+	// The 3 nodes that do not answer are part of the first information request: the search waits until it times out. All other nodes answer at once.
+	if expected := 200 * time.Millisecond; elapsed != expected {
+		t.Errorf("closest nodes do not answer: search ended after %s, expected %s", elapsed, expected)
 	}
 
 	// A network of 8 nodes: every node answers and reports the others. No node is left to ask, the search ends at once.
@@ -275,7 +276,7 @@ func TestLookupBlockchainNotAnswered(t *testing.T) {
 	if len(storing) != 1 || storing[0].StoringNode != storingNode {
 		t.Errorf("8 nodes: %d storing nodes handed over, expected the one that node 8 reports", len(storing))
 	}
-	if elapsed > time.Second/2 {
+	if elapsed != 0 {
 		t.Errorf("8 nodes: search ended after %s", elapsed)
 	}
 
@@ -289,8 +290,9 @@ func TestLookupBlockchainNotAnswered(t *testing.T) {
 	if len(requests) != 8 {
 		t.Errorf("no node answers: %d nodes were sent the request, expected 8", len(requests))
 	}
-	if elapsed > time.Second {
-		t.Errorf("no node answers: search ended after %s", elapsed)
+	// Two information requests, to 5 and to 3 nodes: the second one starts when the first one times out.
+	if expected := 200 * time.Millisecond; elapsed != expected {
+		t.Errorf("no node answers: search ended after %s, expected %s", elapsed, expected)
 	}
 
 	// An empty routing table: the search ends without a request.
@@ -298,7 +300,7 @@ func TestLookupBlockchainNotAnswered(t *testing.T) {
 		return nil, nil, true, 0
 	}, func(search *SearchClient, result *SearchResult) {})
 
-	if len(requests) != 0 || elapsed > time.Second/2 {
+	if len(requests) != 0 || elapsed != 0 {
 		t.Errorf("empty routing table: %d nodes were sent the request, search ended after %s", len(requests), elapsed)
 	}
 }
@@ -425,7 +427,12 @@ func TestLookupBlockchainClosest(t *testing.T) {
 }
 
 // TestLookupNodeStoring checks that a search for a node takes no storing nodes from an answer, and that a search for the nodes that store a blockchain does not end when the node with the ID of the key answers.
+// It runs in a synctest bubble: the timeouts pass on the clock of the bubble, and the time a search takes is exact.
 func TestLookupNodeStoring(t *testing.T) {
+	synctest.Test(t, testLookupNodeStoring)
+}
+
+func testLookupNodeStoring(t *testing.T) {
 	key := testID(t)
 	nodeKey := &Node{ID: key}
 	nodeA := &Node{ID: testIDDistance(key, 8)}
@@ -451,7 +458,7 @@ func TestLookupNodeStoring(t *testing.T) {
 	if storing := testCollectStoring(search); len(storing) != 0 {
 		t.Fatalf("search for a node: %d storing nodes handed over", len(storing))
 	}
-	if elapsed := time.Since(timeStart); elapsed > time.Second/2 {
+	if elapsed := time.Since(timeStart); elapsed != 0 {
 		t.Fatalf("search for a node: search ended after %s", elapsed)
 	}
 
