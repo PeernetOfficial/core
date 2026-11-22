@@ -27,12 +27,16 @@ const blockchainCacheExpire = time.Hour
 // A copy of a blockchain is kept while a reason is set for it. The client sets the reasons, see Keep. A copy that no reason is left for is deleted.
 type BlockchainCache struct {
 	BlockchainDirectory string // The directory for storing blockchains in a key-value store.
-	MaxBlockCount       uint64 // Max count of blocks to cache per blockchain.
-	LimitTotalRecords   uint64 // Max count of blocks and header in total to keep across all blockchains. 0 = unlimited. Max Records * Max Block Size = Size Limit.
-	ReadOnly            bool   // Whether the cache is read only.
+	MaxBlockchainSize   uint64 // Max size of one cached blockchain in bytes.
+	MaxSize             uint64 // Max size of all cached blockchains in bytes. 0 = unlimited.
 
 	Store    *blockchain.MultiStore
 	peerLock *locker.Locker
+
+	downloads chan struct{} // Holds one entry per blockchain that is downloaded. Its capacity is the max count of blockchains downloaded at the same time.
+
+	sizeMutex    sync.Mutex // Mutex for sizeReserved.
+	sizeReserved uint64     // Size in bytes that running downloads have reserved in the cache.
 
 	reasonsMutex sync.Mutex // Mutex for reading and writing the reasons in the store.
 
@@ -48,8 +52,9 @@ func (backend *Backend) initBlockchainCache() {
 	backend.GlobalBlockchainCache = &BlockchainCache{
 		backend:             backend,
 		BlockchainDirectory: backend.Config.BlockchainGlobal,
-		MaxBlockCount:       backend.Config.CacheMaxBlockCount,
-		LimitTotalRecords:   backend.Config.LimitTotalRecords,
+		MaxBlockchainSize:   backend.Config.CacheMaxBlockchainSize,
+		MaxSize:             backend.Config.CacheMaxSize,
+		downloads:           make(chan struct{}, backend.Config.CacheMaxDownloads),
 	}
 
 	// The blockchains of a cache in another format are deleted. They are removed from the search index.
@@ -66,11 +71,6 @@ func (backend *Backend) initBlockchainCache() {
 	}
 
 	backend.GlobalBlockchainCache.peerLock = locker.Initialize()
-
-	// Set the blockchain cache to read-only if the record limit is reached.
-	if backend.Config.LimitTotalRecords > 0 && backend.GlobalBlockchainCache.Store.Database.Count() >= backend.Config.LimitTotalRecords {
-		backend.GlobalBlockchainCache.ReadOnly = true
-	}
 
 	backend.GlobalBlockchainCache.Store.FilterStatisticUpdate = backend.Filters.GlobalBlockchainCacheStatistic
 	backend.GlobalBlockchainCache.Store.FilterBlockchainDelete = backend.Filters.GlobalBlockchainCacheDelete
@@ -257,7 +257,7 @@ func (cache *BlockchainCache) expireBlockchain(publicKey ed25519.PublicKey, now 
 }
 
 // SeenBlockchainVersion shall be called with information about another peer's blockchain. It updates the copy if a reason is set to keep the blockchain.
-// It requests the blocks that the cache does not hold yet, up to the height the peer reports and the max count of blocks per blockchain.
+// It requests the blocks that the cache does not hold yet, up to the height the peer reports, while the copy and the cache have room for them.
 // If the reported version number is newer, all existing blocks are immediately deleted.
 func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 	cache.peerLock.Lock(string(peer.PublicKey))
@@ -290,44 +290,114 @@ func (cache *BlockchainCache) SeenBlockchainVersion(peer *PeerInfo) {
 		header = blockchain.NewBlockchainHeader(peer.PublicKey, version)
 	}
 
-	if height > cache.MaxBlockCount {
-		height = cache.MaxBlockCount
-	}
-	if header.Height < height {
+	if header.Height < height && cache.hasRoom(header) {
 		cache.download(peer, header, height)
-	}
-
-	if cache.LimitTotalRecords > 0 {
-		// Bug: This code is currently never reached if ReadOnly is true.
-		cache.ReadOnly = cache.Store.Database.Count() >= cache.LimitTotalRecords
 	}
 }
 
+// hasRoom returns whether the copy and the cache have room for a block of the maximum size.
+func (cache *BlockchainCache) hasRoom(header *blockchain.MultiBlockchainHeader) bool {
+	cache.sizeMutex.Lock()
+	defer cache.sizeMutex.Unlock()
+
+	return cache.room(header, 1) > 0
+}
+
+// room returns the count of blocks of the maximum size, up to the given count, that the copy and the cache have room for. The caller holds sizeMutex.
+func (cache *BlockchainCache) room(header *blockchain.MultiBlockchainHeader, count uint64) uint64 {
+	if header.Size >= cache.MaxBlockchainSize {
+		return 0
+	} else if room := (cache.MaxBlockchainSize - header.Size) / blockchain.MaxBlockSize; count > room {
+		count = room
+	}
+
+	if cache.MaxSize > 0 {
+		used := cache.Store.Size() + cache.sizeReserved
+
+		if used >= cache.MaxSize {
+			return 0
+		} else if room := (cache.MaxSize - used) / blockchain.MaxBlockSize; count > room {
+			count = room
+		}
+	}
+
+	return count
+}
+
+// reserve reserves room in the cache for blocks of the maximum size, up to the given count. It returns the count of blocks it reserved room for.
+// The copy has room for them as well. The caller releases the room with release.
+func (cache *BlockchainCache) reserve(header *blockchain.MultiBlockchainHeader, count uint64) uint64 {
+	cache.sizeMutex.Lock()
+	defer cache.sizeMutex.Unlock()
+
+	count = cache.room(header, count)
+	cache.sizeReserved += count * blockchain.MaxBlockSize
+
+	return count
+}
+
+// release releases the room in the cache that was reserved for the count of blocks.
+func (cache *BlockchainCache) release(count uint64) {
+	cache.sizeMutex.Lock()
+	defer cache.sizeMutex.Unlock()
+
+	cache.sizeReserved -= count * blockchain.MaxBlockSize
+}
+
 // download requests the blocks from the height of the header up to the given height from the peer and stores them.
-// The blocks are stored in the order of their numbers. The download ends at the first block that the peer does not send or that is not valid as next block.
+// It waits until fewer blockchains are downloaded than the max count at the same time.
+// Each request is for as many blocks as the copy and the cache have room for at the maximum block size; the download ends when there is room for none.
 func (cache *BlockchainCache) download(peer *PeerInfo, header *blockchain.MultiBlockchainHeader, height uint64) {
-	target := protocol.BlockRange{Offset: header.Height, Limit: height - header.Height}
+	// With a max count of 0 nothing is downloaded.
+	if cap(cache.downloads) == 0 {
+		return
+	}
+
+	cache.downloads <- struct{}{}
+	defer func() { <-cache.downloads }()
+
+	for header.Height < height {
+		count := cache.reserve(header, height-header.Height)
+		if count == 0 {
+			return
+		}
+
+		isComplete := cache.downloadBlocks(peer, header, count)
+		cache.release(count)
+
+		if !isComplete {
+			return
+		}
+	}
+}
+
+// downloadBlocks requests the count of blocks from the height of the header on from the peer and stores them. It returns whether all of them were stored.
+// The blocks are stored in the order of their numbers. The download ends at the first block that the peer does not send or that is not valid as next block.
+func (cache *BlockchainCache) downloadBlocks(peer *PeerInfo, header *blockchain.MultiBlockchainHeader, count uint64) (isComplete bool) {
+	target := protocol.BlockRange{Offset: header.Height, Limit: count}
 
 	conn, _, err := peer.BlockTransferRequest(peer.PublicKey, target.Limit, blockchain.MaxBlockSize, []protocol.BlockRange{target})
 	if err != nil {
-		return
+		return false
 	}
 	defer conn.Close()
 
-	for header.Height < height {
+	for height := header.Height + count; header.Height < height; {
 		data, _, _, availability, err := protocol.BlockTransferReadBlock(conn, blockchain.MaxBlockSize)
 		if err != nil || availability != protocol.GetBlockStatusAvailable {
-			return
+			return false
 		}
 
 		decoded, err := cache.Store.IngestBlock(header, data)
 		if err != nil {
-			return
+			return false
 		}
 
 		// index it for search
 		cache.backend.SearchIndex.IndexNewBlockDecoded(peer.PublicKey, header.Version, decoded.Number, decoded.RecordsDecoded)
 	}
+
+	return true
 }
 
 // remoteBlockchainUpdate shall be called for each message of the peer that reports its blockchain version and height.
@@ -337,7 +407,7 @@ func (cache *BlockchainCache) download(peer *PeerInfo, header *blockchain.MultiB
 // This function is called in the Go routine of the packet worker and therefore must not stall.
 func (peer *PeerInfo) remoteBlockchainUpdate(isUpdate bool) {
 	cache := peer.Backend.GlobalBlockchainCache
-	if cache == nil || cache.ReadOnly || peer.BlockchainVersion == 0 && peer.BlockchainHeight == 0 {
+	if cache == nil || peer.BlockchainVersion == 0 && peer.BlockchainHeight == 0 {
 		return
 	}
 
@@ -361,7 +431,7 @@ func (peer *PeerInfo) remoteBlockchainUpdate(isUpdate bool) {
 // or if the last update was started longer ago than blockchainCacheRetry. isUpdate notes a change. One update runs at a time per peer.
 func (peer *PeerInfo) blockchainCacheUpdate(isUpdate bool) {
 	cache := peer.Backend.GlobalBlockchainCache
-	if cache == nil || cache.ReadOnly || peer.BlockchainVersion == 0 && peer.BlockchainHeight == 0 {
+	if cache == nil || peer.BlockchainVersion == 0 && peer.BlockchainHeight == 0 {
 		return
 	}
 
