@@ -55,8 +55,9 @@ type Config struct {
 	PortForward uint16 `yaml:"PortForward"`
 
 	// Global blockchain cache limits
-	CacheMaxBlockCount uint64 `yaml:"CacheMaxBlockCount"` // Max count of blocks to cache per blockchain.
-	LimitTotalRecords  uint64 `yaml:"LimitTotalRecords"`  // Record count limit. 0 = unlimited. Max Records * Max Block Size = Size Limit.
+	CacheMaxBlockchainSize uint64 `yaml:"CacheMaxBlockchainSize"` // Max size of one cached blockchain in bytes.
+	CacheMaxSize           uint64 `yaml:"CacheMaxSize"`           // Max size of all cached blockchains in bytes. 0 = unlimited.
+	CacheMaxDownloads      uint16 `yaml:"CacheMaxDownloads"`      // Max count of blockchains downloaded at the same time.
 }
 
 // peerSeed is a singl peer entry from the config's seed list

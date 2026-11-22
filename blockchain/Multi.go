@@ -10,6 +10,7 @@ Keys used in the key-value store:
 2. Key: Public key + version + block number, Value: Block
 3. Key: "format", Value: Format of the store
 4. Key: Public key + "reasons", Value: Reasons for which the blockchain is kept
+5. Key: "size", Value: Size of the blocks of all blockchains in bytes
 
 */
 
@@ -21,6 +22,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/PeernetOfficial/core/protocol"
@@ -39,10 +41,16 @@ var multiFormatKey = []byte("format")
 // multiReasonsSuffix follows the public key in the key of the record that holds the reasons for which a blockchain is kept.
 var multiReasonsSuffix = []byte("reasons")
 
+// multiSizeKey is the key of the record that holds the size of the blocks of all blockchains in the store.
+var multiSizeKey = []byte("size")
+
 // MultiStore stores multiple blockchains.
 type MultiStore struct {
 	path     string      // Path of the blockchain on disk. Depends on key-value store whether a filename or folder.
 	Database store.Store // The database storing the blockchain.
+
+	sizeMutex sync.Mutex // Mutex for size.
+	size      uint64     // Size of the blocks of all blockchains in bytes.
 
 	// callbacks
 	FilterStatisticUpdate  func(multi *MultiStore, header *MultiBlockchainHeader, statsOld BlockchainStats)
@@ -71,6 +79,10 @@ func InitMultiStoreDatabase(database store.Store) (multi *MultiStore, deleted []
 	multi = &MultiStore{Database: database}
 
 	if format, found := database.Get(multiFormatKey); found && len(format) == 1 && format[0] == multiFormat {
+		if size, found := database.Get(multiSizeKey); found && len(size) == 8 {
+			multi.size = binary.LittleEndian.Uint64(size)
+		}
+
 		return multi, nil, nil
 	}
 
@@ -104,16 +116,18 @@ Offset  Size   Info
 24      8      Date last block added
 32      8      Stats: Count of file records
 40      8      Stats: Size of all files combined
+48      8      Size of the blocks stored in bytes
 
 */
 
-const multiBlockchainHeaderSize = 48
+const multiBlockchainHeaderSize = 56
 
 // This is a header for a single blockchain stored in a multi store.
 type MultiBlockchainHeader struct {
 	PublicKey           ed25519.PublicKey // Public Key of the blockchain
 	Height              uint64            // Count of blocks stored. The blocks stored are block 0 to Height-1. Height is exchanged as uint32 in the protocol, but stored as uint64.
 	Version             uint64            // Version is always uint64.
+	Size                uint64            // Size of the blocks stored in bytes
 	DateFirstBlockAdded time.Time         // Date the first block was added
 	DateLastBlockAdded  time.Time         // Date the last block was added
 	Stats               BlockchainStats   // Statistics about the blockchain
@@ -137,6 +151,7 @@ func decodeBlockchainHeader(publicKey ed25519.PublicKey, buffer []byte) (header 
 	header.DateLastBlockAdded = time.Unix(int64(binary.LittleEndian.Uint64(buffer[24:32])), 0)
 	header.Stats.CountFileRecords = binary.LittleEndian.Uint64(buffer[32:40])
 	header.Stats.SizeAllFiles = binary.LittleEndian.Uint64(buffer[40:48])
+	header.Size = binary.LittleEndian.Uint64(buffer[48:56])
 
 	return header, nil
 }
@@ -162,6 +177,7 @@ func (multi *MultiStore) WriteBlockchainHeader(header *MultiBlockchainHeader) (e
 	binary.LittleEndian.PutUint64(raw[24:32], uint64(header.DateLastBlockAdded.UTC().Unix()))
 	binary.LittleEndian.PutUint64(raw[32:40], header.Stats.CountFileRecords)
 	binary.LittleEndian.PutUint64(raw[40:48], header.Stats.SizeAllFiles)
+	binary.LittleEndian.PutUint64(raw[48:56], header.Size)
 
 	return multi.Database.Set(header.PublicKey, raw)
 }
@@ -187,7 +203,29 @@ func (multi *MultiStore) WriteBlock(publicKey ed25519.PublicKey, version, blockN
 	return multi.Database.Set(lookupKeyForBlock(publicKey, version, blockNumber), raw)
 }
 
+// Size returns the size of the blocks of all blockchains in the store in bytes.
+func (multi *MultiStore) Size() uint64 {
+	multi.sizeMutex.Lock()
+	defer multi.sizeMutex.Unlock()
+
+	return multi.size
+}
+
+// sizeChange adds to and subtracts from the size of the blocks of all blockchains, and stores it.
+func (multi *MultiStore) sizeChange(add, subtract uint64) (err error) {
+	multi.sizeMutex.Lock()
+	defer multi.sizeMutex.Unlock()
+
+	if multi.size += add; multi.size < subtract {
+		subtract = multi.size
+	}
+	multi.size -= subtract
+
+	return multi.Database.Set(multiSizeKey, binary.LittleEndian.AppendUint64(nil, multi.size))
+}
+
 // Deletes an entire blockchain from the store. It will delete each block individually and then the header.
+// The size of the blockchain is subtracted from the size of the store after it is deleted.
 func (multi *MultiStore) DeleteBlockchain(header *MultiBlockchainHeader) {
 	// first delete all blocks
 	for blockN := uint64(0); blockN < header.Height; blockN++ {
@@ -196,6 +234,8 @@ func (multi *MultiStore) DeleteBlockchain(header *MultiBlockchainHeader) {
 
 	// delete the header
 	multi.Database.Delete(header.PublicKey)
+
+	multi.sizeChange(0, header.Size)
 
 	if multi.FilterBlockchainDelete != nil {
 		multi.FilterBlockchainDelete(multi, header)
@@ -351,7 +391,13 @@ func (multi *MultiStore) IngestBlock(header *MultiBlockchainHeader, raw []byte) 
 		return nil, errors.New("block does not contain the hash of the block before it")
 	}
 
+	// The size of the block is added to the size of the store before the block is written.
+	if err = multi.sizeChange(uint64(len(raw)), 0); err != nil {
+		return nil, err
+	}
+
 	if err = multi.WriteBlock(header.PublicKey, header.Version, header.Height, raw); err != nil {
+		multi.sizeChange(0, uint64(len(raw)))
 		return nil, err
 	}
 
@@ -361,6 +407,7 @@ func (multi *MultiStore) IngestBlock(header *MultiBlockchainHeader, raw []byte) 
 	}
 	header.DateLastBlockAdded = now
 	header.Height++
+	header.Size += uint64(len(raw))
 
 	multi.UpdateBlockchainStatistics(header, decoded.RecordsDecoded)
 

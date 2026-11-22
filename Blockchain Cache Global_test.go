@@ -22,14 +22,17 @@ import (
 	"github.com/enfipy/locker"
 )
 
-// testBlockchainCache gives the backend an empty blockchain cache held in memory.
+// testCacheMaxBlockchainSize is the max size of one cached blockchain in the tests, in bytes.
+const testCacheMaxBlockchainSize = 256 * blockchain.MaxBlockSize
+
+// testBlockchainCache gives the backend an empty blockchain cache held in memory. Up to 4 blockchains are downloaded at the same time.
 func testBlockchainCache(t *testing.T, backend *Backend) (cache *BlockchainCache) {
 	multi, _, err := blockchain.InitMultiStoreDatabase(store.NewMemoryStore())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	backend.GlobalBlockchainCache = &BlockchainCache{backend: backend, Store: multi, MaxBlockCount: 256, peerLock: locker.Initialize()}
+	backend.GlobalBlockchainCache = &BlockchainCache{backend: backend, Store: multi, MaxBlockchainSize: testCacheMaxBlockchainSize, peerLock: locker.Initialize(), downloads: make(chan struct{}, 4)}
 
 	return backend.GlobalBlockchainCache
 }
@@ -86,7 +89,7 @@ func testCacheExpect(t *testing.T, name string, cache *BlockchainCache, owner *B
 }
 
 // TestBlockchainCacheHeight checks the copy of a blockchain that the blockchain cache downloads from its owner, through the packet workers of two backends on the loopback address.
-// The height of the copy is the count of blocks it holds, block 0 to height-1, up to the max count of blocks per blockchain. Blocks that are missing are requested with the next update.
+// The height of the copy is the count of blocks it holds, block 0 to height-1. Blocks that are missing are requested with the next update.
 func TestBlockchainCacheHeight(t *testing.T) {
 	testRootPeers(t)
 
@@ -117,16 +120,8 @@ func TestBlockchainCacheHeight(t *testing.T) {
 	update("missing blocks are available", 0, height+2, 0, height+2)
 	update("same height again", 0, height+2, 0, height+2)
 
-	// The copy ends at the max count of blocks per blockchain, also when the blockchain grows further.
-	cache.MaxBlockCount = height + 3
-	testBlockchainAppend(t, owner, 4)
-	update("blockchain above the max count", 0, height+6, 0, height+3)
-	testBlockchainAppend(t, owner, 2)
-	update("blockchain grows above the max count", 0, height+8, 0, height+3)
-
-	// With a higher max count the download continues at the height of the copy.
-	cache.MaxBlockCount = 256
-	update("higher max count", 0, height+8, 0, height+8)
+	testBlockchainAppend(t, owner, 6)
+	update("blockchain grows", 0, height+8, 0, height+8)
 
 	// A new version replaces the copy.
 	owner.UserBlockchain.DeleteBlockchain()
@@ -460,4 +455,278 @@ func TestBlockchainCacheKeepReported(t *testing.T) {
 	if cache.isKept(other) || !cache.isKept(owner.peerPublicKey) {
 		t.Fatalf("kept: other blockchain %t, blockchain of the owner %t", cache.isKept(other), cache.isKept(owner.peerPublicKey))
 	}
+}
+
+// testBlockchainAppendSize appends the count of blocks to the blockchain of the backend. Each block has a record of a random size between the two sizes.
+func testBlockchainAppendSize(t *testing.T, backend *Backend, count, sizeMin, sizeMax int) {
+	for n := 0; n < count; n++ {
+		data := make([]byte, sizeMin+mathrand.Intn(sizeMax-sizeMin+1))
+		rand.Read(data[2:])
+
+		if _, _, status := backend.UserBlockchain.Append([]blockchain.BlockRecordRaw{{Type: blockchain.RecordTypeProfile, Data: data}}); status != blockchain.StatusOK {
+			t.Fatalf("appending block: status %d", status)
+		}
+	}
+}
+
+// testBlocksSize returns the size in bytes of the first count blocks of the blockchain of the backend.
+func testBlocksSize(t *testing.T, backend *Backend, count uint64) (size uint64) {
+	for n := uint64(0); n < count; n++ {
+		raw, status, err := backend.UserBlockchain.GetBlockRaw(n)
+		if err != nil || status != blockchain.StatusOK {
+			t.Fatalf("reading block %d: status %d (%v)", n, status, err)
+		}
+		size += uint64(len(raw))
+	}
+
+	return size
+}
+
+// testCacheHeld returns the count of blocks and their size in bytes that the cache holds of the blockchain of the owner, as its header states them.
+// It checks that the cache holds these blocks as the owner has them, and that the size is the size of these blocks.
+func testCacheHeld(t *testing.T, name string, cache *BlockchainCache, owner *Backend) (height, size uint64) {
+	t.Helper()
+
+	header, found, err := cache.Store.ReadBlockchainHeader(owner.peerPublicKey)
+	if err != nil {
+		t.Fatalf("%s: reading the header: %v", name, err)
+	} else if found {
+		height, size = header.Height, header.Size
+	}
+
+	testCacheExpect(t, name, cache, owner, 0, height)
+
+	if expected := testBlocksSize(t, owner, height); size != expected {
+		t.Fatalf("%s: the copy of %d blocks has the size %d, its blocks have %d", name, height, size, expected)
+	}
+
+	return height, size
+}
+
+// TestBlockchainCacheLimitBlockchain checks the max size of one cached blockchain. A copy takes a further block while it has room for a block of the maximum size:
+// a blockchain above the limit is cached from block 0 on up to the limit, and the download continues with a higher limit.
+func TestBlockchainCacheLimitBlockchain(t *testing.T) {
+	testRootPeers(t)
+
+	count := uint64(12 + mathrand.Intn(8))
+
+	backend, network := testBackendLive(t, 0)
+	owner, networkOwner := testBackendLive(t, 0)
+	testBlockchainAppendSize(t, owner, int(count), 20000, 32000)
+	t.Logf("blockchain of %d blocks, %d bytes", count, testBlocksSize(t, owner, count))
+
+	cache := testBlockchainCache(t, backend)
+	peer := testConnect(backend, network, owner, networkOwner)
+	testCacheKeep(t, cache, owner.peerPublicKey)
+
+	// update sets the limit, updates the copy and checks it. It returns the count of blocks the copy holds.
+	update := func(name string, limit uint64) (height uint64) {
+		t.Helper()
+
+		cache.MaxBlockchainSize = limit
+		peer.BlockchainVersion, peer.BlockchainHeight = 0, count
+		cache.SeenBlockchainVersion(peer)
+
+		height, size := testCacheHeld(t, name, cache, owner)
+		t.Logf("%s: limit %d, the copy holds %d blocks, %d bytes", name, limit, height, size)
+
+		if size > limit {
+			t.Fatalf("%s: the copy has %d bytes, above the limit of %d", name, size, limit)
+		} else if height < count && limit-size >= blockchain.MaxBlockSize {
+			t.Fatalf("%s: the copy holds %d of %d blocks and has room for %d bytes", name, height, count, limit-size)
+		} else if total := cache.Store.Size(); total != size {
+			t.Fatalf("%s: size of the store %d, of its one copy %d", name, total, size)
+		}
+
+		return height
+	}
+
+	if height := update("limit below the maximum block size", blockchain.MaxBlockSize-1); height != 0 {
+		t.Fatalf("limit below the maximum block size: the copy holds %d blocks", height)
+	}
+
+	height1 := update("limit of 3 blocks", 3*blockchain.MaxBlockSize+uint64(mathrand.Intn(blockchain.MaxBlockSize)))
+	if height1 == 0 || height1 >= count {
+		t.Fatalf("limit of 3 blocks: the copy holds %d of %d blocks", height1, count)
+	}
+
+	if height := update("same limit again", cache.MaxBlockchainSize); height != height1 {
+		t.Fatalf("same limit again: the copy holds %d blocks, before %d", height, height1)
+	}
+
+	height2 := update("limit of 7 blocks", 7*blockchain.MaxBlockSize)
+	if height2 <= height1 || height2 >= count {
+		t.Fatalf("limit of 7 blocks: the copy holds %d of %d blocks, before %d", height2, count, height1)
+	}
+
+	if height := update("limit above the size of the blockchain", testCacheMaxBlockchainSize); height != count {
+		t.Fatalf("limit above the size of the blockchain: the copy holds %d of %d blocks", height, count)
+	}
+
+	// A copy above a lower limit keeps its blocks and takes no further one.
+	testBlockchainAppendSize(t, owner, 1, 20000, 32000)
+
+	cache.MaxBlockchainSize = 2 * blockchain.MaxBlockSize
+	peer.BlockchainVersion, peer.BlockchainHeight = 0, count+1
+	cache.SeenBlockchainVersion(peer)
+
+	if height, _ := testCacheHeld(t, "limit below the size of the copy", cache, owner); height != count {
+		t.Fatalf("limit below the size of the copy: the copy holds %d blocks, expected %d", height, count)
+	}
+}
+
+// TestBlockchainCacheLimitTotal checks the max size of all cached blockchains. A copy takes a further block while the cache has room for a block of the maximum size.
+// The room of a copy that is deleted is available again. Downloads reserve their room, so that together they stay within the limit.
+func TestBlockchainCacheLimitTotal(t *testing.T) {
+	testRootPeers(t)
+
+	backend, network := testBackendLive(t, 0)
+	owner1, networkOwner1 := testBackendLive(t, 0)
+	owner2, networkOwner2 := testBackendLive(t, 0)
+	testBlockchainAppendSize(t, owner1, 6, 26000, 32000)
+	testBlockchainAppendSize(t, owner2, 6, 26000, 32000)
+
+	cache := testBlockchainCache(t, backend)
+	cache.MaxSize = 8*blockchain.MaxBlockSize + uint64(mathrand.Intn(blockchain.MaxBlockSize))
+	t.Logf("blockchains of %d and %d bytes, limit %d", testBlocksSize(t, owner1, 6), testBlocksSize(t, owner2, 6), cache.MaxSize)
+
+	peer1 := testConnect(backend, network, owner1, networkOwner1)
+	peer2 := testConnect(backend, network, owner2, networkOwner2)
+	peer1.BlockchainVersion, peer1.BlockchainHeight = 0, 6
+	peer2.BlockchainVersion, peer2.BlockchainHeight = 0, 6
+
+	if err := cache.Keep(owner1.peerPublicKey, testReason, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	testCacheWait(t, "first blockchain", peer1, 10*time.Second)
+
+	height1, size1 := testCacheHeld(t, "first blockchain", cache, owner1)
+	if height1 != 6 || cache.Store.Size() != size1 {
+		t.Fatalf("first blockchain: the copy holds %d of 6 blocks, %d bytes; size of the store %d", height1, size1, cache.Store.Size())
+	}
+
+	// The second blockchain is cached while the cache has room for a block of the maximum size.
+	testCacheKeep(t, cache, owner2.peerPublicKey)
+	testCacheWait(t, "second blockchain", peer2, 10*time.Second)
+
+	height2, size2 := testCacheHeld(t, "second blockchain", cache, owner2)
+	if height2 == 0 || height2 >= 6 {
+		t.Fatalf("second blockchain: the copy holds %d of 6 blocks", height2)
+	} else if total := cache.Store.Size(); total != size1+size2 || total > cache.MaxSize || cache.MaxSize-total >= blockchain.MaxBlockSize {
+		t.Fatalf("second blockchain: size of the store %d, of the copies %d and %d, limit %d", total, size1, size2, cache.MaxSize)
+	}
+
+	// A full cache downloads nothing.
+	cache.SeenBlockchainVersion(peer2)
+	if height, _ := testCacheHeld(t, "full cache", cache, owner2); height != height2 {
+		t.Fatalf("full cache: the copy holds %d blocks, before %d", height, height2)
+	}
+
+	// The first copy is deleted when its reason has ended. The second copy is completed.
+	if err := cache.Drop(owner1.peerPublicKey, testReason); err != nil {
+		t.Fatal(err)
+	}
+	cache.expire(time.Now())
+
+	if total := cache.Store.Size(); total != size2 {
+		t.Fatalf("first copy deleted: size of the store %d, of the copy left %d", total, size2)
+	}
+
+	cache.SeenBlockchainVersion(peer2)
+	if height, size := testCacheHeld(t, "room available again", cache, owner2); height != 6 || cache.Store.Size() != size {
+		t.Fatalf("room available again: the copy holds %d of 6 blocks, %d bytes; size of the store %d", height, size, cache.Store.Size())
+	}
+
+	// Room that is reserved is not available to another download.
+	if cache.sizeReserved != 0 {
+		t.Fatalf("%d bytes are reserved while no download runs", cache.sizeReserved)
+	}
+
+	cache.MaxSize = cache.Store.Size() + 12*blockchain.MaxBlockSize + uint64(mathrand.Intn(blockchain.MaxBlockSize))
+	publicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	header := blockchain.NewBlockchainHeader(publicKey, 0)
+
+	if count := cache.reserve(header, 10); count != 10 {
+		t.Fatalf("room for 12 blocks: reserved for %d of 10", count)
+	} else if count := cache.reserve(header, 10); count != 2 {
+		t.Fatalf("room for 2 blocks left: reserved for %d of 10", count)
+	} else if count := cache.reserve(header, 1); count != 0 {
+		t.Fatalf("no room left: reserved for %d", count)
+	} else if cache.hasRoom(header) {
+		t.Fatalf("no room left: the cache has room")
+	}
+
+	cache.release(10)
+	if count := cache.reserve(header, 20); count != 10 {
+		t.Fatalf("room for 10 blocks released: reserved for %d of 20", count)
+	}
+
+	cache.release(12)
+	if cache.sizeReserved != 0 {
+		t.Fatalf("%d bytes are reserved after all were released", cache.sizeReserved)
+	}
+
+	// The copy itself has room for fewer blocks than the cache.
+	header.Size = cache.MaxBlockchainSize - 3*blockchain.MaxBlockSize - 1
+	cache.MaxSize = 0
+	if count := cache.reserve(header, 10); count != 3 {
+		t.Fatalf("copy with room for 3 blocks: reserved for %d of 10", count)
+	}
+	cache.release(3)
+}
+
+// TestBlockchainCacheDownloads checks the max count of blockchains downloaded at the same time. With a max count of 1 the second download starts when the first has ended.
+// The first owner is a socket that does not answer: its download ends when the block request times out.
+func TestBlockchainCacheDownloads(t *testing.T) {
+	testRootPeers(t)
+
+	previous := blockSequenceTimeout
+	blockSequenceTimeout = 500 * time.Millisecond
+	t.Cleanup(func() { blockSequenceTimeout = previous })
+
+	backend, network := testBackendLive(t, 0)
+	owner, networkOwner := testBackendLive(t, 3)
+	cache := testBlockchainCache(t, backend)
+	cache.downloads = make(chan struct{}, 1)
+
+	silent, _, _ := testPeerSocket(t, backend, network)
+	peer := testConnect(backend, network, owner, networkOwner)
+	testCacheKeep(t, cache, silent.PublicKey)
+	testCacheKeep(t, cache, owner.peerPublicKey)
+
+	silent.BlockchainVersion, silent.BlockchainHeight = 0, 5
+	silent.remoteBlockchainUpdate(true)
+
+	for end := time.Now().Add(5 * time.Second); len(cache.downloads) == 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatalf("the first download did not start")
+		}
+	}
+
+	// The second download waits for the first one.
+	peer.BlockchainVersion, peer.BlockchainHeight = 0, 3
+	peer.remoteBlockchainUpdate(true)
+	time.Sleep(time.Second)
+
+	if !testCacheRunning(silent) || !testCacheRunning(peer) {
+		t.Fatalf("after 1 second: first update running %t, second update running %t", testCacheRunning(silent), testCacheRunning(peer))
+	}
+	testCacheExpect(t, "first download running", cache, owner, 0, 0)
+
+	testCacheWait(t, "first download", silent, 10*time.Second)
+	testCacheWait(t, "second download", peer, 10*time.Second)
+	testCacheExpect(t, "first download ended", cache, owner, 0, 3)
+
+	if len(cache.downloads) != 0 {
+		t.Fatalf("%d downloads are counted while none runs", len(cache.downloads))
+	}
+
+	// With a max count of 0 nothing is downloaded.
+	cache.downloads = make(chan struct{})
+	testBlockchainAppend(t, owner, 2)
+
+	peer.BlockchainVersion, peer.BlockchainHeight = 0, 5
+	peer.remoteBlockchainUpdate(true)
+	testCacheWait(t, "max count of 0", peer, 10*time.Second)
+	testCacheExpect(t, "max count of 0", cache, owner, 0, 3)
 }
