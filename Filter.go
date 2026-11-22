@@ -1,6 +1,6 @@
 /*
 File Name:  Filter.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 
 Filters allow the caller to intercept events. The filter functions must not modify any data.
@@ -72,6 +72,12 @@ type Filters struct {
 
 	// Called after a blockchain is deleted from the blockchain cache. The header reflects the status before deletion. Must be set on init.
 	GlobalBlockchainCacheDelete func(multi *blockchain.MultiStore, header *blockchain.MultiBlockchainHeader)
+
+	// BlockchainReported is called when a peer reports the version and height of its blockchain in an Announcement, Response or Local Discovery message:
+	// at once when the version or height changed, otherwise when the last call for the peer was 10 minutes ago or longer.
+	// The version and height are peer.BlockchainVersion and peer.BlockchainHeight. A blockchain is reported once its version or height is above 0.
+	// The blockchain cache keeps a copy of the blockchain while a reason is set for it, see BlockchainCache.Keep. It is called if the blockchain cache is enabled.
+	BlockchainReported func(peer *PeerInfo)
 }
 
 func (backend *Backend) initFilters() {
@@ -119,6 +125,9 @@ func (backend *Backend) initFilters() {
 	}
 	if backend.Filters.MessageOutPong == nil {
 		backend.Filters.MessageOutPong = func(peer *PeerInfo, packet *protocol.PacketRaw) {}
+	}
+	if backend.Filters.BlockchainReported == nil {
+		backend.Filters.BlockchainReported = func(peer *PeerInfo) {}
 	}
 }
 

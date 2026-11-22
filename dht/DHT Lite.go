@@ -95,6 +95,21 @@ func (dht *DHT) GetClosestContacts(count int, target []byte, filterFunc NodeFilt
 	return closest.Nodes
 }
 
+// IsAmongClosest returns whether the own ID is among the count IDs closest to the target, out of the own ID and the nodes in the routing table.
+// The node with the target ID itself is left out.
+func (dht *DHT) IsAmongClosest(count int, target []byte) bool {
+	if count <= 0 {
+		return false
+	}
+
+	closest := dht.ht.getClosestContacts(count, target, nil, target).Nodes
+	if len(closest) < count {
+		return true
+	}
+
+	return getDistance(dht.ht.Self.ID, target).Cmp(getDistance(closest[count-1].ID, target)) < 0
+}
+
 // MarkNodeAsSeen marks a node as seen, which pushes it to the top in the bucket list.
 func (dht *DHT) MarkNodeAsSeen(ID []byte) {
 	dht.ht.markNodeAsSeen(dht.ht.getBucketIndexFromDifferingBit(ID), ID)
