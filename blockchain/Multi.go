@@ -9,6 +9,7 @@ Keys used in the key-value store:
 1. Key: Public key, Value: Header
 2. Key: Public key + version + block number, Value: Block
 3. Key: "format", Value: Format of the store
+4. Key: Public key + "reasons", Value: Reasons for which the blockchain is kept
 
 */
 
@@ -19,6 +20,7 @@ import (
 	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/PeernetOfficial/core/protocol"
@@ -33,6 +35,9 @@ const multiFormat = 1
 
 // multiFormatKey is the key of the record that holds the format of the store.
 var multiFormatKey = []byte("format")
+
+// multiReasonsSuffix follows the public key in the key of the record that holds the reasons for which a blockchain is kept.
+var multiReasonsSuffix = []byte("reasons")
 
 // MultiStore stores multiple blockchains.
 type MultiStore struct {
@@ -195,6 +200,85 @@ func (multi *MultiStore) DeleteBlockchain(header *MultiBlockchainHeader) {
 	if multi.FilterBlockchainDelete != nil {
 		multi.FilterBlockchainDelete(multi, header)
 	}
+}
+
+/*
+Reasons for which a blockchain is kept, one entry per reason:
+
+Offset  Size   Info
+0       1      Reason
+1       8      Date the reason was set
+9       8      Date the reason ends
+
+*/
+
+const multiReasonSize = 17
+
+// MultiReason is a reason for which a blockchain is kept in a multi store.
+type MultiReason struct {
+	Since time.Time // Date the reason was set
+	Until time.Time // Date the reason ends
+}
+
+func lookupKeyForReasons(publicKey ed25519.PublicKey) (key []byte) {
+	key = append(key, publicKey...)
+	key = append(key, multiReasonsSuffix...)
+
+	return key
+}
+
+// ReadReasons reads the reasons for which the blockchain is kept. The key of the map is the reason. The map is empty if there is none.
+func (multi *MultiStore) ReadReasons(publicKey ed25519.PublicKey) (reasons map[uint8]MultiReason, err error) {
+	buffer, _ := multi.Database.Get(lookupKeyForReasons(publicKey))
+	if len(buffer)%multiReasonSize != 0 {
+		return nil, errors.New("invalid reasons length")
+	}
+
+	reasons = make(map[uint8]MultiReason)
+
+	for ; len(buffer) > 0; buffer = buffer[multiReasonSize:] {
+		reasons[buffer[0]] = MultiReason{
+			Since: time.Unix(int64(binary.LittleEndian.Uint64(buffer[1:9])), 0),
+			Until: time.Unix(int64(binary.LittleEndian.Uint64(buffer[9:17])), 0),
+		}
+	}
+
+	return reasons, nil
+}
+
+// WriteReasons writes the reasons for which the blockchain is kept. The key of the map is the reason. If there is none, the record is deleted.
+func (multi *MultiStore) WriteReasons(publicKey ed25519.PublicKey, reasons map[uint8]MultiReason) (err error) {
+	if len(reasons) == 0 {
+		multi.Database.Delete(lookupKeyForReasons(publicKey))
+		return nil
+	}
+
+	var numbers []int
+	for reason := range reasons {
+		numbers = append(numbers, int(reason))
+	}
+	sort.Ints(numbers)
+
+	raw := make([]byte, 0, len(numbers)*multiReasonSize)
+
+	for _, number := range numbers {
+		reason := reasons[uint8(number)]
+
+		raw = append(raw, uint8(number))
+		raw = binary.LittleEndian.AppendUint64(raw, uint64(reason.Since.UTC().Unix()))
+		raw = binary.LittleEndian.AppendUint64(raw, uint64(reason.Until.UTC().Unix()))
+	}
+
+	return multi.Database.Set(lookupKeyForReasons(publicKey), raw)
+}
+
+// IterateReasons iterates over the blockchains that reasons are stored for.
+func (multi *MultiStore) IterateReasons(callback func(publicKey ed25519.PublicKey)) {
+	multi.Database.Iterate(func(key, value []byte) {
+		if len(key) == ed25519.PublicKeySize+len(multiReasonsSuffix) && bytes.Equal(key[ed25519.PublicKeySize:], multiReasonsSuffix) {
+			callback(bytes.Clone(key[:ed25519.PublicKeySize]))
+		}
+	})
 }
 
 // NewBlockchainHeader returns the header of a blockchain of which no block is stored. The header is written with the first block that is ingested.

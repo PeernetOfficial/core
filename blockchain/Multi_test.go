@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	mathrand "math/rand"
 	"testing"
+	"time"
 
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/store"
@@ -192,11 +193,99 @@ func TestInitMultiStoreFormat(t *testing.T) {
 		}
 	}
 
+	reasons := map[uint8]MultiReason{3: {Since: time.Unix(1000, 0), Until: time.Unix(2000, 0)}}
+	if err := multi.WriteReasons(publicKey, reasons); err != nil {
+		t.Fatal(err)
+	}
+
 	multi, deleted, err = InitMultiStoreDatabase(database)
 	if err != nil || len(deleted) != 0 {
 		t.Fatalf("store in the current format: %d blockchains deleted (%v)", len(deleted), err)
 	}
 	if stored, found, err := multi.ReadBlockchainHeader(publicKey); err != nil || !found || stored.Height != 2 {
 		t.Fatalf("store in the current format: header found %t (%v)", found, err)
+	}
+	if stored, err := multi.ReadReasons(publicKey); err != nil || len(stored) != 1 || stored[3] != reasons[3] {
+		t.Fatalf("store in the current format: %d reasons (%v), expected the one stored", len(stored), err)
+	}
+}
+
+// TestReasons checks that the multi store returns the reasons for which a blockchain is kept as they were written.
+func TestReasons(t *testing.T) {
+	multi := testMultiStore(t)
+
+	// testIterate returns the public keys of the blockchains that reasons are stored for.
+	testIterate := func() (publicKeys []ed25519.PublicKey) {
+		multi.IterateReasons(func(publicKey ed25519.PublicKey) {
+			publicKeys = append(publicKeys, publicKey)
+		})
+		return publicKeys
+	}
+
+	publicKey1, privateKey1, _ := ed25519.GenerateKey(rand.Reader)
+	publicKey2, _, _ := ed25519.GenerateKey(rand.Reader)
+
+	// A blockchain with blocks and without reasons.
+	chain := testChain(t, privateKey1, 2, 20)
+	header := NewBlockchainHeader(publicKey1, 0)
+	for n := uint64(0); n < 2; n++ {
+		if _, err := multi.IngestBlock(header, testChainBlock(t, chain, n)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if reasons, err := multi.ReadReasons(publicKey1); err != nil || len(reasons) != 0 {
+		t.Fatalf("no reasons written: %d reasons (%v)", len(reasons), err)
+	} else if stored := testIterate(); len(stored) != 0 {
+		t.Fatalf("no reasons written: reasons stored for %d blockchains", len(stored))
+	}
+
+	// Reasons with random numbers and times.
+	written := make(map[uint8]MultiReason)
+	for n := 0; n < 1+mathrand.Intn(10); n++ {
+		written[uint8(mathrand.Intn(256))] = MultiReason{Since: time.Unix(mathrand.Int63n(1<<40), 0), Until: time.Unix(mathrand.Int63n(1<<40), 0)}
+	}
+	t.Logf("reasons %v", written)
+
+	if err := multi.WriteReasons(publicKey1, written); err != nil {
+		t.Fatal(err)
+	} else if err := multi.WriteReasons(publicKey2, map[uint8]MultiReason{0: {Since: time.Unix(1, 0), Until: time.Unix(2, 0)}}); err != nil {
+		t.Fatal(err)
+	}
+
+	reasons, err := multi.ReadReasons(publicKey1)
+	if err != nil || len(reasons) != len(written) {
+		t.Fatalf("%d reasons read (%v), expected %d", len(reasons), err, len(written))
+	}
+	for number, reason := range written {
+		if !reasons[number].Since.Equal(reason.Since) || !reasons[number].Until.Equal(reason.Until) {
+			t.Fatalf("reason %d read as %v, expected %v", number, reasons[number], reason)
+		}
+	}
+
+	if stored := testIterate(); len(stored) != 2 || !(stored[0].Equal(publicKey1) && stored[1].Equal(publicKey2) || stored[0].Equal(publicKey2) && stored[1].Equal(publicKey1)) {
+		t.Fatalf("reasons stored for %d blockchains, expected the 2 written", len(stored))
+	}
+
+	// The header and the blocks are stored apart from the reasons.
+	if stored, found, err := multi.ReadBlockchainHeader(publicKey1); err != nil || !found || stored.Height != 2 {
+		t.Fatalf("header found %t (%v)", found, err)
+	}
+	multi.DeleteBlockchain(header)
+	if reasons, err := multi.ReadReasons(publicKey1); err != nil || len(reasons) != len(written) {
+		t.Fatalf("blockchain deleted: %d reasons read (%v), expected %d", len(reasons), err, len(written))
+	}
+
+	// Without a reason the record is deleted.
+	if err := multi.WriteReasons(publicKey1, nil); err != nil {
+		t.Fatal(err)
+	} else if stored := testIterate(); len(stored) != 1 || !stored[0].Equal(publicKey2) {
+		t.Fatalf("reasons removed: reasons stored for %d blockchains, expected 1", len(stored))
+	}
+
+	// A record of another length is not read.
+	multi.Database.Set(lookupKeyForReasons(publicKey2), make([]byte, multiReasonSize+1))
+	if _, err := multi.ReadReasons(publicKey2); err == nil {
+		t.Fatalf("record of an invalid length: no error")
 	}
 }
