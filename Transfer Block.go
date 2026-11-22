@@ -1,6 +1,6 @@
 /*
 File Name:  Transfer Block.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -9,6 +9,7 @@ package core
 import (
 	"crypto/ed25519"
 	"errors"
+	"io"
 	"time"
 	"uuid"
 
@@ -23,10 +24,40 @@ var blockSequenceTimeout = time.Second * 10
 // Whether to use the lite protocol for transfer of data.
 const blockTransferLite = true
 
-// startBlockTransfer starts the transfer of blocks. Currently it only serves the user's blockchain.
-func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey ed25519.PublicKey, LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange, sequenceNumber uint32, transferID uuid.UUID) (err error) {
+// storedBlocks returns the height of the blockchain if the peer stores it in the given version, and a function that returns the block with the number.
+// The function finds a block while the peer stores the blockchain in that version. The peer stores its own blockchain, and the copies of blockchains in the blockchain cache.
+func (backend *Backend) storedBlocks(publicKey ed25519.PublicKey, version uint64) (height uint64, read func(blockNumber uint64) (raw []byte, found bool), found bool) {
+	if publicKey.Equal(backend.peerPublicKey) {
+		_, height, versionStored := backend.UserBlockchain.Header()
+		if version != versionStored {
+			return 0, nil, false
+		}
+
+		return height, func(blockNumber uint64) (raw []byte, found bool) {
+			raw, status, err := backend.UserBlockchain.GetBlockRawVersion(version, blockNumber)
+			return raw, err == nil && status == blockchain.StatusOK
+		}, true
+	}
+
+	cache := backend.GlobalBlockchainCache
+	if cache == nil {
+		return 0, nil, false
+	}
+
+	header, found, err := cache.Store.ReadBlockchainHeader(publicKey)
+	if err != nil || !found || version != header.Version {
+		return 0, nil, false
+	}
+
+	return header.Height, func(blockNumber uint64) (raw []byte, found bool) {
+		return cache.Store.ReadBlock(publicKey, version, blockNumber)
+	}, true
+}
+
+// startBlockTransfer starts the transfer of blocks of a blockchain of the given height. read returns the block with the number.
+func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey ed25519.PublicKey, height uint64, read func(blockNumber uint64) (raw []byte, found bool), LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange, sequenceNumber uint32, transferID uuid.UUID) (err error) {
 	virtualConn := newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32, transferID uuid.UUID) {
-		peer.sendGetBlock(data, protocol.GetBlockControlActive, BlockchainPublicKey, 0, 0, nil, sequenceNumber, transferID, blockTransferLite)
+		peer.sendGetBlock(data, protocol.GetBlockControlActive, BlockchainPublicKey, 0, 0, 0, nil, sequenceNumber, transferID, blockTransferLite)
 	})
 	virtualConn.Stats = &BlockTransferStats{BlockchainPublicKey: BlockchainPublicKey, Direction: DirectionOut, LimitBlockCount: LimitBlockCount, MaxBlockSize: MaxBlockSize, TargetBlocks: TargetBlocks}
 
@@ -53,44 +84,60 @@ func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey ed25519.PublicKey, 
 	defer udtConn.Close()
 	virtualConn.Stats.(*BlockTransferStats).UDTConn = udtConn
 
-	// loop through the requested TargetBlocks range.
+	return sendBlocks(udtConn, read, height, LimitBlockCount, MaxBlockSize, TargetBlocks)
+}
+
+// sendBlocks writes the requested blocks of a blockchain of the given height to the writer, each block after its header. read returns the block with the number.
+// The blocks of a range below the height are answered one by one. The part of a range from the height on is answered with one header as not available.
+// It ends when the limit of blocks is sent, and at the first error of the writer.
+func sendBlocks(writer io.Writer, read func(blockNumber uint64) (raw []byte, found bool), height, LimitBlockCount, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange) (err error) {
 	sentBlocks := uint64(0)
 
 	for _, target := range TargetBlocks {
-		for blockN := target.Offset; blockN < target.Offset+target.Limit; blockN++ {
-			blockData, status, err := peer.Backend.UserBlockchain.GetBlockRaw(blockN)
-			if err != nil {
-				protocol.BlockTransferWriteHeader(udtConn, protocol.GetBlockStatusNotAvailable, protocol.BlockRange{Offset: blockN, Limit: 1}, 0)
-				continue
+		for blockN := target.Offset; blockN-target.Offset < target.Limit; blockN++ {
+			if blockN >= height {
+				if err = protocol.BlockTransferWriteHeader(writer, protocol.GetBlockStatusNotAvailable, protocol.BlockRange{Offset: blockN, Limit: target.Limit - (blockN - target.Offset)}, 0); err != nil {
+					return err
+				}
+				break
 			}
+
+			blockData, found := read(blockN)
 			blockSize := uint64(len(blockData))
 
-			if status != blockchain.StatusOK {
-				protocol.BlockTransferWriteHeader(udtConn, protocol.GetBlockStatusNotAvailable, protocol.BlockRange{Offset: blockN, Limit: 1}, 0)
+			if !found {
+				if err = protocol.BlockTransferWriteHeader(writer, protocol.GetBlockStatusNotAvailable, protocol.BlockRange{Offset: blockN, Limit: 1}, 0); err != nil {
+					return err
+				}
 				continue
 			} else if blockSize > MaxBlockSize {
-				protocol.BlockTransferWriteHeader(udtConn, protocol.GetBlockStatusSizeExceed, protocol.BlockRange{Offset: blockN, Limit: 1}, blockSize)
+				if err = protocol.BlockTransferWriteHeader(writer, protocol.GetBlockStatusSizeExceed, protocol.BlockRange{Offset: blockN, Limit: 1}, blockSize); err != nil {
+					return err
+				}
 				continue
 			}
 
-			protocol.BlockTransferWriteHeader(udtConn, protocol.GetBlockStatusAvailable, protocol.BlockRange{Offset: blockN, Limit: 1}, blockSize)
-			udtConn.Write(blockData)
+			if err = protocol.BlockTransferWriteHeader(writer, protocol.GetBlockStatusAvailable, protocol.BlockRange{Offset: blockN, Limit: 1}, blockSize); err != nil {
+				return err
+			} else if _, err = writer.Write(blockData); err != nil {
+				return err
+			}
 
 			sentBlocks++
 			if sentBlocks >= LimitBlockCount {
-				break
+				return nil
 			}
 		}
 	}
 
-	return err
+	return nil
 }
 
-// BlockTransferRequest requests blocks from the peer.
+// BlockTransferRequest requests blocks of the blockchain in the given version from the peer.
 // The caller must call udtConn.Close() when done. Do not use any of the closing functions of virtualConn.
-func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey ed25519.PublicKey, LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange) (udtConn *udt.UDTSocket, virtualConn *VirtualPacketConn, err error) {
+func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey ed25519.PublicKey, BlockchainVersion uint64, LimitBlockCount uint64, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange) (udtConn *udt.UDTSocket, virtualConn *VirtualPacketConn, err error) {
 	virtualConn = newVirtualPacketConn(peer, func(data []byte, sequenceNumber uint32, transferID uuid.UUID) {
-		peer.sendGetBlock(data, protocol.GetBlockControlActive, BlockchainPublicKey, 0, 0, nil, sequenceNumber, transferID, blockTransferLite)
+		peer.sendGetBlock(data, protocol.GetBlockControlActive, BlockchainPublicKey, 0, 0, 0, nil, sequenceNumber, transferID, blockTransferLite)
 	})
 	virtualConn.Stats = &BlockTransferStats{BlockchainPublicKey: BlockchainPublicKey, Direction: DirectionIn, LimitBlockCount: LimitBlockCount, MaxBlockSize: MaxBlockSize, TargetBlocks: TargetBlocks}
 
@@ -113,7 +160,7 @@ func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey ed25519.PublicKey
 	udtListener := udt.ListenUDT(udtConfig, virtualConn, virtualConn.incomingData, virtualConn.outgoingData, virtualConn.terminationSignal)
 
 	// request block transfer
-	err = peer.sendGetBlock(nil, protocol.GetBlockControlRequestStart, BlockchainPublicKey, LimitBlockCount, MaxBlockSize, TargetBlocks, virtualConn.sequenceNumber, virtualConn.transferID, false)
+	err = peer.sendGetBlock(nil, protocol.GetBlockControlRequestStart, BlockchainPublicKey, BlockchainVersion, LimitBlockCount, MaxBlockSize, TargetBlocks, virtualConn.sequenceNumber, virtualConn.transferID, false)
 	if err != nil {
 		udtListener.Close()
 		return nil, nil, err
@@ -132,9 +179,9 @@ func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey ed25519.PublicKey
 	return udtConn, virtualConn, nil
 }
 
-// Downloads the requested blocks for the selected blockchain from the remote peer. The callback is called for each result.
-func (peer *PeerInfo) BlockDownload(BlockchainPublicKey ed25519.PublicKey, LimitBlockCount, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange, callback func(data []byte, targetBlock protocol.BlockRange, blockSize uint64, availability uint8)) (err error) {
-	conn, _, err := peer.BlockTransferRequest(BlockchainPublicKey, LimitBlockCount, MaxBlockSize, TargetBlocks)
+// Downloads the requested blocks for the selected blockchain in the given version from the remote peer. The callback is called for each result.
+func (peer *PeerInfo) BlockDownload(BlockchainPublicKey ed25519.PublicKey, BlockchainVersion, LimitBlockCount, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange, callback func(data []byte, targetBlock protocol.BlockRange, blockSize uint64, availability uint8)) (err error) {
+	conn, _, err := peer.BlockTransferRequest(BlockchainPublicKey, BlockchainVersion, LimitBlockCount, MaxBlockSize, TargetBlocks)
 	if err != nil {
 		return err
 	}
