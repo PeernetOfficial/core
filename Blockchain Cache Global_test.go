@@ -137,6 +137,93 @@ func TestBlockchainCacheHeight(t *testing.T) {
 	update("lower version", 0, 5, 0, 0)
 }
 
+// TestBlockchainCacheServe checks that a peer answers a block request for a blockchain that it holds a copy of in the blockchain cache, with the blocks of the copy
+// and for the version of the copy. The request comes from a third peer, through the packet workers of three backends on the loopback address.
+func TestBlockchainCacheServe(t *testing.T) {
+	testRootPeers(t)
+
+	height := uint64(4 + mathrand.Intn(5))
+	t.Logf("blockchain of %d blocks", height)
+
+	owner, networkOwner := testBackendLive(t, int(height))
+	backend, network := testBackendLive(t, 0)
+	requester, networkRequester := testBackendLive(t, 0)
+
+	cache := testBlockchainCache(t, backend)
+	peerOwner := testConnect(backend, network, owner, networkOwner)
+	peer := testConnect(requester, networkRequester, backend, network)
+
+	// request requests the blocks of the blockchain of the owner from the peer with the cache. It returns the blocks it received.
+	request := func(name string, version uint64, target protocol.BlockRange, expectRefused bool) (blocks [][]byte) {
+		t.Helper()
+
+		blocks, err := testBlockRequest(t, name, peer, owner.peerPublicKey, version, target, 10*time.Second)
+		if expectRefused && err == nil {
+			t.Fatalf("%s: no error returned, %d blocks received", name, len(blocks))
+		} else if !expectRefused && err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+
+		return blocks
+	}
+
+	// expect checks the blocks received against the blocks of the owner from the given number on.
+	expect := func(name string, blocks [][]byte, number, count uint64) {
+		t.Helper()
+
+		if uint64(len(blocks)) != count {
+			t.Fatalf("%s: received %d blocks, expected %d", name, len(blocks), count)
+		}
+		for n, block := range blocks {
+			if expected, _, _ := owner.UserBlockchain.GetBlockRaw(number + uint64(n)); !bytes.Equal(block, expected) {
+				t.Errorf("%s: block %d differs from the block of the owner", name, number+uint64(n))
+			}
+		}
+	}
+
+	// A reason is set, and no block of the blockchain is stored yet.
+	testCacheKeep(t, cache, owner.peerPublicKey)
+	request("no block stored", 0, protocol.BlockRange{Offset: 0, Limit: 1}, true)
+
+	// The cache downloads the blockchain.
+	peerOwner.BlockchainVersion, peerOwner.BlockchainHeight = 0, height
+	cache.SeenBlockchainVersion(peerOwner)
+	testCacheExpect(t, "download", cache, owner, 0, height)
+
+	expect("all blocks", request("all blocks", 0, protocol.BlockRange{Offset: 0, Limit: height}, false), 0, height)
+	expect("blocks 1 to 2", request("blocks 1 to 2", 0, protocol.BlockRange{Offset: 1, Limit: 2}, false), 1, 2)
+	expect("above the height", request("above the height", 0, protocol.BlockRange{Offset: height - 2, Limit: 1 << 40}, false), height-2, 2)
+	request("other version", 1, protocol.BlockRange{Offset: 0, Limit: 1}, true)
+
+	// The owner has a new version of its blockchain, and the cache replaces the copy. The blocks of version 0 are no longer read.
+	_, read, found := backend.storedBlocks(owner.peerPublicKey, 0)
+	if !found {
+		t.Fatalf("version 0 of the copy not found")
+	} else if _, found = read(0); !found {
+		t.Fatalf("block 0 of version 0 of the copy not found")
+	}
+
+	owner.UserBlockchain.DeleteBlockchain()
+	testBlockchainAppend(t, owner, int(height)+1)
+	peerOwner.BlockchainVersion, peerOwner.BlockchainHeight = 1, height+1
+	cache.SeenBlockchainVersion(peerOwner)
+	testCacheExpect(t, "new version", cache, owner, 1, height+1)
+
+	for n := uint64(0); n < height; n++ {
+		if _, found := read(n); found {
+			t.Errorf("new version: block %d of version 0 found", n)
+		}
+	}
+
+	request("version 0 after the new version", 0, protocol.BlockRange{Offset: 0, Limit: 1}, true)
+	expect("new version", request("new version", 1, protocol.BlockRange{Offset: 0, Limit: height + 1}, false), 0, height+1)
+
+	// The reason ends and the copy is deleted.
+	cache.expire(time.Now().Add(2 * time.Hour))
+	testCacheExpect(t, "reason ended", cache, owner, 0, 0)
+	request("copy deleted", 1, protocol.BlockRange{Offset: 0, Limit: 1}, true)
+}
+
 // testCacheRunning returns whether an update of the copy of the blockchain of the peer is running.
 func testCacheRunning(peer *PeerInfo) bool {
 	peer.blockchainCacheMutex.Lock()

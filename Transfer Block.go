@@ -25,7 +25,7 @@ var blockSequenceTimeout = time.Second * 10
 const blockTransferLite = true
 
 // storedBlocks returns the height of the blockchain if the peer stores it in the given version, and a function that returns the block with the number.
-// The function finds a block while the peer stores the blockchain in that version. The peer stores its own blockchain.
+// The function finds a block while the peer stores the blockchain in that version. The peer stores its own blockchain, and the copies of blockchains in the blockchain cache.
 func (backend *Backend) storedBlocks(publicKey ed25519.PublicKey, version uint64) (height uint64, read func(blockNumber uint64) (raw []byte, found bool), found bool) {
 	if publicKey.Equal(backend.peerPublicKey) {
 		_, height, versionStored := backend.UserBlockchain.Header()
@@ -39,7 +39,19 @@ func (backend *Backend) storedBlocks(publicKey ed25519.PublicKey, version uint64
 		}, true
 	}
 
-	return 0, nil, false
+	cache := backend.GlobalBlockchainCache
+	if cache == nil {
+		return 0, nil, false
+	}
+
+	header, found, err := cache.Store.ReadBlockchainHeader(publicKey)
+	if err != nil || !found || version != header.Version {
+		return 0, nil, false
+	}
+
+	return header.Height, func(blockNumber uint64) (raw []byte, found bool) {
+		return cache.Store.ReadBlock(publicKey, version, blockNumber)
+	}, true
 }
 
 // startBlockTransfer starts the transfer of blocks of a blockchain of the given height. read returns the block with the number.
