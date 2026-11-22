@@ -10,11 +10,13 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	mathrand "math/rand"
 	"net"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
 )
@@ -239,6 +241,107 @@ func TestListingsStoring(t *testing.T) {
 	if blockchains, listings := testListingsCount(backend); blockchains != 0 || listings != 0 {
 		t.Fatalf("26 hours later: %d blockchains with %d listings, expected none", blockchains, listings)
 	}
+}
+
+// TestAnnouncementResponseCached checks when the peer lists itself as storing peer in the response to B_FIND_BLOCKCHAIN for the blockchain of another peer:
+// if the blockchain cache holds a copy of it with a block. The peer comes first, with a blockchain record over the version and height of the copy, and one listing follows.
+func TestAnnouncementResponseCached(t *testing.T) {
+	backend := testListingBackend(t, 1)
+	self := backend.peerPublicKey
+	now := time.Now()
+
+	other, _, _ := ed25519.GenerateKey(rand.Reader)
+
+	peer1 := testStoringPeerNew(t, backend, "203.0.113.1")
+	peer2 := testStoringPeerNew(t, backend, "203.0.113.2")
+	peer1.store(other, 1, 1, now.Add(-2*time.Hour))
+	peer2.store(other, 1, 2, now.Add(-1*time.Hour))
+
+	var records []protocol.ResponseRecord
+	backend.Filters.MessageOutResponse = func(peer *PeerInfo, packet *protocol.PacketRaw, recordsOut []protocol.ResponseRecord) {
+		records = recordsOut
+	}
+
+	requester := testPeerConnections(t, backend)
+
+	// expect checks the storing peers in the response to a find request for the blockchain: the two listings, or the peer itself and the newest listing.
+	expect := func(name string, cached bool, version, height uint64) {
+		t.Helper()
+
+		announcement := &protocol.MessageAnnouncement{MessageRaw: &protocol.MessageRaw{}, Features: 1 << protocol.FeatureIPv4Listen}
+		announcement.FindBlockchain = [][]byte{other}
+
+		records = nil
+		requester.cmdAnouncement(announcement, nil)
+
+		if len(records) != 1 {
+			t.Fatalf("%s: %d response records", name, len(records))
+		}
+
+		expected := []ed25519.PublicKey{peer2.peer.PublicKey, peer1.peer.PublicKey}
+		if cached {
+			expected = []ed25519.PublicKey{self, peer2.peer.PublicKey}
+		}
+
+		storing := records[0].Storing
+		if len(storing) != len(expected) {
+			t.Fatalf("%s: %d storing peers, expected %d", name, len(storing), len(expected))
+		}
+		for n := range storing {
+			if !storing[n].PublicKey.Equal(expected[n]) {
+				t.Fatalf("%s: storing peer %d is not the expected one", name, n)
+			}
+		}
+
+		if !cached {
+			return
+		}
+
+		// The peer lists itself without an address. Its blockchain record is signed by it at the current time.
+		if len(storing[0].IPv4) != 0 || len(storing[0].IPv6) != 0 {
+			t.Errorf("%s: the peer lists itself with %d IPv4 and %d IPv6 addresses", name, len(storing[0].IPv4), len(storing[0].IPv6))
+		}
+		if storing[0].BlockchainVersion != version || storing[0].BlockchainHeight != height {
+			t.Errorf("%s: the peer lists itself with version %d, height %d, expected version %d, height %d", name, storing[0].BlockchainVersion, storing[0].BlockchainHeight, version, height)
+		}
+		if !protocol.BlockchainRecordValid(self, other, storing[0].BlockchainVersion, storing[0].BlockchainHeight, storing[0].Time, storing[0].Signature, time.Now()) {
+			t.Errorf("%s: the blockchain record of the peer is not valid", name)
+		}
+	}
+
+	expect("without blockchain cache", false, 0, 0)
+
+	cache := testBlockchainCache(t, backend)
+	expect("no copy", false, 0, 0)
+
+	testCacheKeep(t, cache, other)
+	expect("reason set, no block stored", false, 0, 0)
+
+	// The version and the height of the copy differ.
+	version := uint64(1 + mathrand.Intn(100))
+	height := version + 1 + uint64(mathrand.Intn(100))
+	t.Logf("copy of version %d, height %d", version, height)
+
+	header := &blockchain.MultiBlockchainHeader{PublicKey: other, Version: version, Height: height}
+	if err := cache.Store.WriteBlockchainHeader(header); err != nil {
+		t.Fatal(err)
+	}
+	expect("copy", true, version, height)
+
+	header.Version, header.Height = version+1, 0
+	if err := cache.Store.WriteBlockchainHeader(header); err != nil {
+		t.Fatal(err)
+	}
+	expect("copy without a block", false, 0, 0)
+
+	header.Height = 2
+	if err := cache.Store.WriteBlockchainHeader(header); err != nil {
+		t.Fatal(err)
+	}
+	expect("copy of a new version", true, version+1, 2)
+
+	cache.Store.DeleteBlockchain(header)
+	expect("copy deleted", false, 0, 0)
 }
 
 // TestAnnouncementResponseListing checks the storing peers in the response to B_FIND_BLOCKCHAIN: at most 2 per key, in the first response record for the key.

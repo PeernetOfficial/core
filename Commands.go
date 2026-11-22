@@ -97,7 +97,7 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		records = append(records, protocol.ResponseRecord{Type: protocol.ResponseAPeer, Key: key, Closest: closestPeersDHTA(key), IsLast: true})
 	}
 
-	// B_FIND_BLOCKCHAIN: self if the key is the own blockchain and it has a block, the peers listed as storing the blockchain, and the gamma peers closest to the key
+	// B_FIND_BLOCKCHAIN: self if the peer stores the blockchain, the peers listed as storing the blockchain, and the gamma peers closest to the key
 	now := time.Now()
 	for _, key := range msg.FindBlockchain {
 		if keyBudget == 0 {
@@ -107,10 +107,8 @@ func (peer *PeerInfo) cmdAnouncement(msg *protocol.MessageAnnouncement, connecti
 		peer.Backend.Filters.IncomingRequest(peer, protocol.RequestBFindBlockchain, key, nil)
 
 		record := protocol.ResponseRecord{Type: protocol.ResponseBBlockchain, Key: key}
-		if bytes.Equal(key, peer.Backend.peerPublicKey) {
-			if _, height, version := peer.Backend.UserBlockchain.Header(); height > 0 {
-				record.Storing = []protocol.StoringPeer{peer.Backend.selfStoringPeer(key, version, height)}
-			}
+		if version, height, found := peer.Backend.storedBlockchain(key); found {
+			record.Storing = []protocol.StoringPeer{peer.Backend.selfStoringPeer(key, version, height)}
 		}
 		record.Storing = append(record.Storing, peer.Backend.listingsStoring(key, peer.PublicKey, connection.IsLocal(), allowIPv4, allowIPv6, respondStoringCountDHTB-len(record.Storing), now)...)
 

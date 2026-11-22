@@ -61,7 +61,7 @@ func testPeerConnections(t *testing.T, backend *Backend, ips ...string) (peer *P
 // TestAnnouncementResponseAddresses checks the addresses in the peer records of the response to an announcement:
 // up to 3 per family in A_RESPONSE_SELF and A_RESPONSE_PEER, at most one per family in B_RESPONSE_BLOCKCHAIN.
 // A peer known only by link-local and loopback addresses is not reported.
-// The peer lists itself as storing peer for the own blockchain only; the blockchain cache holds a copy of the blockchain of another peer.
+// The peer lists itself as storing peer for the own blockchain, and for the blockchain of another peer that the blockchain cache holds a copy of.
 func TestAnnouncementResponseAddresses(t *testing.T) {
 	self, selfPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 
@@ -106,11 +106,13 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 		recordType   uint8
 		addressesMax int
 		storing      bool
+		version      uint64
+		height       uint64
 	}{
-		{protocol.ResponseASelf, 3, false},
-		{protocol.ResponseAPeer, 3, false},
-		{protocol.ResponseBBlockchain, 1, true},
-		{protocol.ResponseBBlockchain, 1, false},
+		{protocol.ResponseASelf, 3, false, 0, 0},
+		{protocol.ResponseAPeer, 3, false, 0, 0},
+		{protocol.ResponseBBlockchain, 1, true, 0, 1},
+		{protocol.ResponseBBlockchain, 1, true, 1, 5},
 	}
 
 	if len(records) != len(expected) {
@@ -129,6 +131,9 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 		for _, storing := range record.Storing {
 			if !storing.PublicKey.Equal(self) || len(storing.IPv4) != 0 || len(storing.IPv6) != 0 {
 				t.Errorf("record %d: storing peer with %d IPv4 and %d IPv6 addresses", n, len(storing.IPv4), len(storing.IPv6))
+			}
+			if storing.BlockchainVersion != expected[n].version || storing.BlockchainHeight != expected[n].height {
+				t.Errorf("record %d: storing peer of version %d, height %d, expected version %d, height %d", n, storing.BlockchainVersion, storing.BlockchainHeight, expected[n].version, expected[n].height)
 			}
 
 			// Its blockchain record is signed by it at the current time.

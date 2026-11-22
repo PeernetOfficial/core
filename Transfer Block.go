@@ -24,6 +24,26 @@ var blockSequenceTimeout = time.Second * 10
 // Whether to use the lite protocol for transfer of data.
 const blockTransferLite = true
 
+// storedBlockchain returns the version and height of the blockchain if the peer stores it with a block: its own blockchain, or a copy in the blockchain cache.
+func (backend *Backend) storedBlockchain(publicKey ed25519.PublicKey) (version, height uint64, found bool) {
+	if publicKey.Equal(backend.peerPublicKey) {
+		_, height, version = backend.UserBlockchain.Header()
+		return version, height, height > 0
+	}
+
+	cache := backend.GlobalBlockchainCache
+	if cache == nil {
+		return 0, 0, false
+	}
+
+	header, found, err := cache.Store.ReadBlockchainHeader(publicKey)
+	if err != nil || !found {
+		return 0, 0, false
+	}
+
+	return header.Version, header.Height, header.Height > 0
+}
+
 // storedBlocks returns the height of the blockchain if the peer stores it in the given version, and a function that returns the block with the number.
 // The function finds a block while the peer stores the blockchain in that version. The peer stores its own blockchain, and the copies of blockchains in the blockchain cache.
 func (backend *Backend) storedBlocks(publicKey ed25519.PublicKey, version uint64) (height uint64, read func(blockNumber uint64) (raw []byte, found bool), found bool) {
