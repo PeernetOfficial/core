@@ -47,12 +47,12 @@ func testConnect(backend *Backend, network *Network, other *Backend, networkOthe
 	return peer
 }
 
-// testBlockRequest requests the block range of the blockchain from the peer. It fails the test if the request does not return within the timeout.
-func testBlockRequest(t *testing.T, name string, peer *PeerInfo, blockchainPublicKey ed25519.PublicKey, target protocol.BlockRange, timeout time.Duration) (blocks [][]byte, err error) {
+// testBlockRequest requests the block range of the blockchain in the given version from the peer. It fails the test if the request does not return within the timeout.
+func testBlockRequest(t *testing.T, name string, peer *PeerInfo, blockchainPublicKey ed25519.PublicKey, blockchainVersion uint64, target protocol.BlockRange, timeout time.Duration) (blocks [][]byte, err error) {
 	done := make(chan struct{})
 
 	go func() {
-		err = peer.BlockDownload(blockchainPublicKey, target.Limit, 32768, []protocol.BlockRange{target}, func(data []byte, targetBlock protocol.BlockRange, blockSize uint64, availability uint8) {
+		err = peer.BlockDownload(blockchainPublicKey, blockchainVersion, target.Limit, 32768, []protocol.BlockRange{target}, func(data []byte, targetBlock protocol.BlockRange, blockSize uint64, availability uint8) {
 			if availability == protocol.GetBlockStatusAvailable {
 				blocks = append(blocks, data)
 			}
@@ -77,7 +77,7 @@ func TestBlockDownload(t *testing.T) {
 	backendB, networkB := testBackendLive(t, 5)
 	peerB := testConnect(backendA, networkA, backendB, networkB)
 
-	blocks, err := testBlockRequest(t, "blocks 1 to 3", peerB, backendB.peerPublicKey, protocol.BlockRange{Offset: 1, Limit: 3}, 10*time.Second)
+	blocks, err := testBlockRequest(t, "blocks 1 to 3", peerB, backendB.peerPublicKey, 0, protocol.BlockRange{Offset: 1, Limit: 3}, 10*time.Second)
 	if err != nil {
 		t.Fatalf("blocks 1 to 3: %v", err)
 	} else if len(blocks) != 3 {
@@ -100,7 +100,7 @@ func TestBlockDownloadAboveHeight(t *testing.T) {
 	backendB, networkB := testBackendLive(t, 5)
 	peerB := testConnect(backendA, networkA, backendB, networkB)
 
-	blocks, err := testBlockRequest(t, "blocks 3 to 2^40", peerB, backendB.peerPublicKey, protocol.BlockRange{Offset: 3, Limit: 1 << 40}, 10*time.Second)
+	blocks, err := testBlockRequest(t, "blocks 3 to 2^40", peerB, backendB.peerPublicKey, 0, protocol.BlockRange{Offset: 3, Limit: 1 << 40}, 10*time.Second)
 	if err != nil {
 		t.Fatalf("blocks 3 to 2^40: %v", err)
 	} else if len(blocks) != 2 {
@@ -296,21 +296,77 @@ func TestSendBlocksWriteError(t *testing.T) {
 }
 
 // TestBlockRequestRefused checks that a block request returns with an error when the peer refuses it:
-// the peer has no block, or it is asked for a blockchain other than its own.
+// the peer has no block, it is asked for a blockchain other than its own, or for a version of its blockchain other than the one it has.
 func TestBlockRequestRefused(t *testing.T) {
 	testRootPeers(t)
 
 	backendA, networkA := testBackendLive(t, 0)
 	backendB, networkB := testBackendLive(t, 0)
+	backendC, networkC := testBackendLive(t, 3)
 	peerB := testConnect(backendA, networkA, backendB, networkB)
+	peerC := testConnect(backendA, networkA, backendC, networkC)
 
 	otherPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
 
-	if _, err := testBlockRequest(t, "peer without a block", peerB, backendB.peerPublicKey, protocol.BlockRange{Offset: 0, Limit: 1}, 5*time.Second); err == nil {
+	if _, err := testBlockRequest(t, "peer without a block", peerB, backendB.peerPublicKey, 0, protocol.BlockRange{Offset: 0, Limit: 1}, 5*time.Second); err == nil {
 		t.Errorf("peer without a block: no error returned")
 	}
-	if _, err := testBlockRequest(t, "other blockchain", peerB, otherPublicKey, protocol.BlockRange{Offset: 0, Limit: 1}, 5*time.Second); err == nil {
+	if _, err := testBlockRequest(t, "other blockchain", peerB, otherPublicKey, 0, protocol.BlockRange{Offset: 0, Limit: 1}, 5*time.Second); err == nil {
 		t.Errorf("other blockchain: no error returned")
+	}
+	if blocks, err := testBlockRequest(t, "other version", peerC, backendC.peerPublicKey, 1, protocol.BlockRange{Offset: 0, Limit: 1}, 5*time.Second); err == nil {
+		t.Errorf("other version: no error returned, %d blocks received", len(blocks))
+	}
+}
+
+// TestStoredBlocks checks for which blockchain and version a peer has blocks to send: for its own blockchain in the version it has.
+// The blocks are read while the blockchain is of that version.
+func TestStoredBlocks(t *testing.T) {
+	testRootPeers(t)
+
+	height := uint64(3 + mathrand.Intn(5))
+	t.Logf("blockchain of %d blocks", height)
+
+	backend, _ := testBackendLive(t, int(height))
+	otherPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+
+	if _, _, found := backend.storedBlocks(otherPublicKey, 0); found {
+		t.Errorf("other blockchain: found")
+	}
+	if _, _, found := backend.storedBlocks(backend.peerPublicKey, 1); found {
+		t.Errorf("version 1 of the own blockchain of version 0: found")
+	}
+
+	heightStored, read, found := backend.storedBlocks(backend.peerPublicKey, 0)
+	if !found || heightStored != height {
+		t.Fatalf("own blockchain: found %t, height %d, expected height %d", found, heightStored, height)
+	}
+
+	for n := uint64(0); n < height; n++ {
+		expected, _, _ := backend.UserBlockchain.GetBlockRaw(n)
+		if raw, found := read(n); !found || !bytes.Equal(raw, expected) {
+			t.Errorf("own blockchain: block %d found %t, or it differs from the block", n, found)
+		}
+	}
+	if _, found := read(height); found {
+		t.Errorf("own blockchain: block %d found, above the height", height)
+	}
+
+	// The blockchain gets a new version with blocks of the same numbers. The blocks of version 0 are no longer read.
+	backend.UserBlockchain.DeleteBlockchain()
+	testBlockchainAppend(t, backend, int(height)+1)
+
+	for n := uint64(0); n < height; n++ {
+		if _, found := read(n); found {
+			t.Errorf("new version: block %d of version 0 found", n)
+		}
+	}
+
+	if _, _, found := backend.storedBlocks(backend.peerPublicKey, 0); found {
+		t.Errorf("new version: version 0 found")
+	}
+	if heightStored, _, found := backend.storedBlocks(backend.peerPublicKey, 1); !found || heightStored != height+1 {
+		t.Errorf("new version: found %t, height %d, expected height %d", found, heightStored, height+1)
 	}
 }
 
@@ -325,7 +381,7 @@ func TestBlockRequestNoAnswer(t *testing.T) {
 	backend, network := testBackendLive(t, 0)
 	peer, _, _ := testPeerSocket(t, backend, network)
 
-	if _, err := testBlockRequest(t, "silent peer", peer, peer.PublicKey, protocol.BlockRange{Offset: 0, Limit: 1}, 15*time.Second); err == nil {
+	if _, err := testBlockRequest(t, "silent peer", peer, peer.PublicKey, 0, protocol.BlockRange{Offset: 0, Limit: 1}, 15*time.Second); err == nil {
 		t.Errorf("silent peer: no error returned")
 	}
 }

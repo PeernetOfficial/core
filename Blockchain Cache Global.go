@@ -376,7 +376,7 @@ func (cache *BlockchainCache) download(peer *PeerInfo, header *blockchain.MultiB
 func (cache *BlockchainCache) downloadBlocks(peer *PeerInfo, header *blockchain.MultiBlockchainHeader, count uint64) (isComplete bool) {
 	target := protocol.BlockRange{Offset: header.Height, Limit: count}
 
-	conn, _, err := peer.BlockTransferRequest(peer.PublicKey, target.Limit, blockchain.MaxBlockSize, []protocol.BlockRange{target})
+	conn, _, err := peer.BlockTransferRequest(peer.PublicKey, header.Version, target.Limit, blockchain.MaxBlockSize, []protocol.BlockRange{target})
 	if err != nil {
 		return false
 	}

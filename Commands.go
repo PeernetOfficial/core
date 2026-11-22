@@ -341,20 +341,21 @@ func (peer *PeerInfo) cmdTransfer(msg *protocol.MessageTransfer, connection *Con
 func (peer *PeerInfo) cmdGetBlock(msg *protocol.MessageGetBlock, connection *Connection) {
 	switch msg.Control {
 	case protocol.GetBlockControlRequestStart:
-		// Currently only support the local blockchain.
-		if !msg.BlockchainPublicKey.Equal(peer.Backend.peerPublicKey) {
-			peer.sendGetBlock(nil, protocol.GetBlockControlNotAvailable, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence, uuid.UUID{}, false)
+		// The blockchain is available if the peer stores it in the version requested.
+		height, read, found := peer.Backend.storedBlocks(msg.BlockchainPublicKey, msg.BlockchainVersion)
+		if !found {
+			peer.sendGetBlock(nil, protocol.GetBlockControlNotAvailable, msg.BlockchainPublicKey, 0, 0, 0, nil, msg.Sequence, uuid.UUID{}, false)
 			return
-		} else if _, height, _ := peer.Backend.UserBlockchain.Header(); height == 0 {
-			peer.sendGetBlock(nil, protocol.GetBlockControlEmpty, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence, uuid.UUID{}, false)
+		} else if height == 0 {
+			peer.sendGetBlock(nil, protocol.GetBlockControlEmpty, msg.BlockchainPublicKey, 0, 0, 0, nil, msg.Sequence, uuid.UUID{}, false)
 			return
 		} else if msg.LimitBlockCount == 0 {
-			peer.sendGetBlock(nil, protocol.GetBlockControlTerminate, msg.BlockchainPublicKey, 0, 0, nil, msg.Sequence, uuid.UUID{}, false)
+			peer.sendGetBlock(nil, protocol.GetBlockControlTerminate, msg.BlockchainPublicKey, 0, 0, 0, nil, msg.Sequence, uuid.UUID{}, false)
 			return
 		}
 
 		// Create a local UDT client to connect to the remote UDT server and serve the blocks!
-		go peer.startBlockTransfer(msg.BlockchainPublicKey, msg.LimitBlockCount, msg.MaxBlockSize, msg.TargetBlocks, msg.Sequence, msg.TransferID)
+		go peer.startBlockTransfer(msg.BlockchainPublicKey, height, read, msg.LimitBlockCount, msg.MaxBlockSize, msg.TargetBlocks, msg.Sequence, msg.TransferID)
 
 	case protocol.GetBlockControlActive:
 		if v, ok := msg.SequenceInfo.Data.(*VirtualPacketConn); ok {

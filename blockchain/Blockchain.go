@@ -425,6 +425,18 @@ func (blockchain *Blockchain) GetBlockRaw(number uint64) (data []byte, status in
 	return blockRaw, StatusOK, nil
 }
 
+// GetBlockRawVersion returns the encoded block from the blockchain if the blockchain is of the given version. Status is StatusX.
+func (blockchain *Blockchain) GetBlockRawVersion(version, number uint64) (data []byte, status int, err error) {
+	blockchain.Lock()
+	defer blockchain.Unlock()
+
+	if version != blockchain.version {
+		return nil, StatusBlockNotFound, errors.New("blockchain is of another version")
+	}
+
+	return blockchain.GetBlockRaw(number)
+}
+
 // DecodeBlockRaw decodes the raw block and verifies its signature against the blockchain owner's public key. Status is StatusX.
 func DecodeBlockRaw(blockRaw []byte, ownerPublicKey ed25519.PublicKey) (decoded *BlockDecoded, status int, err error) {
 	block, err := decodeBlock(blockRaw, ownerPublicKey)
