@@ -1,6 +1,6 @@
 /*
 File Name:  Transfer Block.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 */
 
@@ -9,6 +9,7 @@ package core
 import (
 	"crypto/ed25519"
 	"errors"
+	"io"
 	"time"
 	"uuid"
 
@@ -53,37 +54,58 @@ func (peer *PeerInfo) startBlockTransfer(BlockchainPublicKey ed25519.PublicKey, 
 	defer udtConn.Close()
 	virtualConn.Stats.(*BlockTransferStats).UDTConn = udtConn
 
-	// loop through the requested TargetBlocks range.
+	_, height, _ := peer.Backend.UserBlockchain.Header()
+
+	return sendBlocks(udtConn, func(blockNumber uint64) (raw []byte, found bool) {
+		raw, status, err := peer.Backend.UserBlockchain.GetBlockRaw(blockNumber)
+		return raw, err == nil && status == blockchain.StatusOK
+	}, height, LimitBlockCount, MaxBlockSize, TargetBlocks)
+}
+
+// sendBlocks writes the requested blocks of a blockchain of the given height to the writer, each block after its header. read returns the block with the number.
+// The blocks of a range below the height are answered one by one. The part of a range from the height on is answered with one header as not available.
+// It ends when the limit of blocks is sent, and at the first error of the writer.
+func sendBlocks(writer io.Writer, read func(blockNumber uint64) (raw []byte, found bool), height, LimitBlockCount, MaxBlockSize uint64, TargetBlocks []protocol.BlockRange) (err error) {
 	sentBlocks := uint64(0)
 
 	for _, target := range TargetBlocks {
-		for blockN := target.Offset; blockN < target.Offset+target.Limit; blockN++ {
-			blockData, status, err := peer.Backend.UserBlockchain.GetBlockRaw(blockN)
-			if err != nil {
-				protocol.BlockTransferWriteHeader(udtConn, protocol.GetBlockStatusNotAvailable, protocol.BlockRange{Offset: blockN, Limit: 1}, 0)
-				continue
+		for blockN := target.Offset; blockN-target.Offset < target.Limit; blockN++ {
+			if blockN >= height {
+				if err = protocol.BlockTransferWriteHeader(writer, protocol.GetBlockStatusNotAvailable, protocol.BlockRange{Offset: blockN, Limit: target.Limit - (blockN - target.Offset)}, 0); err != nil {
+					return err
+				}
+				break
 			}
+
+			blockData, found := read(blockN)
 			blockSize := uint64(len(blockData))
 
-			if status != blockchain.StatusOK {
-				protocol.BlockTransferWriteHeader(udtConn, protocol.GetBlockStatusNotAvailable, protocol.BlockRange{Offset: blockN, Limit: 1}, 0)
+			if !found {
+				if err = protocol.BlockTransferWriteHeader(writer, protocol.GetBlockStatusNotAvailable, protocol.BlockRange{Offset: blockN, Limit: 1}, 0); err != nil {
+					return err
+				}
 				continue
 			} else if blockSize > MaxBlockSize {
-				protocol.BlockTransferWriteHeader(udtConn, protocol.GetBlockStatusSizeExceed, protocol.BlockRange{Offset: blockN, Limit: 1}, blockSize)
+				if err = protocol.BlockTransferWriteHeader(writer, protocol.GetBlockStatusSizeExceed, protocol.BlockRange{Offset: blockN, Limit: 1}, blockSize); err != nil {
+					return err
+				}
 				continue
 			}
 
-			protocol.BlockTransferWriteHeader(udtConn, protocol.GetBlockStatusAvailable, protocol.BlockRange{Offset: blockN, Limit: 1}, blockSize)
-			udtConn.Write(blockData)
+			if err = protocol.BlockTransferWriteHeader(writer, protocol.GetBlockStatusAvailable, protocol.BlockRange{Offset: blockN, Limit: 1}, blockSize); err != nil {
+				return err
+			} else if _, err = writer.Write(blockData); err != nil {
+				return err
+			}
 
 			sentBlocks++
 			if sentBlocks >= LimitBlockCount {
-				break
+				return nil
 			}
 		}
 	}
 
-	return err
+	return nil
 }
 
 // BlockTransferRequest requests blocks from the peer.
