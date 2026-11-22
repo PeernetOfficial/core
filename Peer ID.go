@@ -111,6 +111,9 @@ type PeerInfo struct {
 	blockchainCacheChanged bool       // Whether the peer reported a change of the blockchain version or height that no update was started for yet.
 	blockchainCacheLast    time.Time  // Start of the last update of the copy.
 
+	// Time the blockchain of the peer was last reported to the client.
+	blockchainCacheReported time.Time
+
 	// statistics
 	StatsPacketSent     uint64 // Count of packets sent
 	StatsPacketReceived uint64 // Count of packets received
