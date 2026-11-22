@@ -214,3 +214,57 @@ func TestInsertNodeFullBucket(t *testing.T) {
 		t.Fatalf("%d nodes in the routing table, expected 21", dht.NumNodes())
 	}
 }
+
+// TestIsAmongClosest checks whether the own ID counts among the IDs closest to a target, against the list of all nodes sorted by XOR distance to the target.
+func TestIsAmongClosest(t *testing.T) {
+	dht := NewDHT(&Node{ID: testID(t)}, 256, 20, 5, 5, 20)
+
+	for n := 0; n < 2000; n++ {
+		dht.AddNode(&Node{ID: testID(t)})
+	}
+
+	nodes := dht.Nodes()
+	self := dht.GetSelfID()
+	among := 0
+
+	check := func(name string, target []byte, count int) {
+		t.Helper()
+
+		// The own ID is among the count closest if fewer than count nodes are closer to the target. The node with the target ID is left out.
+		closer := 0
+		for _, node := range nodes {
+			if !bytes.Equal(node.ID, target) && testXorCompare(node.ID, self, target) < 0 {
+				closer++
+			}
+		}
+
+		if result := dht.IsAmongClosest(count, target); result != (closer < count) {
+			t.Fatalf("%s, count %d: result %t, but %d nodes are closer to the target", name, count, result, closer)
+		} else if result {
+			among++
+		}
+	}
+
+	for n := 0; n < 500; n++ {
+		target := testID(t)
+
+		// The count is below the bucket size, the bucket size, above it, and the size of the routing table and above.
+		for _, count := range []int{1, 5, 20, 30, len(nodes), len(nodes) + 1} {
+			check("random target", target, count)
+		}
+
+		// The target is a node of the routing table.
+		check("node as target", nodes[n%len(nodes)].ID, 1)
+		check("node as target", nodes[n%len(nodes)].ID, 20)
+	}
+
+	check("own ID as target", self, 1)
+
+	if among < 500 || among == 500*8+1 {
+		t.Fatalf("the own ID was among the closest in %d checks", among)
+	}
+
+	if dht.IsAmongClosest(0, testID(t)) {
+		t.Fatalf("count 0: the own ID is among the closest")
+	}
+}

@@ -151,6 +151,12 @@ func (backend *Backend) IsNodeContact(publicKey ed25519.PublicKey) (node *dht.No
 	return node, node.Info.(*PeerInfo)
 }
 
+// IsAmongClosest returns whether the own Peer ID is among the count Peer IDs closest to the public key, out of the own Peer ID and the peers in the routing table.
+// The peer with the public key itself is left out.
+func (backend *Backend) IsAmongClosest(publicKey ed25519.PublicKey, count int) bool {
+	return backend.nodesDHT.IsAmongClosest(count, publicKey)
+}
+
 // FindNode finds a peer via the DHT. A peer that is found answered the lookup. If it answered via a relay only, it is not in the peer list and the returned peer is a virtual one.
 func (backend *Backend) FindNode(publicKey ed25519.PublicKey, Timeout time.Duration) (node *dht.Node, peer *PeerInfo, err error) {
 	// first check if in the peer list
