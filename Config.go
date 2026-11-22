@@ -55,8 +55,7 @@ type Config struct {
 	PortForward uint16 `yaml:"PortForward"`
 
 	// Global blockchain cache limits
-	CacheMaxBlockSize  uint64 `yaml:"CacheMaxBlockSize"`  // Max block size to accept in bytes.
-	CacheMaxBlockCount uint64 `yaml:"CacheMaxBlockCount"` // Max block count to cache per peer.
+	CacheMaxBlockCount uint64 `yaml:"CacheMaxBlockCount"` // Max count of blocks to cache per blockchain.
 	LimitTotalRecords  uint64 `yaml:"LimitTotalRecords"`  // Record count limit. 0 = unlimited. Max Records * Max Block Size = Size Limit.
 }
 

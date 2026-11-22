@@ -60,13 +60,14 @@ func Init(UserAgent string, ConfigFilename string, Filters *Filters, ConfigOut i
 	initMulticastIPv6()
 	initBroadcastIPv4()
 	backend.initNetwork()
-	backend.initBlockchainCache()
 
 	if backend.SearchIndex, err = search.InitSearchIndexStore(backend.Config.SearchIndex); err != nil {
 		backend.LogError("Init", "search index '%s' init: %s", backend.Config.SearchIndex, err.Error())
 	} else {
 		backend.userBlockchainUpdateSearchIndex()
 	}
+
+	backend.initBlockchainCache()
 
 	return backend, ExitSuccess, nil
 }

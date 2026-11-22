@@ -36,6 +36,5 @@ EnableUPnP:     true    # Enables support for UPnP.
 PortForward: 0          # Default not set.
 
 # Global blockchain cache limits
-CacheMaxBlockSize:    4096  # Max block size to accept in bytes.
-CacheMaxBlockCount:   256   # Max block count to cache per peer.
+CacheMaxBlockCount:   256   # Max count of blocks to cache per blockchain.
 LimitTotalRecords:    0     # Record count limit. 0 = unlimited. Max Records * Max Block Size = Size Limit.

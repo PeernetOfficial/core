@@ -20,7 +20,7 @@ import (
 	"github.com/PeernetOfficial/core/store"
 )
 
-// testBlockchain returns a blockchain with the count of blocks, held in memory.
+// testBlockchain returns a blockchain with the count of blocks, held in memory. Each block has one profile record.
 func testBlockchain(t *testing.T, privateKey ed25519.PrivateKey, height int) (result *blockchain.Blockchain) {
 	result, err := blockchain.InitStore(privateKey, store.NewMemoryStore())
 	if err != nil {
@@ -28,7 +28,7 @@ func testBlockchain(t *testing.T, privateKey ed25519.PrivateKey, height int) (re
 	}
 
 	for n := 0; n < height; n++ {
-		if _, _, status := result.Append([]blockchain.BlockRecordRaw{{Type: blockchain.RecordTypeProfile, Data: []byte{byte(n)}}}); status != blockchain.StatusOK {
+		if _, _, status := result.Append([]blockchain.BlockRecordRaw{{Type: blockchain.RecordTypeProfile, Data: []byte{0, 0, byte(n)}}}); status != blockchain.StatusOK {
 			t.Fatalf("appending block %d: status %d", n, status)
 		}
 	}
@@ -80,7 +80,7 @@ func TestAnnouncementResponseAddresses(t *testing.T) {
 
 	// The blockchain cache holds a copy of the blockchain of peerOne.
 	backend.GlobalBlockchainCache = &BlockchainCache{backend: backend, Store: &blockchain.MultiStore{Database: store.NewMemoryStore()}}
-	if _, err := backend.GlobalBlockchainCache.Store.NewBlockchainHeader(peerOne.PublicKey, 1, 5); err != nil {
+	if err := backend.GlobalBlockchainCache.Store.WriteBlockchainHeader(&blockchain.MultiBlockchainHeader{PublicKey: peerOne.PublicKey, Version: 1, Height: 5}); err != nil {
 		t.Fatal(err)
 	}
 	if _, found, err := backend.GlobalBlockchainCache.Store.ReadBlockchainHeader(peerOne.PublicKey); err != nil || !found {
