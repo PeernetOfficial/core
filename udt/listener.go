@@ -27,12 +27,17 @@ type listener struct {
 	config         *Config
 }
 
+// Accept waits for the remote side to connect. It returns an error if the listener is closed or the external termination signal is received first.
 func (l *listener) Accept() (*UDTSocket, error) {
-	socket, ok := <-l.accept
-	if ok {
-		return socket, nil
+	select {
+	case socket, ok := <-l.accept:
+		if ok {
+			return socket, nil
+		}
+		return nil, errors.New("Listener closed")
+	case <-l.m.terminationSignal:
+		return nil, errors.New("Listener terminated")
 	}
-	return nil, errors.New("Listener closed")
 }
 
 func (l *listener) Close() (err error) {
