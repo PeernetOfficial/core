@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	mathrand "math/rand"
 	"testing"
 	"time"
@@ -288,4 +289,93 @@ func TestReasons(t *testing.T) {
 	if _, err := multi.ReadReasons(publicKey2); err == nil {
 		t.Fatalf("record of an invalid length: no error")
 	}
+}
+
+// testStoreFail is a store whose writes of blocks fail while fail is set.
+type testStoreFail struct {
+	store.Store
+	fail bool
+}
+
+func (database *testStoreFail) Set(key []byte, data []byte) error {
+	if database.fail && len(key) == ed25519.PublicKeySize+16 {
+		return errors.New("write fails")
+	}
+
+	return database.Store.Set(key, data)
+}
+
+// TestStoreSize checks the size that the multi store keeps of each blockchain in its header and of all blockchains together:
+// the size of the blocks stored, also after the store is initialized again.
+func TestStoreSize(t *testing.T) {
+	database := &testStoreFail{Store: store.NewMemoryStore()}
+	multi, _, err := InitMultiStoreDatabase(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// expect checks the size of the store, also after it is initialized again.
+	expect := func(name string, size uint64) {
+		t.Helper()
+
+		if multi.Size() != size {
+			t.Fatalf("%s: size of the store %d, expected %d", name, multi.Size(), size)
+		}
+
+		if multi, _, err = InitMultiStoreDatabase(database); err != nil {
+			t.Fatal(err)
+		} else if multi.Size() != size {
+			t.Fatalf("%s: size of the store %d after it was initialized again, expected %d", name, multi.Size(), size)
+		}
+	}
+
+	expect("empty store", 0)
+
+	// Two blockchains with blocks of random sizes.
+	var headers [2]*MultiBlockchainHeader
+	var sizes [2]uint64
+
+	for n := range headers {
+		publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+		height := 2 + mathrand.Intn(8)
+		chain := testChain(t, privateKey, 0, 0)
+		headers[n] = NewBlockchainHeader(publicKey, 0)
+
+		for block := 0; block < height; block++ {
+			testChainAppend(t, chain, 1, 2+mathrand.Intn(5000))
+			raw := testChainBlock(t, chain, uint64(block))
+			sizes[n] += uint64(len(raw))
+
+			if _, err := multi.IngestBlock(headers[n], raw); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if stored, found, err := multi.ReadBlockchainHeader(publicKey); err != nil || !found || stored.Size != sizes[n] || headers[n].Size != sizes[n] {
+			t.Fatalf("blockchain %d: header found %t (%v), size %d in memory, expected %d", n, found, err, headers[n].Size, sizes[n])
+		}
+
+		// A block that is rejected and a block whose write fails leave the sizes as they are.
+		if _, err := multi.IngestBlock(headers[n], testChainBlock(t, chain, 0)); err == nil {
+			t.Fatalf("blockchain %d: block 0 ingested a second time", n)
+		}
+
+		testChainAppend(t, chain, 1, 100)
+		database.fail = true
+		_, err := multi.IngestBlock(headers[n], testChainBlock(t, chain, uint64(height)))
+		database.fail = false
+
+		if err == nil || headers[n].Size != sizes[n] || headers[n].Height != uint64(height) {
+			t.Fatalf("blockchain %d: write of a block fails: error %v, height %d, size %d", n, err, headers[n].Height, headers[n].Size)
+		}
+	}
+	t.Logf("blockchains of %d and %d bytes", sizes[0], sizes[1])
+
+	expect("two blockchains", sizes[0]+sizes[1])
+
+	multi.DeleteBlockchain(headers[0])
+	expect("first blockchain deleted", sizes[1])
+
+	multi.DeleteBlockchain(headers[1])
+	expect("both blockchains deleted", 0)
 }
