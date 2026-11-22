@@ -60,13 +60,15 @@ func Init(UserAgent string, ConfigFilename string, Filters *Filters, ConfigOut i
 	initMulticastIPv6()
 	initBroadcastIPv4()
 	backend.initNetwork()
-	backend.initBlockchainCache()
 
 	if backend.SearchIndex, err = search.InitSearchIndexStore(backend.Config.SearchIndex); err != nil {
 		backend.LogError("Init", "search index '%s' init: %s", backend.Config.SearchIndex, err.Error())
 	} else {
 		backend.userBlockchainUpdateSearchIndex()
 	}
+
+	// The blockchain cache is initialized after the search index. When it deletes blockchains of a cache in an earlier format, it removes them from the search index.
+	backend.initBlockchainCache()
 
 	return backend, ExitSuccess, nil
 }

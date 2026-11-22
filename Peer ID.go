@@ -105,6 +105,12 @@ type PeerInfo struct {
 	packetKeys            protocol.PacketKeys // Packet keys for packets sent to and received from the peer.
 	transfers             int32            // Count of running transfers with the peer.
 
+	// copy of the blockchain of the peer in the blockchain cache
+	blockchainCacheMutex   sync.Mutex // Mutex for the fields that follow.
+	blockchainCacheRunning bool       // Whether an update of the copy is running.
+	blockchainCacheChanged bool       // Whether the peer reported a change of the blockchain version or height that no update was started for yet.
+	blockchainCacheLast    time.Time  // Start of the last update of the copy.
+
 	// statistics
 	StatsPacketSent     uint64 // Count of packets sent
 	StatsPacketReceived uint64 // Count of packets received

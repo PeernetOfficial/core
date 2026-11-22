@@ -1,6 +1,6 @@
 /*
 File Name:  Multi.go
-Copyright:  2021 Peernet s.r.o.
+Copyright:  2021 Kleissner Ventures Ltd
 Author:     Peter Kleissner
 
 Multi-blockchain store implementation.
@@ -8,29 +8,31 @@ Multi-blockchain store implementation.
 Keys used in the key-value store:
 1. Key: Public key, Value: Header
 2. Key: Public key + version + block number, Value: Block
+3. Key: "format", Value: Format of the store
 
 */
 
 package blockchain
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
 	"time"
 
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/store"
 )
 
-const (
-	MultiStatusOK              = 0 // Success.
-	MultiStatusErrorReadHeader = 1 // Error reading header for blockchain.
-	MultiStatusHeaderNA        = 2 // Header not available. This indicates nothing is stored for the blockchain.
-	MultiStatusInvalidRemote   = 3 // Invalid remote reported blockchain version and height. (local cache is "newer" which should not happen)
-	MultiStatusEqual           = 4 // Remote blockchain and local cache are equal.
-	MultiStatusNewVersion      = 5 // Local cache is out of date. A new version of the blockchain is available.
-	MultiStatusNewBlocks       = 6 // Local cache is out of date. Additional blocks are available.
-)
+// MaxBlockSize is the maximum size of a block in bytes, including the header and signature.
+const MaxBlockSize = 32768
+
+// multiFormat is the format of the multi store. A store in another format is emptied when it is opened.
+const multiFormat = 1
+
+// multiFormatKey is the key of the record that holds the format of the store.
+var multiFormatKey = []byte("format")
 
 // MultiStore stores multiple blockchains.
 type MultiStore struct {
@@ -42,15 +44,49 @@ type MultiStore struct {
 	FilterBlockchainDelete func(multi *MultiStore, header *MultiBlockchainHeader)
 }
 
-func InitMultiStore(path string) (multi *MultiStore, err error) {
-	multi = &MultiStore{path: path}
-
+// InitMultiStore opens the multi store at the path, or creates a new one. See InitMultiStoreDatabase.
+func InitMultiStore(path string) (multi *MultiStore, deleted []ed25519.PublicKey, err error) {
 	// open existing blockchain file or create new one
-	if multi.Database, err = store.NewPogrebStore(path); err != nil {
-		return nil, err
+	database, err := store.NewPogrebStore(path)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	return multi, nil
+	if multi, deleted, err = InitMultiStoreDatabase(database); err != nil {
+		return nil, nil, err
+	}
+	multi.path = path
+
+	return multi, deleted, nil
+}
+
+// InitMultiStoreDatabase initializes the multi store on the database.
+// A database in another format is emptied. The public keys of the blockchains that were deleted that way are returned.
+func InitMultiStoreDatabase(database store.Store) (multi *MultiStore, deleted []ed25519.PublicKey, err error) {
+	multi = &MultiStore{Database: database}
+
+	if format, found := database.Get(multiFormatKey); found && len(format) == 1 && format[0] == multiFormat {
+		return multi, nil, nil
+	}
+
+	var keys [][]byte
+	database.Iterate(func(key, value []byte) {
+		keys = append(keys, bytes.Clone(key))
+	})
+
+	for _, key := range keys {
+		database.Delete(key)
+
+		if len(key) == ed25519.PublicKeySize {
+			deleted = append(deleted, ed25519.PublicKey(key))
+		}
+	}
+
+	if err = database.Set(multiFormatKey, []byte{multiFormat}); err != nil {
+		return nil, nil, err
+	}
+
+	return multi, deleted, nil
 }
 
 /*
@@ -58,29 +94,24 @@ Header for blockchains:
 
 Offset  Size   Info
 0       8      Version of the blockchain
-8       8      Height of the blockchain
-16      8      Count of blocks
-24      8      Date first block added
-32      8      Date last block added
-40      8      Stats: Count of file records  (from available blocks)
-48      8      Stats: Size of all files combined (from available blocks)
-56      8 * n  List of block numbers that are stored
-
-Note: The statistics fields only count available stored blocks.
+8       8      Height: Count of blocks stored. The blocks stored are block 0 to height-1.
+16      8      Date first block added
+24      8      Date last block added
+32      8      Stats: Count of file records
+40      8      Stats: Size of all files combined
 
 */
 
-const multiBlockchainHeaderSize = 56
+const multiBlockchainHeaderSize = 48
 
 // This is a header for a single blockchain stored in a multi store.
 type MultiBlockchainHeader struct {
 	PublicKey           ed25519.PublicKey // Public Key of the blockchain
-	Height              uint64           // Height is exchanged as uint32 in the protocol, but stored as uint64.
-	Version             uint64           // Version is always uint64.
-	DateFirstBlockAdded time.Time        // Date the first block was added
-	DateLastBlockAdded  time.Time        // Date the last block was added
-	ListBlocks          []uint64         // List of block numbers that are stored
-	Stats               BlockchainStats  // Statistics about the blockchain (only about stored blocks)
+	Height              uint64            // Count of blocks stored. The blocks stored are block 0 to Height-1. Height is exchanged as uint32 in the protocol, but stored as uint64.
+	Version             uint64            // Version is always uint64.
+	DateFirstBlockAdded time.Time         // Date the first block was added
+	DateLastBlockAdded  time.Time         // Date the last block was added
+	Stats               BlockchainStats   // Statistics about the blockchain
 }
 
 // Keep statistics about blocks stored for a blockchain
@@ -90,30 +121,17 @@ type BlockchainStats struct {
 }
 
 func decodeBlockchainHeader(publicKey ed25519.PublicKey, buffer []byte) (header *MultiBlockchainHeader, err error) {
-	if len(buffer) < multiBlockchainHeaderSize {
-		return nil, errors.New("header length too small")
+	if len(buffer) != multiBlockchainHeaderSize {
+		return nil, errors.New("invalid header length")
 	}
 
 	header = &MultiBlockchainHeader{PublicKey: publicKey}
 	header.Version = binary.LittleEndian.Uint64(buffer[0:8])
 	header.Height = binary.LittleEndian.Uint64(buffer[8:16])
-	countBlocks := binary.LittleEndian.Uint64(buffer[16:24])
-	header.DateFirstBlockAdded = time.Unix(int64(binary.LittleEndian.Uint64(buffer[24:32])), 0)
-	header.DateLastBlockAdded = time.Unix(int64(binary.LittleEndian.Uint64(buffer[32:40])), 0)
-	header.Stats.CountFileRecords = binary.LittleEndian.Uint64(buffer[40:48])
-	header.Stats.SizeAllFiles = binary.LittleEndian.Uint64(buffer[48:56])
-
-	if uint64(len(buffer)) < multiBlockchainHeaderSize+8*countBlocks {
-		return nil, errors.New("header length too small")
-	}
-
-	index := multiBlockchainHeaderSize
-
-	for n := uint64(0); n < countBlocks; n++ {
-		blockN := binary.LittleEndian.Uint64(buffer[index : index+8])
-		header.ListBlocks = append(header.ListBlocks, blockN)
-		index += 8
-	}
+	header.DateFirstBlockAdded = time.Unix(int64(binary.LittleEndian.Uint64(buffer[16:24])), 0)
+	header.DateLastBlockAdded = time.Unix(int64(binary.LittleEndian.Uint64(buffer[24:32])), 0)
+	header.Stats.CountFileRecords = binary.LittleEndian.Uint64(buffer[32:40])
+	header.Stats.SizeAllFiles = binary.LittleEndian.Uint64(buffer[40:48])
 
 	return header, nil
 }
@@ -131,22 +149,14 @@ func (multi *MultiStore) ReadBlockchainHeader(publicKey ed25519.PublicKey) (head
 
 // WriteBlockchainHeader writes a blockchain header. If one exists, it will be overwritten.
 func (multi *MultiStore) WriteBlockchainHeader(header *MultiBlockchainHeader) (err error) {
-	raw := make([]byte, multiBlockchainHeaderSize+8*len(header.ListBlocks))
+	raw := make([]byte, multiBlockchainHeaderSize)
 
 	binary.LittleEndian.PutUint64(raw[0:8], header.Version)
 	binary.LittleEndian.PutUint64(raw[8:16], header.Height)
-	binary.LittleEndian.PutUint64(raw[16:24], uint64(len(header.ListBlocks)))
-	binary.LittleEndian.PutUint64(raw[24:32], uint64(header.DateFirstBlockAdded.UTC().Unix()))
-	binary.LittleEndian.PutUint64(raw[32:40], uint64(header.DateLastBlockAdded.UTC().Unix()))
-	binary.LittleEndian.PutUint64(raw[40:48], header.Stats.CountFileRecords)
-	binary.LittleEndian.PutUint64(raw[48:56], header.Stats.SizeAllFiles)
-
-	index := multiBlockchainHeaderSize
-
-	for _, blockN := range header.ListBlocks {
-		binary.LittleEndian.PutUint64(raw[index:index+8], blockN)
-		index += 8
-	}
+	binary.LittleEndian.PutUint64(raw[16:24], uint64(header.DateFirstBlockAdded.UTC().Unix()))
+	binary.LittleEndian.PutUint64(raw[24:32], uint64(header.DateLastBlockAdded.UTC().Unix()))
+	binary.LittleEndian.PutUint64(raw[32:40], header.Stats.CountFileRecords)
+	binary.LittleEndian.PutUint64(raw[40:48], header.Stats.SizeAllFiles)
 
 	return multi.Database.Set(header.PublicKey, raw)
 }
@@ -172,37 +182,10 @@ func (multi *MultiStore) WriteBlock(publicKey ed25519.PublicKey, version, blockN
 	return multi.Database.Set(lookupKeyForBlock(publicKey, version, blockNumber), raw)
 }
 
-// AssessBlockchainHeader reads the blockchain header, if available, and assesses the status.
-func (multi *MultiStore) AssessBlockchainHeader(publicKey ed25519.PublicKey, version, height uint64) (header *MultiBlockchainHeader, status int, err error) {
-	// check if there is an existing header for the blockchain
-	header, found, err := multi.ReadBlockchainHeader(publicKey)
-	if err != nil {
-		return nil, MultiStatusErrorReadHeader, err
-	} else if !found {
-		return nil, MultiStatusHeaderNA, nil
-	}
-
-	if header.Version == version && header.Height == height {
-		return header, MultiStatusEqual, nil
-	}
-
-	// Check if existing version is newer than reported - indicates illegal behavior by the remote peer.
-	// Improper refactoring could happen if the local blockchain folder is deleted and automatically recreated.
-	if header.Version > version || (header.Version == version && header.Height > height) {
-		return header, MultiStatusInvalidRemote, nil
-	}
-
-	if version > header.Version {
-		return header, MultiStatusNewVersion, nil
-	}
-
-	return header, MultiStatusNewBlocks, nil
-}
-
 // Deletes an entire blockchain from the store. It will delete each block individually and then the header.
 func (multi *MultiStore) DeleteBlockchain(header *MultiBlockchainHeader) {
 	// first delete all blocks
-	for _, blockN := range header.ListBlocks {
+	for blockN := uint64(0); blockN < header.Height; blockN++ {
 		multi.Database.Delete(lookupKeyForBlock(header.PublicKey, header.Version, blockN))
 	}
 
@@ -214,17 +197,9 @@ func (multi *MultiStore) DeleteBlockchain(header *MultiBlockchainHeader) {
 	}
 }
 
-func (multi *MultiStore) NewBlockchainHeader(publicKey ed25519.PublicKey, version, height uint64) (header *MultiBlockchainHeader, err error) {
-	timeN := time.Now().UTC()
-	header = &MultiBlockchainHeader{
-		PublicKey:           publicKey,
-		Height:              height,
-		Version:             version,
-		DateFirstBlockAdded: timeN,
-		DateLastBlockAdded:  timeN,
-	}
-
-	return header, multi.WriteBlockchainHeader(header)
+// NewBlockchainHeader returns the header of a blockchain of which no block is stored. The header is written with the first block that is ingested.
+func NewBlockchainHeader(publicKey ed25519.PublicKey, version uint64) (header *MultiBlockchainHeader) {
+	return &MultiBlockchainHeader{PublicKey: publicKey, Version: version}
 }
 
 // Updates the statistics fields of the blockchain header based on the new decoded block records.
@@ -262,31 +237,48 @@ func (multi *MultiStore) IterateBlockchains(callback func(header *MultiBlockchai
 	})
 }
 
-// IngestBlock ingests a new block into the store. It fails if a block is already stored for the given blockchain and block number.
-// It will update the blockchain header including the statistics.
-func (multi *MultiStore) IngestBlock(header *MultiBlockchainHeader, blockNumber uint64, raw []byte, failIfInvalid bool) (decoded *BlockDecoded, err error) {
-	// check if already exists
-	if _, found := multi.ReadBlock(header.PublicKey, header.Version, blockNumber); found {
-		return nil, errors.New("already exists")
+// IngestBlock ingests the next block of the blockchain into the store and updates the blockchain header including the statistics.
+// The block must be signed by the owner of the blockchain, be of the version of the header, have the number that equals the height of the header,
+// and contain the hash of the block before it.
+func (multi *MultiStore) IngestBlock(header *MultiBlockchainHeader, raw []byte) (decoded *BlockDecoded, err error) {
+	if len(raw) > MaxBlockSize {
+		return nil, errors.New("block exceeds the maximum size")
 	}
 
-	// decode it
-	decoded, status, err := DecodeBlockRaw(raw, header.PublicKey)
-	if failIfInvalid && err != nil {
+	decoded, _, err = DecodeBlockRaw(raw, header.PublicKey)
+	if err != nil {
+		return nil, err
+	} else if decoded.BlockchainVersion != header.Version {
+		return nil, errors.New("block is of another blockchain version")
+	} else if decoded.Number != header.Height {
+		return nil, errors.New("block is not the next block")
+	}
+
+	// The first block contains 0 as hash.
+	lastBlockHash := make([]byte, protocol.HashSize)
+	if header.Height > 0 {
+		lastBlock, found := multi.ReadBlock(header.PublicKey, header.Version, header.Height-1)
+		if !found {
+			return nil, errors.New("block before it is not stored")
+		}
+		lastBlockHash = protocol.HashData(lastBlock)
+	}
+	if !bytes.Equal(decoded.LastBlockHash, lastBlockHash) {
+		return nil, errors.New("block does not contain the hash of the block before it")
+	}
+
+	if err = multi.WriteBlock(header.PublicKey, header.Version, header.Height, raw); err != nil {
 		return nil, err
 	}
 
-	// store the transferred block in the cache
-	multi.WriteBlock(header.PublicKey, header.Version, blockNumber, raw)
-	header.ListBlocks = append(header.ListBlocks, blockNumber)
-
-	// update blockchain header stats if records were decoded
-	if status == StatusOK {
-		multi.UpdateBlockchainStatistics(header, decoded.RecordsDecoded)
+	now := time.Now().UTC()
+	if header.Height == 0 {
+		header.DateFirstBlockAdded = now
 	}
+	header.DateLastBlockAdded = now
+	header.Height++
 
-	// update the blockchain header
-	multi.WriteBlockchainHeader(header)
+	multi.UpdateBlockchainStatistics(header, decoded.RecordsDecoded)
 
-	return decoded, nil
+	return decoded, multi.WriteBlockchainHeader(header)
 }

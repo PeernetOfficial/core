@@ -120,7 +120,7 @@ func (peer *PeerInfo) BlockTransferRequest(BlockchainPublicKey ed25519.PublicKey
 	}
 
 	// accept the connection
-	udtConn, err = udtListener.Accept() // TODO: Add timeout!
+	udtConn, err = udtListener.Accept()
 	if err != nil {
 		udtListener.Close()
 		return nil, nil, err
