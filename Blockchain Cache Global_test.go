@@ -10,8 +10,10 @@ import (
 	"bytes"
 	mathrand "math/rand"
 	"testing"
+	"time"
 
 	"github.com/PeernetOfficial/core/blockchain"
+	"github.com/PeernetOfficial/core/protocol"
 	"github.com/PeernetOfficial/core/store"
 	"github.com/enfipy/locker"
 )
@@ -121,4 +123,116 @@ func TestBlockchainCacheHeight(t *testing.T) {
 	update("lower height", 1, 1, 0, 0)
 	update("download again", 1, 2, 1, 2)
 	update("lower version", 0, 5, 0, 0)
+}
+
+// testCacheRunning returns whether an update of the copy of the blockchain of the peer is running.
+func testCacheRunning(peer *PeerInfo) bool {
+	peer.blockchainCacheMutex.Lock()
+	defer peer.blockchainCacheMutex.Unlock()
+
+	return peer.blockchainCacheRunning
+}
+
+// testCacheWait waits until no update of the copy of the blockchain of the peer is running. It fails the test after the timeout.
+func testCacheWait(t *testing.T, name string, peer *PeerInfo, timeout time.Duration) {
+	t.Helper()
+
+	for end := time.Now().Add(timeout); testCacheRunning(peer); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatalf("%s: the update is still running after %s", name, timeout)
+		}
+	}
+}
+
+// TestBlockchainCacheUpdate checks when the blockchain cache updates the copy of the blockchain of a peer:
+// at once when the peer reports a change of the version or height, otherwise when the last update was started longer ago than blockchainCacheRetry.
+// With the later update the cache requests the blocks that the copy is missing.
+func TestBlockchainCacheUpdate(t *testing.T) {
+	testRootPeers(t)
+
+	height := uint64(3 + mathrand.Intn(6))
+	t.Logf("blockchain of %d blocks", height)
+
+	backend, network := testBackendLive(t, 0)
+	owner, networkOwner := testBackendLive(t, int(height))
+	cache := testBlockchainCache(t, backend)
+	peer := testConnect(backend, network, owner, networkOwner)
+
+	// The owner reports 2 blocks more than it sends.
+	peer.BlockchainVersion, peer.BlockchainHeight = 0, height+2
+	peer.remoteBlockchainUpdate(true)
+	testCacheWait(t, "change reported", peer, 10*time.Second)
+	testCacheExpect(t, "change reported", cache, owner, 0, height)
+
+	// The 2 blocks are available now. Further messages of the owner report the same version and height.
+	testBlockchainAppend(t, owner, 2)
+
+	peer.remoteBlockchainUpdate(false)
+	if testCacheRunning(peer) {
+		t.Fatalf("no change, last update just started: an update was started")
+	}
+	testCacheExpect(t, "no change, last update just started", cache, owner, 0, height)
+
+	peer.blockchainCacheMutex.Lock()
+	peer.blockchainCacheLast = time.Now().Add(-blockchainCacheRetry)
+	peer.blockchainCacheMutex.Unlock()
+
+	peer.remoteBlockchainUpdate(false)
+	testCacheWait(t, "no change, last update long ago", peer, 10*time.Second)
+	testCacheExpect(t, "no change, last update long ago", cache, owner, 0, height+2)
+}
+
+// TestBlockchainCacheUpdateRunning checks that one update of the copy of the blockchain of a peer runs at a time.
+// A change that the peer reports while an update runs starts the next update when the running one has ended.
+// The peer is a socket that does not answer: an update sends one block request and ends when the request times out.
+func TestBlockchainCacheUpdateRunning(t *testing.T) {
+	testRootPeers(t)
+
+	previous := blockSequenceTimeout
+	blockSequenceTimeout = 500 * time.Millisecond
+	t.Cleanup(func() { blockSequenceTimeout = previous })
+
+	backend, network := testBackendLive(t, 0)
+	testBlockchainCache(t, backend)
+	peer, privateKey, socket := testPeerSocket(t, backend, network)
+
+	// requests returns the count of block requests that arrive at the socket of the peer within the time.
+	requests := func(wait time.Duration) (count int) {
+		for end := time.Now().Add(wait); time.Now().Before(end); {
+			if packet := testReadPacket(t, "block request", backend, socket, privateKey, time.Until(end)); packet != nil && packet.Command == protocol.CommandGetBlock {
+				count++
+			}
+		}
+		return count
+	}
+
+	peer.BlockchainVersion, peer.BlockchainHeight = 0, 5
+	peer.remoteBlockchainUpdate(true)
+	if count := requests(time.Second); count != 1 || !testCacheRunning(peer) {
+		t.Fatalf("change reported: %d block requests, expected 1; update running %t", count, testCacheRunning(peer))
+	}
+
+	// Further messages of the peer arrive while the update runs. The last update was started long ago.
+	for n := 0; n < 10; n++ {
+		peer.blockchainCacheMutex.Lock()
+		peer.blockchainCacheLast = time.Now().Add(-blockchainCacheRetry)
+		peer.blockchainCacheMutex.Unlock()
+
+		peer.remoteBlockchainUpdate(false)
+	}
+
+	// A change is reported while the update runs. The next request follows when the running update has ended.
+	peer.BlockchainHeight = 6
+	peer.remoteBlockchainUpdate(true)
+	if count := requests(time.Second); count != 0 {
+		t.Fatalf("messages while the update runs: %d block requests, expected 0", count)
+	}
+	if packet := testReadPacket(t, "block request", backend, socket, privateKey, 10*time.Second); packet == nil || packet.Command != protocol.CommandGetBlock {
+		t.Fatalf("after the running update ended: no block request")
+	}
+
+	// No request follows the second update. It ends within 5 seconds: the request times out after 500 ms, which is checked every 4 seconds.
+	if count := requests(6 * time.Second); count != 0 || testCacheRunning(peer) {
+		t.Fatalf("after the second update: %d block requests, expected 0; update running %t", count, testCacheRunning(peer))
+	}
 }

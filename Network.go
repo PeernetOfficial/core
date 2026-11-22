@@ -217,9 +217,7 @@ func (nets *Networks) packetWorker() {
 
 				peer.cmdAnouncement(announce, connection)
 
-				if isBlockchainUpdate {
-					peer.remoteBlockchainUpdate()
-				}
+				peer.remoteBlockchainUpdate(isBlockchainUpdate)
 			}
 
 		case protocol.CommandResponse: // Response
@@ -252,9 +250,7 @@ func (nets *Networks) packetWorker() {
 
 				peer.cmdResponse(response, connection)
 
-				if isBlockchainUpdate {
-					peer.remoteBlockchainUpdate()
-				}
+				peer.remoteBlockchainUpdate(isBlockchainUpdate)
 			}
 
 		case protocol.CommandLocalDiscovery: // Local discovery, sent via IPv4 broadcast and IPv6 multicast
@@ -273,9 +269,7 @@ func (nets *Networks) packetWorker() {
 
 				peer.cmdLocalDiscovery(announce, connection)
 
-				if isBlockchainUpdate {
-					peer.remoteBlockchainUpdate()
-				}
+				peer.remoteBlockchainUpdate(isBlockchainUpdate)
 			}
 
 		case protocol.CommandPing: // Ping

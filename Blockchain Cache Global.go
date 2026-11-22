@@ -7,10 +7,16 @@ Author:     Peter Kleissner
 package core
 
 import (
+	"time"
+
 	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/protocol"
 	"github.com/enfipy/locker"
 )
+
+// blockchainCacheRetry is the time after which the blockchain cache checks again whether it holds all blocks of the blockchain of a peer,
+// and requests the missing ones. A change of the version or height that the peer reports is checked at once.
+const blockchainCacheRetry = 10 * time.Minute
 
 // The blockchain cache stores blockchains.
 type BlockchainCache struct {
@@ -132,14 +138,44 @@ func (cache *BlockchainCache) download(peer *PeerInfo, header *blockchain.MultiB
 	}
 }
 
-// remoteBlockchainUpdate shall be called to indicate a potential update of the remotes blockchain.
-// It will use the blockchain version and height to update the data lake as appropriate.
+// remoteBlockchainUpdate shall be called for each message of the peer that reports its blockchain version and height.
+// It starts updating the copy of the blockchain in the blockchain cache if the version or height changed (isUpdate),
+// or if the last update was started longer ago than blockchainCacheRetry. One update runs at a time per peer.
 // This function is called in the Go routine of the packet worker and therefore must not stall.
-func (peer *PeerInfo) remoteBlockchainUpdate() {
-	if peer.Backend.GlobalBlockchainCache == nil || peer.Backend.GlobalBlockchainCache.ReadOnly || peer.BlockchainVersion == 0 && peer.BlockchainHeight == 0 {
+func (peer *PeerInfo) remoteBlockchainUpdate(isUpdate bool) {
+	cache := peer.Backend.GlobalBlockchainCache
+	if cache == nil || cache.ReadOnly || peer.BlockchainVersion == 0 && peer.BlockchainHeight == 0 {
 		return
 	}
 
-	// TODO: This entire function should be instead a non-blocking message via a buffer channel.
-	go peer.Backend.GlobalBlockchainCache.SeenBlockchainVersion(peer)
+	peer.blockchainCacheMutex.Lock()
+	defer peer.blockchainCacheMutex.Unlock()
+
+	if peer.blockchainCacheChanged = peer.blockchainCacheChanged || isUpdate; peer.blockchainCacheRunning {
+		return
+	} else if !peer.blockchainCacheChanged && time.Since(peer.blockchainCacheLast) < blockchainCacheRetry {
+		return
+	}
+
+	peer.blockchainCacheRunning = true
+
+	go func() {
+		for {
+			peer.blockchainCacheMutex.Lock()
+			peer.blockchainCacheChanged = false
+			peer.blockchainCacheLast = time.Now()
+			peer.blockchainCacheMutex.Unlock()
+
+			cache.SeenBlockchainVersion(peer)
+
+			// A change that was reported while the update ran is processed right after it.
+			peer.blockchainCacheMutex.Lock()
+			if !peer.blockchainCacheChanged {
+				peer.blockchainCacheRunning = false
+				peer.blockchainCacheMutex.Unlock()
+				return
+			}
+			peer.blockchainCacheMutex.Unlock()
+		}
+	}()
 }
