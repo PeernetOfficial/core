@@ -67,6 +67,7 @@ func Init(UserAgent string, ConfigFilename string, Filters *Filters, ConfigOut i
 		backend.userBlockchainUpdateSearchIndex()
 	}
 
+	// The blockchain cache is initialized after the search index. When it deletes blockchains of a cache in an earlier format, it removes them from the search index.
 	backend.initBlockchainCache()
 
 	return backend, ExitSuccess, nil
