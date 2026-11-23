@@ -11,7 +11,7 @@ package core
 
 import (
 	"crypto/ed25519"
-	"sort"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -95,7 +95,7 @@ func (listing *blockchainListing) peerRecord(allowLocal, allowIPv4, allowIPv6 bo
 	return result
 }
 
-// listingsStoring returns the peers listed as storing the blockchain as storing peer records, at most limit, the newest blockchain record first.
+// listingsStoring returns the peers listed as storing the blockchain as storing peer records, at most limit, picked at random among the listings.
 // A listing whose blockchain record is no longer valid at the time now is left out, and so is a listing of the requester.
 // allowLocal, allowIPv4 and allowIPv6 specify the addresses that may be shared with the requester.
 func (backend *Backend) listingsStoring(blockchainPublicKey, requesterPublicKey ed25519.PublicKey, allowLocal, allowIPv4, allowIPv6 bool, limit int, now time.Time) (storing []protocol.StoringPeer) {
@@ -110,8 +110,8 @@ func (backend *Backend) listingsStoring(blockchainPublicKey, requesterPublicKey 
 	}
 	backend.listings.RUnlock()
 
-	sort.Slice(listed, func(i, j int) bool {
-		return listed[i].record.Time > listed[j].record.Time
+	rand.Shuffle(len(listed), func(i, j int) {
+		listed[i], listed[j] = listed[j], listed[i]
 	})
 
 	for _, listing := range listed {

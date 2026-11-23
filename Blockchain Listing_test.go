@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	mathrand "math/rand"
 	"net"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -85,7 +86,7 @@ func TestListingAdd(t *testing.T) {
 	peerNoAddress := testStoringPeerNew(t, backend)
 	peerLoopback := testStoringPeerNew(t, backend, "127.0.0.1")
 
-	// listed returns the storing peers listed for the blockchain as "peer:height", the newest record first.
+	// listed returns the storing peers listed for the blockchain as "peer:height", sorted.
 	listed := func(key ed25519.PublicKey) string {
 		var result []string
 		for _, storing := range backend.listingsStoring(key, requester, false, true, true, 10, now) {
@@ -101,6 +102,7 @@ func TestListingAdd(t *testing.T) {
 			}
 			result = append(result, name+":"+string(rune('0'+storing.BlockchainHeight)))
 		}
+		sort.Strings(result)
 		return strings.Join(result, " ")
 	}
 
@@ -124,11 +126,11 @@ func TestListingAdd(t *testing.T) {
 	check("earlier record of the same peer", key1, "A:2")
 
 	peerB.store(key1, 1, 4, now.Add(-10*time.Minute))
-	check("record of a second peer", key1, "B:4 A:2")
+	check("record of a second peer", key1, "A:2 B:4")
 
 	peerB.store(key2, 7, 5, now)
 	check("second blockchain", key2, "B:5")
-	check("first blockchain unchanged", key1, "B:4 A:2")
+	check("first blockchain unchanged", key1, "A:2 B:4")
 
 	// Records that are not valid, and peers without an address to share.
 	peerA.store(key2, 1, 6, now.Add(-25*time.Hour))
@@ -148,7 +150,7 @@ func TestListingAdd(t *testing.T) {
 }
 
 // TestListingsStoring checks the storing peer records returned for a listing: for 24 hours after the time of the blockchain record,
-// at most the limit and the newest record first, without the requester, and with the addresses that may be shared with the requester.
+// at most the limit, without the requester, and with the addresses that may be shared with the requester. The storing peers are picked at random among the listings.
 func TestListingsStoring(t *testing.T) {
 	backend := testListingBackend(t, 0)
 	now := time.Now()
@@ -171,12 +173,18 @@ func TestListingsStoring(t *testing.T) {
 		ipv4, ipv6 string
 	}
 
-	check := func(name string, requesterPublicKey ed25519.PublicKey, allowLocal, allowIPv4, allowIPv6 bool, limit int, at time.Time, expected []address) {
+	// check checks the storing peers returned: their count, and that each is another one of the listings given, with the addresses given.
+	check := func(name string, requesterPublicKey ed25519.PublicKey, allowLocal, allowIPv4, allowIPv6 bool, limit int, at time.Time, count int, listings []address) {
 		t.Helper()
 
 		storing := backend.listingsStoring(key, requesterPublicKey, allowLocal, allowIPv4, allowIPv6, limit, at)
-		if len(storing) != len(expected) {
-			t.Fatalf("%s: %d storing peers, expected %d", name, len(storing), len(expected))
+		if len(storing) != count {
+			t.Fatalf("%s: %d storing peers, expected %d", name, len(storing), count)
+		}
+
+		expected := make(map[uint64]address)
+		for _, listing := range listings {
+			expected[listing.height] = listing
 		}
 
 		for n, record := range storing {
@@ -191,8 +199,14 @@ func TestListingsStoring(t *testing.T) {
 				ipv6 = record.IPv6[0].IP.String()
 			}
 
-			if record.BlockchainHeight != expected[n].height || ipv4 != expected[n].ipv4 || ipv6 != expected[n].ipv6 {
-				t.Fatalf("%s: storing peer %d of height %d with addresses '%s' '%s', expected height %d with '%s' '%s'", name, n, record.BlockchainHeight, ipv4, ipv6, expected[n].height, expected[n].ipv4, expected[n].ipv6)
+			listing, ok := expected[record.BlockchainHeight]
+			if !ok {
+				t.Fatalf("%s: storing peer %d of height %d is not expected, or returned twice", name, n, record.BlockchainHeight)
+			}
+			delete(expected, record.BlockchainHeight)
+
+			if ipv4 != listing.ipv4 || ipv6 != listing.ipv6 {
+				t.Fatalf("%s: storing peer %d of height %d with addresses '%s' '%s', expected '%s' '%s'", name, n, record.BlockchainHeight, ipv4, ipv6, listing.ipv4, listing.ipv6)
 			}
 			if !protocol.BlockchainRecordValid(record.PublicKey, key, record.BlockchainVersion, record.BlockchainHeight, record.Time, record.Signature, at) {
 				t.Fatalf("%s: blockchain record of storing peer %d is not valid", name, n)
@@ -200,27 +214,47 @@ func TestListingsStoring(t *testing.T) {
 		}
 	}
 
-	// The newest record first. A peer that is only known by a local address is not shared over a connection that is not local.
-	check("all", requester, false, true, true, 10, now, []address{{2, "203.0.113.2", "2001:db8::2"}, {3, "203.0.113.3", ""}, {1, "203.0.113.1", "2001:db8::1"}})
-	check("limit 2", requester, false, true, true, 2, now, []address{{2, "203.0.113.2", "2001:db8::2"}, {3, "203.0.113.3", ""}})
-	check("limit 1", requester, false, true, true, 1, now, []address{{2, "203.0.113.2", "2001:db8::2"}})
-	check("limit 0", requester, false, true, true, 0, now, nil)
+	listingOld := address{1, "203.0.113.1", "2001:db8::1"}
+	listingNew := address{2, "203.0.113.2", "2001:db8::2"}
+	listingMid := address{3, "203.0.113.3", ""}
+	public := []address{listingOld, listingNew, listingMid}
+
+	// A peer that is only known by a local address is not shared over a connection that is not local.
+	check("all", requester, false, true, true, 10, now, 3, public)
+	check("limit 2", requester, false, true, true, 2, now, 2, public)
+	check("limit 1", requester, false, true, true, 1, now, 1, public)
+	check("limit 0", requester, false, true, true, 0, now, 0, nil)
 
 	// Over a local connection the local address is shared in preference.
-	check("local", requester, true, true, true, 10, now, []address{{2, "192.168.1.2", "2001:db8::2"}, {3, "203.0.113.3", ""}, {1, "203.0.113.1", "2001:db8::1"}, {4, "192.168.1.4", ""}})
+	check("local", requester, true, true, true, 10, now, 4, []address{{2, "192.168.1.2", "2001:db8::2"}, listingMid, listingOld, {4, "192.168.1.4", ""}})
 
 	// Only addresses of the IP versions the requester listens on. A storing peer without such an address is left out and does not count towards the limit.
-	check("IPv4 only", requester, false, true, false, 10, now, []address{{2, "203.0.113.2", ""}, {3, "203.0.113.3", ""}, {1, "203.0.113.1", ""}})
-	check("IPv6 only", requester, false, false, true, 2, now, []address{{2, "", "2001:db8::2"}, {1, "", "2001:db8::1"}})
+	check("IPv4 only", requester, false, true, false, 10, now, 3, []address{{2, "203.0.113.2", ""}, {3, "203.0.113.3", ""}, {1, "203.0.113.1", ""}})
+	check("IPv6 only", requester, false, false, true, 2, now, 2, []address{{2, "", "2001:db8::2"}, {1, "", "2001:db8::1"}})
 
 	// The requester is not reported to itself.
-	check("requester is listed", peerNew.peer.PublicKey, false, true, true, 2, now, []address{{3, "203.0.113.3", ""}, {1, "203.0.113.1", "2001:db8::1"}})
+	check("requester is listed", peerNew.peer.PublicKey, false, true, true, 10, now, 2, []address{listingMid, listingOld})
+
+	// Every listing is picked about as often as every other one: with a limit of 1, each of the 3 about 200 times in 600 answers.
+	picked := make(map[uint64]int)
+	for n := 0; n < 600; n++ {
+		storing := backend.listingsStoring(key, requester, false, true, true, 1, now)
+		if len(storing) != 1 {
+			t.Fatalf("random pick: %d storing peers, expected 1", len(storing))
+		}
+		picked[storing[0].BlockchainHeight]++
+	}
+	for _, listing := range public {
+		if picked[listing.height] < 130 || picked[listing.height] > 270 {
+			t.Fatalf("random pick: the listing of height %d was picked %d times in 600 answers, expected about 200", listing.height, picked[listing.height])
+		}
+	}
 
 	// A listing is reported for 24 hours after the time of its blockchain record.
 	timeOld := time.Unix(now.Add(-3*time.Hour).Unix(), 0)
-	check("24 hours after the oldest record", requester, false, true, true, 10, timeOld.Add(24*time.Hour), []address{{2, "203.0.113.2", "2001:db8::2"}, {3, "203.0.113.3", ""}, {1, "203.0.113.1", "2001:db8::1"}})
-	check("24 hours and 1 second after the oldest record", requester, false, true, true, 10, timeOld.Add(24*time.Hour+time.Second), []address{{2, "203.0.113.2", "2001:db8::2"}, {3, "203.0.113.3", ""}})
-	check("26 hours later", requester, false, true, true, 10, now.Add(26*time.Hour), nil)
+	check("24 hours after the oldest record", requester, false, true, true, 10, timeOld.Add(24*time.Hour), 3, public)
+	check("24 hours and 1 second after the oldest record", requester, false, true, true, 10, timeOld.Add(24*time.Hour+time.Second), 2, []address{listingNew, listingMid})
+	check("26 hours later", requester, false, true, true, 10, now.Add(26*time.Hour), 0, nil)
 
 	// Listings that are no longer valid are removed.
 	if blockchains, listings := testListingsCount(backend); blockchains != 1 || listings != 4 {
@@ -264,7 +298,7 @@ func TestAnnouncementResponseCached(t *testing.T) {
 
 	requester := testPeerConnections(t, backend)
 
-	// expect checks the storing peers in the response to a find request for the blockchain: the two listings, or the peer itself and the newest listing.
+	// expect checks the storing peers in the response to a find request for the blockchain: the two listings, or the peer itself and one of the listings.
 	expect := func(name string, cached bool, version, height uint64) {
 		t.Helper()
 
@@ -278,19 +312,16 @@ func TestAnnouncementResponseCached(t *testing.T) {
 			t.Fatalf("%s: %d response records", name, len(records))
 		}
 
-		expected := []ed25519.PublicKey{peer2.peer.PublicKey, peer1.peer.PublicKey}
-		if cached {
-			expected = []ed25519.PublicKey{self, peer2.peer.PublicKey}
+		storing := records[0].Storing
+		if len(storing) != 2 {
+			t.Fatalf("%s: %d storing peers, expected 2", name, len(storing))
 		}
 
-		storing := records[0].Storing
-		if len(storing) != len(expected) {
-			t.Fatalf("%s: %d storing peers, expected %d", name, len(storing), len(expected))
+		isListed := func(n int) bool {
+			return storing[n].PublicKey.Equal(peer1.peer.PublicKey) || storing[n].PublicKey.Equal(peer2.peer.PublicKey)
 		}
-		for n := range storing {
-			if !storing[n].PublicKey.Equal(expected[n]) {
-				t.Fatalf("%s: storing peer %d is not the expected one", name, n)
-			}
+		if cached && !storing[0].PublicKey.Equal(self) || !cached && !isListed(0) || !isListed(1) || storing[0].PublicKey.Equal(storing[1].PublicKey) {
+			t.Fatalf("%s: the storing peers are not the expected ones", name)
 		}
 
 		if !cached {
@@ -377,14 +408,20 @@ func TestAnnouncementResponseListing(t *testing.T) {
 	requester := testPeerConnections(t, backend)
 	userAgent := strings.Repeat("a", 143)
 
+	isListed := func(publicKey ed25519.PublicKey) bool {
+		return publicKey.Equal(peer1.peer.PublicKey) || publicKey.Equal(peer2.peer.PublicKey) || publicKey.Equal(peer3.peer.PublicKey)
+	}
+
+	// selfFirst is whether the peer itself is the first storing peer. Every other storing peer is one of the listed peers.
 	for _, test := range []struct {
-		name    string
-		key     ed25519.PublicKey
-		storing []ed25519.PublicKey
+		name      string
+		key       ed25519.PublicKey
+		count     int
+		selfFirst bool
 	}{
-		{"own blockchain", self, []ed25519.PublicKey{self, peer2.peer.PublicKey}},
-		{"other blockchain", other, []ed25519.PublicKey{peer2.peer.PublicKey, peer3.peer.PublicKey}},
-		{"blockchain without listing", unknown, nil},
+		{"own blockchain", self, 2, true},
+		{"other blockchain", other, 2, false},
+		{"blockchain without listing", unknown, 0, false},
 	} {
 		announcement := &protocol.MessageAnnouncement{MessageRaw: &protocol.MessageRaw{}, Features: 1<<protocol.FeatureIPv4Listen | 1<<protocol.FeatureIPv6Listen, UserAgent: userAgent}
 		announcement.FindBlockchain = [][]byte{test.key}
@@ -395,8 +432,13 @@ func TestAnnouncementResponseListing(t *testing.T) {
 		if len(records) != 2 || len(records[0].Closest) != 10 || len(records[1].Closest) != 10 || len(records[1].Storing) != 0 {
 			t.Fatalf("%s: %d response records", test.name, len(records))
 		}
-		if len(records[0].Storing) != len(test.storing) {
-			t.Fatalf("%s: %d storing peers, expected %d", test.name, len(records[0].Storing), len(test.storing))
+		if len(records[0].Storing) != test.count {
+			t.Fatalf("%s: %d storing peers, expected %d", test.name, len(records[0].Storing), test.count)
+		}
+		for n, record := range records[0].Storing {
+			if n == 0 && test.selfFirst != record.PublicKey.Equal(self) || n > 0 && !isListed(record.PublicKey) || n == 1 && record.PublicKey.Equal(records[0].Storing[0].PublicKey) {
+				t.Fatalf("%s: storing peer %d is not an expected one", test.name, n)
+			}
 		}
 
 		// The response encodes into packets within 1232 bytes. The decoded storing peers are the expected ones, with a valid blockchain record.
@@ -420,11 +462,11 @@ func TestAnnouncementResponseListing(t *testing.T) {
 			}
 		}
 
-		if len(storing) != len(test.storing) {
-			t.Fatalf("%s: %d storing peers decoded, expected %d", test.name, len(storing), len(test.storing))
+		if len(storing) != test.count {
+			t.Fatalf("%s: %d storing peers decoded, expected %d", test.name, len(storing), test.count)
 		}
 		for n, record := range storing {
-			if !bytes.Equal(record.PublicKey, test.storing[n]) {
+			if !bytes.Equal(record.PublicKey, records[0].Storing[n].PublicKey) {
 				t.Fatalf("%s: storing peer %d is not the expected one", test.name, n)
 			}
 			if !protocol.BlockchainRecordValid(record.PublicKey, test.key, record.BlockchainVersion, record.BlockchainHeight, record.Time, record.Signature, now) {

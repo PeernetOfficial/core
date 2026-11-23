@@ -92,7 +92,7 @@ A bucket that holds 20 peers takes no new peer. The routing table is refreshed e
 
 The own blockchain is announced in DHT B once it has a block: a store request is sent to the 20 closest peers to the own Peer ID in the routing table, the first time after the routing table refresh at startup, then every 12 hours, and after a change of its version or height once the last announce is 10 minutes ago.
 
-A valid store request that is received is kept as listing in memory for 24 hours after the time of its blockchain record. A response to a lookup in DHT B reports up to 2 peers that store the blockchain: the peer itself if the blockchain is its own and has a block, and the listed peers, the newest blockchain record first.
+A valid store request that is received is kept as listing in memory for 24 hours after the time of its blockchain record. A response to a lookup in DHT B reports up to 2 peers that store the blockchain: the peer itself if the blockchain is its own and has a block, and listed peers, picked at random among the listings.
 
 ### Timeouts
 
