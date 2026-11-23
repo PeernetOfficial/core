@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PeernetOfficial/core/blockchain"
 	"github.com/PeernetOfficial/core/dht"
 	"github.com/PeernetOfficial/core/protocol"
 )
@@ -60,7 +61,7 @@ func TestAnnounceBlockchain(t *testing.T) {
 		backend, out := testAnnounceBackend(t, test.height, test.peers)
 		self := backend.peerPublicKey
 
-		if sent := backend.announceBlockchain(); sent != test.expected || len(*out) != test.expected {
+		if sent := backend.announceBlockchain(0, uint64(test.height)); sent != test.expected || len(*out) != test.expected {
 			t.Fatalf("height %d, %d peers: %d sent and %d Announcements, expected %d", test.height, test.peers, sent, len(*out), test.expected)
 		}
 
@@ -101,14 +102,16 @@ func TestAnnounceBlockchain(t *testing.T) {
 	}
 }
 
-// TestAnnounceBlockchainDue checks when the own blockchain is announced: the first time once it has a block and a peer to send to, then every 12 hours.
+// TestAnnounceBlockchainDue checks when the own blockchain is announced: the first time once it has a block and a peer to send to, then every 12 hours,
+// and after a change of its version or height once the last announce is 10 minutes ago.
 func TestAnnounceBlockchainDue(t *testing.T) {
 	backend, out := testAnnounceBackend(t, 0, 2)
 	start := time.Now()
 
-	var last time.Time
+	var last blockchainAnnounced
 
-	step := func(name string, after time.Duration, expectedAnnouncements int, expectedLast time.Duration) {
+	// step checks the count of Announcements sent up to now and the last announce. An expectedLast below 0 means that there was no announce yet.
+	step := func(name string, after time.Duration, expectedAnnouncements int, expectedLast time.Duration, expectedVersion, expectedHeight uint64) {
 		t.Helper()
 
 		last = backend.announceBlockchainDue(last, start.Add(after))
@@ -116,35 +119,81 @@ func TestAnnounceBlockchainDue(t *testing.T) {
 		if len(*out) != expectedAnnouncements {
 			t.Fatalf("%s: %d Announcements sent, expected %d", name, len(*out), expectedAnnouncements)
 		}
-		if expectedLast < 0 && !last.IsZero() || expectedLast >= 0 && !last.Equal(start.Add(expectedLast)) {
+		if expectedLast < 0 && !last.time.IsZero() || expectedLast >= 0 && !last.time.Equal(start.Add(expectedLast)) {
 			t.Fatalf("%s: unexpected time of the last announce", name)
+		}
+		if last.version != expectedVersion || last.height != expectedHeight {
+			t.Fatalf("%s: last announce of version %d, height %d, expected version %d, height %d", name, last.version, last.height, expectedVersion, expectedHeight)
+		}
+		if expectedAnnouncements > 0 {
+			if record := (*out)[len(*out)-1].requests.StoreBlockchain[0]; record.Version != expectedVersion || record.Height != expectedHeight {
+				t.Fatalf("%s: blockchain record of version %d, height %d, expected version %d, height %d", name, record.Version, record.Height, expectedVersion, expectedHeight)
+			}
 		}
 	}
 
-	step("height 0", 0, 0, -1)
-	step("height 0, a minute later", time.Minute, 0, -1)
+	step("height 0", 0, 0, -1, 0, 0)
+	step("height 0, a minute later", time.Minute, 0, -1, 0, 0)
 
 	backend.UserBlockchain = testBlockchain(t, backend.peerPrivateKey, 1)
 
-	step("first block", 2*time.Minute, 2, 2*time.Minute)
-	step("a minute after the announce", 3*time.Minute, 2, 2*time.Minute)
-	step("a second before 12 hours after the announce", 12*time.Hour+2*time.Minute-time.Second, 2, 2*time.Minute)
-	step("12 hours after the announce", 12*time.Hour+2*time.Minute, 4, 12*time.Hour+2*time.Minute)
-	step("a minute after the second announce", 12*time.Hour+3*time.Minute, 4, 12*time.Hour+2*time.Minute)
-	step("24 hours after the first announce", 24*time.Hour+2*time.Minute, 6, 24*time.Hour+2*time.Minute)
+	first := 2 * time.Minute
+	step("first block", first, 2, first, 0, 1)
+	step("a minute after the announce", first+time.Minute, 2, first, 0, 1)
+	step("a second before 12 hours after the announce", first+12*time.Hour-time.Second, 2, first, 0, 1)
+	step("12 hours after the announce", first+12*time.Hour, 4, first+12*time.Hour, 0, 1)
+	step("a minute after the second announce", first+12*time.Hour+time.Minute, 4, first+12*time.Hour, 0, 1)
+	step("24 hours after the first announce", first+24*time.Hour, 6, first+24*time.Hour, 0, 1)
+
+	// A block written less than 10 minutes after an announce is announced 10 minutes after it. Blocks written in between are announced together.
+	third := first + 24*time.Hour
+	testBlockchainAppend(t, backend, 1)
+	step("block written, a minute after the announce", third+time.Minute, 6, third, 0, 1)
+	testBlockchainAppend(t, backend, 2)
+	step("blocks written, a second before 10 minutes after the announce", third+10*time.Minute-time.Second, 6, third, 0, 1)
+	step("blocks written, 10 minutes after the announce", third+10*time.Minute, 8, third+10*time.Minute, 0, 4)
+	step("a minute after the announce of the blocks", third+11*time.Minute, 8, third+10*time.Minute, 0, 4)
+
+	// A block written 10 minutes or more after an announce is announced at the next check.
+	fourth := third + 10*time.Minute
+	step("an hour after the announce of the blocks", fourth+time.Hour, 8, fourth, 0, 4)
+	testBlockchainAppend(t, backend, 1)
+	step("block written an hour after the announce", fourth+time.Hour+time.Minute, 10, fourth+time.Hour+time.Minute, 0, 5)
+
+	// The 12 hours count from the last announce.
+	fifth := fourth + time.Hour + time.Minute
+	step("12 hours after the announce before the last", fourth+12*time.Hour, 10, fifth, 0, 5)
+	step("a second before 12 hours after the last announce", fifth+12*time.Hour-time.Second, 10, fifth, 0, 5)
+	step("12 hours after the last announce", fifth+12*time.Hour, 12, fifth+12*time.Hour, 0, 5)
+
+	// A change of the version alone is announced: a profile field is deleted, which removes its block, and another one is written.
+	sixth := fifth + 12*time.Hour
+	if _, _, status := backend.UserBlockchain.ProfileWrite([]blockchain.BlockRecordProfile{{Type: 100, Data: []byte{1}}}); status != blockchain.StatusOK {
+		t.Fatalf("writing profile field: status %d", status)
+	}
+	step("profile field written", sixth+time.Hour, 14, sixth+time.Hour, 0, 6)
+
+	if _, _, status := backend.UserBlockchain.ProfileDelete([]uint16{100}); status != blockchain.StatusOK {
+		t.Fatalf("deleting profile field: status %d", status)
+	}
+	if _, _, status := backend.UserBlockchain.ProfileWrite([]blockchain.BlockRecordProfile{{Type: 101, Data: []byte{1}}}); status != blockchain.StatusOK {
+		t.Fatalf("writing profile field: status %d", status)
+	}
+	step("version changed, a minute after the announce", sixth+time.Hour+time.Minute, 14, sixth+time.Hour, 0, 6)
+	step("version changed, 10 minutes after the announce", sixth+time.Hour+10*time.Minute, 16, sixth+time.Hour+10*time.Minute, 1, 6)
 
 	// Without a peer in the routing table nothing is sent, and the announce stays due.
 	backend, out = testAnnounceBackend(t, 1, 0)
-	last = time.Time{}
+	last = blockchainAnnounced{}
 
-	step("no peer", 0, 0, -1)
+	step("no peer", 0, 0, -1, 0, 0)
 }
 
 // TestAnnounceBlockchainListed checks that the peer that receives the announce reports the announcing peer as storing peer of its blockchain.
 func TestAnnounceBlockchainListed(t *testing.T) {
 	sender, out := testAnnounceBackend(t, 2, 1)
 
-	if sent := sender.announceBlockchain(); sent != 1 || len(*out) != 1 {
+	if sent := sender.announceBlockchain(0, 2); sent != 1 || len(*out) != 1 {
 		t.Fatalf("%d sent and %d Announcements, expected 1", sent, len(*out))
 	}
 
