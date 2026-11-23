@@ -21,6 +21,10 @@ import (
 // listingsExpireInterval is the interval at which listings whose blockchain record is no longer valid are removed.
 const listingsExpireInterval = time.Hour
 
+// listingsRecentTime is the age of a blockchain record up to which its listing is reported first. A peer repeats its announce every 12 hours;
+// the hour on top is the tolerance for the clock of the peer.
+const listingsRecentTime = 13 * time.Hour
+
 // blockchainListing is one listing: a peer that stores a blockchain.
 type blockchainListing struct {
 	record     protocol.BlockchainStore // Blockchain record, signed by the storing peer
@@ -95,26 +99,37 @@ func (listing *blockchainListing) peerRecord(allowLocal, allowIPv4, allowIPv6 bo
 	return result
 }
 
-// listingsStoring returns the peers listed as storing the blockchain as storing peer records, at most limit, picked at random among the listings.
+// listingsStoring returns the peers listed as storing the blockchain as storing peer records, at most limit. They are picked at random
+// among the listings whose blockchain record is at most 13 hours old at the time now, then at random among the other listings.
 // A listing whose blockchain record is no longer valid at the time now is left out, and so is a listing of the requester.
 // allowLocal, allowIPv4 and allowIPv6 specify the addresses that may be shared with the requester.
 func (backend *Backend) listingsStoring(blockchainPublicKey, requesterPublicKey ed25519.PublicKey, allowLocal, allowIPv4, allowIPv6 bool, limit int, now time.Time) (storing []protocol.StoringPeer) {
-	var listed []*blockchainListing
+	var recent, older []*blockchainListing
+	recentThreshold := now.Add(-listingsRecentTime)
 	requesterKey := publicKey2Array(requesterPublicKey)
 
 	backend.listings.RLock()
 	for peerKey, listing := range backend.listings.blockchains[publicKey2Array(blockchainPublicKey)] {
-		if peerKey != requesterKey && protocol.BlockchainRecordTimeValid(listing.record.Time, now) {
-			listed = append(listed, listing)
+		if peerKey == requesterKey || !protocol.BlockchainRecordTimeValid(listing.record.Time, now) {
+			continue
+		}
+
+		if time.Unix(int64(listing.record.Time), 0).Before(recentThreshold) {
+			older = append(older, listing)
+		} else {
+			recent = append(recent, listing)
 		}
 	}
 	backend.listings.RUnlock()
 
-	rand.Shuffle(len(listed), func(i, j int) {
-		listed[i], listed[j] = listed[j], listed[i]
+	rand.Shuffle(len(recent), func(i, j int) {
+		recent[i], recent[j] = recent[j], recent[i]
+	})
+	rand.Shuffle(len(older), func(i, j int) {
+		older[i], older[j] = older[j], older[i]
 	})
 
-	for _, listing := range listed {
+	for _, listing := range append(recent, older...) {
 		if len(storing) >= limit {
 			break
 		}

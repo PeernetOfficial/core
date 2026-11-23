@@ -277,6 +277,84 @@ func TestListingsStoring(t *testing.T) {
 	}
 }
 
+// TestListingsStoringRecent checks that the listings whose blockchain record is at most 13 hours old are reported first, picked at random,
+// and that the other listings follow, picked at random.
+func TestListingsStoringRecent(t *testing.T) {
+	backend := testListingBackend(t, 0)
+	now := time.Unix(time.Now().Unix(), 0)
+
+	key, _, _ := ed25519.GenerateKey(rand.Reader)
+	keyOlder, _, _ := ed25519.GenerateKey(rand.Reader)
+	requester, _, _ := ed25519.GenerateKey(rand.Reader)
+
+	// The height names the listing: 1 and 2 are recent, 3 to 5 are older.
+	for height, age := range map[uint64]time.Duration{1: time.Hour, 2: 13 * time.Hour, 3: 13*time.Hour + time.Second, 4: 20 * time.Hour, 5: 24 * time.Hour} {
+		testStoringPeerNew(t, backend, "203.0.113.1").store(key, 1, height, now.Add(-age))
+	}
+	for height, age := range map[uint64]time.Duration{6: 14 * time.Hour, 7: 20 * time.Hour} {
+		testStoringPeerNew(t, backend, "203.0.113.1").store(keyOlder, 1, height, now.Add(-age))
+	}
+
+	// pick returns how often each listing was reported in 600 answers, by its height, at each place of the answer. Each answer has count storing peers.
+	pick := func(name string, blockchainKey ed25519.PublicKey, limit, count int) (picked []map[uint64]int) {
+		t.Helper()
+
+		picked = make([]map[uint64]int, count)
+		for n := range picked {
+			picked[n] = make(map[uint64]int)
+		}
+
+		for n := 0; n < 600; n++ {
+			storing := backend.listingsStoring(blockchainKey, requester, false, true, true, limit, now)
+			if len(storing) != count {
+				t.Fatalf("%s: %d storing peers, expected %d", name, len(storing), count)
+			}
+			for place, record := range storing {
+				picked[place][record.BlockchainHeight]++
+			}
+		}
+
+		return picked
+	}
+
+	// expect checks that the listings given were reported about equally often and no other one was reported: together in all 600 answers.
+	expect := func(name string, picked map[uint64]int, heights ...uint64) {
+		t.Helper()
+
+		total := 0
+		for _, height := range heights {
+			if share := 600 / len(heights); picked[height] < share-75 || picked[height] > share+75 {
+				t.Fatalf("%s: the listing of height %d was reported %d times in 600 answers, expected about %d", name, height, picked[height], share)
+			}
+			total += picked[height]
+		}
+		if total != 600 || len(picked) != len(heights) {
+			t.Fatalf("%s: unexpected listings reported: %v", name, picked)
+		}
+	}
+
+	picked := pick("limit 1", key, 1, 1)
+	expect("limit 1", picked[0], 1, 2)
+
+	picked = pick("limit 2", key, 2, 2)
+	expect("limit 2, first", picked[0], 1, 2)
+	expect("limit 2, second", picked[1], 1, 2)
+
+	picked = pick("limit 3", key, 3, 3)
+	expect("limit 3, first", picked[0], 1, 2)
+	expect("limit 3, second", picked[1], 1, 2)
+	expect("limit 3, third", picked[2], 3, 4, 5)
+
+	picked = pick("limit 10", key, 10, 5)
+	expect("limit 10, second", picked[1], 1, 2)
+	expect("limit 10, third", picked[2], 3, 4, 5)
+	expect("limit 10, fifth", picked[4], 3, 4, 5)
+
+	// Without a recent listing the older ones are reported.
+	picked = pick("older listings only, limit 1", keyOlder, 1, 1)
+	expect("older listings only, limit 1", picked[0], 6, 7)
+}
+
 // TestAnnouncementResponseCached checks when the peer lists itself as storing peer in the response to B_FIND_BLOCKCHAIN for the blockchain of another peer:
 // if the blockchain cache holds a copy of it with a block. The peer comes first, with a blockchain record over the version and height of the copy, and one listing follows.
 func TestAnnouncementResponseCached(t *testing.T) {
