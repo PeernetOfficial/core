@@ -20,5 +20,7 @@ const (
 	ExitBlockchainCorrupt  = 8          // Blockchain is corrupt.
 	ExitGraceful           = 9          // Graceful shutdown.
 	ExitParamApiKeyInvalid = 10         // API key parameter is invalid.
+	ExitErrorLocked        = 11         // The lock file of the config file is locked by another process.
+	ExitErrorLockFile      = 12         // Error opening or locking the lock file of the config file.
 	STATUS_CONTROL_C_EXIT  = 0xC000013A // The application terminated as a result of a CTRL+C. This is a Windows NTSTATUS value.
 )

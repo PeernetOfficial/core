@@ -42,6 +42,8 @@ The name of the config file is passed to the function `LoadConfig`. If it does n
 * `PrivateKey` The users Private Key hex encoded. The users public key is derived from it.
 * `Listen` defines IP:Port combinations to listen on. If not specified, it will listen on all IPs. You can specify an IP but port 0 for auto port selection. IPv6 addresses must be in the format "[IPv6]:Port".
 
+While a client runs, it holds a lock on the file `[config file].lock`, which it creates next to the config file. A second process that is started with the same config file does not start: `Init` returns the status `ExitErrorLocked`.
+
 Root peer = A peer operated by a known trusted entity. They allow to speed up the network including discovery of peers and data.
 
 ### Private Key

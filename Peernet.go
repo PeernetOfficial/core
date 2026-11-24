@@ -8,6 +8,7 @@ package core
 
 import (
 	"crypto/ed25519"
+	"os"
 	"sync"
 
 	"github.com/PeernetOfficial/core/blockchain"
@@ -19,6 +20,7 @@ import (
 
 // Init initializes the client. If the config file does not exist or is empty, a default one will be created.
 // The User Agent must be provided in the form "Application Name/1.0".
+// The file "[ConfigFilename].lock" is locked until the process ends. Only one process at a time can be initialized with a config file.
 // The returned status is of type ExitX. Anything other than ExitSuccess indicates a fatal failure.
 func Init(UserAgent string, ConfigFilename string, Filters *Filters, ConfigOut interface{}) (backend *Backend, status int, err error) {
 	if UserAgent == "" {
@@ -33,6 +35,14 @@ func Init(UserAgent string, ConfigFilename string, Filters *Filters, ConfigOut i
 
 	if Filters != nil {
 		backend.Filters = *Filters
+	}
+
+	// The lock is taken before the config file is read.
+	var locked bool
+	if backend.configLock, locked, err = lockFile(ConfigFilename + ".lock"); locked {
+		return nil, ExitErrorLocked, err
+	} else if err != nil {
+		return nil, ExitErrorLockFile, err
 	}
 
 	// The configuration and log init are fatal events if they fail.
@@ -93,6 +103,7 @@ func (backend *Backend) Connect() {
 // Global variables and init functions are to be merged.
 type Backend struct {
 	ConfigFilename        string                   // Filename of the configuration file.
+	configLock            *os.File                 // Lock file of the configuration file. It is kept open to hold the lock.
 	Config                *Config                  // Core configuration
 	ConfigClient          interface{}              // Custom configuration from the client
 	Filters               Filters                  // Filters allow to install hooks.
